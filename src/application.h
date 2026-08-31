@@ -26,6 +26,7 @@ class Application {
     constexpr static VkFormat swapchainFormat{VK_FORMAT_B8G8R8A8_SRGB};
     constexpr static VkFormat depthFormat{VK_FORMAT_D32_SFLOAT};
 
+    //SDL
     SDL_Window* window = nullptr;
     uint32_t width = 1280;
     uint32_t height = 720;
@@ -39,6 +40,53 @@ class Application {
     VkDevice device = nullptr;
     VkSurfaceKHR surface = nullptr;
     VmaAllocator vmaAllocator = nullptr;
+
+    // Queue
+    uint32_t gfxQueueFamIdx = UINT32_MAX;
+    VkQueue gfxQueue = nullptr;
+
+    // swapchain
+    VkSwapchainKHR swapchain = nullptr;
+    std::vector<VkImage> swapchainImages;
+    std::vector<VkImageView> swapchainImageViews;
+    std::vector<VkSemaphore> renderCompleteSemaphores;
+    bool requireSwapchainRecreate = false;
+    uint32_t swapchainWidth = 0;
+    uint32_t swapchainHeight = 0;
+
+    VkImage depthImage = nullptr;
+    VkImageView depthImageView = nullptr;
+    VmaAllocation depthImageAllocation = nullptr;
+
+    // graphics pipeline
+    VkPipelineLayout pipeLayout = nullptr;
+    VkPipeline pipeline = nullptr;
+
+    //shader resources
+    VkShaderModule vertexShaderModule = nullptr;
+    VkShaderModule fragmentShaderModule = nullptr;
+
+    // frame and sync resources
+    VkSemaphore timelineSemaphore = nullptr;
+    std::array<FrameResources, MaxFramesInFlight> frameResources;
+
+    void showError(const std::string &errorMsg) const;
+
+    bool initializeVulkan();
+    bool createVulkanInstance();
+    bool createSurface();
+    VkPhysicalDevice findPhysicalDevice();
+    bool findGraphicsQueue();
+    bool createDevice();
+    bool initializeVMA();
+    bool createSwapchain(uint32_t width, uint32_t height);
+    void destroySwapchain();
+    VkShaderModule createShaderModule(const std::string &fileName, shaderc_shader_kind kind) const;
+    bool createShaders();
+    VkPipeline createGraphicsPipeline();
+    bool createSyncResources();
+    bool createCommandBuffers();
+    void render();
 
 public:
     bool initialize();
