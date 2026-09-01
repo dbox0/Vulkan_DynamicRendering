@@ -65,7 +65,7 @@ class Application {
 
     // ================================================================================//
     // graphics pipeline
-    VkPipelineLayout pipeLayout = nullptr;
+    VkPipelineLayout pipelineLayout = nullptr;
     VkPipeline pipeline = nullptr;
 
     //shader resources

@@ -173,7 +173,188 @@ bool Application::initializeVulkan() {
         return false;
     }
 
-    if (pipeline)
+    if (pipeline = createGraphicsPipeline(); !pipeline) {
+        showError("Unable to initialize graphics pipeline");
+        return false;
+    }
+}
+
+
+// Configuration about how we are rendering pixels to the frame buffer
+// Returns a VkPipeline Handle
+// TODO: In the future: Different paramaters to get back VkPipelines representing different materials
+VkPipeline Application::createGraphicsPipeline() {
+
+    // Two parts: Layout object and the pipeline
+    // ## Pipeline Layout : similar to a Function Signature ##
+    //      - Descriptors and Constants
+
+    // ## Pipeline (Material Type) : Body of the function
+    //      - Vertex Data format
+    //      - Shaders
+    //      - Depth/Stencil
+    //      - Blending
+    //      - Rasterization
+    //      - etc.
+
+    // Common : Single Pipeline Layout with various pipelines for different materials
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 0,        // This lets vulkan know that this pipeline layout will not
+        .pushConstantRangeCount = 0 // be associated with any descriptor sets or push constants (used to get data into our shaders)
+                                    // TODO/NOTE: THIS WILL CHANGE
+    };
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        showError("Failed to create the vk pipeline layout");
+        return nullptr;
+    };
+
+    //Configure shader stages
+
+    //Entry Point function. In this case each shader has a main function
+    const char *entryPoint = "main";
+    //TODO/NOTE: It is possible to use a single VkShaderModule for multiple stages by using a different entrypoint
+    //              function for the vert and fragment shader stages!
+
+
+    // Associate shader module handles with shader stages of graphics pipeline
+    std::vector<VkPipelineShaderStageCreateInfo> shaderStages
+    {
+     {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = vertexShaderModule,
+         .pName = entryPoint
+        },
+     {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = fragmentShaderModule,
+         .pName = entryPoint
+        }
+    };
+
+    //TODO: Create and use Buffer for vertices representing mesh data
+    //      Ignore for now as vertex data is hard coded for the first triangle
+
+    //vertex pulling. Dont define vertex input details
+
+    VkPipelineVertexInputStateCreateInfo vertInputInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+    };
+
+    // Input Assembly, pipeline set to expect triangle list topology
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    };
+
+    // Depth/Stencil config
+    VkPipelineDepthStencilStateCreateInfo depthStencilInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .stencilTestEnable = VK_FALSE
+    };
+
+    // Dynamic Rendering will set this up dynamically but we need this struct
+    VkPipelineViewportStateCreateInfo viewportInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = nullptr,
+        .scissorCount = 1,
+        .pScissors = nullptr
+    };
+
+    //Rasterizer
+    VkPipelineRasterizationStateCreateInfo rasterInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .lineWidth = 1.0f,
+    };
+
+    //Multisampling
+    VkPipelineMultisampleStateCreateInfo multisampleInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT // Disable Multisampling
+    };
+
+    //Alpha bnlending
+    //Disabled for now but this attachment info and write mask are still needed.
+    VkPipelineColorBlendAttachmentState ColorBlendAttachState
+    {
+      .blendEnable = VK_FALSE,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    VkPipelineColorBlendStateCreateInfo blendinfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &ColorBlendAttachState
+    };
+
+    // Enable Dynamic State
+    std::vector<VkDynamicState> dynamicState
+    {
+      VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicStateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = static_cast<uint32_t>(dynamicState.size()),
+        .pDynamicStates = dynamicState.data()
+    };
+
+    // New Vulkan Dynamic Rendering Feature
+    // This structure is required for dynamic rendering
+    VkPipelineRenderingCreateInfo renderInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &swapchainFormat,
+        .depthAttachmentFormat = depthFormat
+    };
+
+    // FINALLY : Create the graphics pipeline
+    VkGraphicsPipelineCreateInfo pipelineInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &renderInfo,
+        .stageCount = static_cast<uint32_t>(shaderStages.size()),
+        .pStages = shaderStages.data(),
+        .pVertexInputState = &vertInputInfo,
+        .pInputAssemblyState = &inputAssemblyInfo,
+        .pViewportState = &viewportInfo,
+        .pRasterizationState = &rasterInfo,
+        .pMultisampleState = &multisampleInfo,
+        .pDepthStencilState = &depthStencilInfo,
+        .pColorBlendState = &blendinfo,
+        .pDynamicState = &dynamicStateInfo,
+        .layout = pipelineLayout,
+        .renderPass = VK_NULL_HANDLE,
+    };
+
+    VkPipeline newPipeline;
+
+    if (vkCreateGraphicsPipelines(device,nullptr,1,&pipelineInfo,nullptr,&newPipeline) != VK_SUCCESS) {
+        showError("Failed to create the graphics pipeline");
+        return nullptr;
+    }
+    return newPipeline;
+
 }
 
 std::string readTextFile(const std::string &filePath) {
