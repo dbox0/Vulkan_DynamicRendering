@@ -161,6 +161,11 @@ bool Application::initializeVulkan() {
         showError("Unable to create swapchain");
         return false;
     }
+
+    // Shaders and Graphics Pipeline
+
+    //Shaders
+    if (!createShaders)
 }
 
 bool Application::createSwapchain(uint32_t width, uint32_t height) {
@@ -282,6 +287,8 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
         .format = depthFormat, // defined in application.h
         .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,.levelCount = 1,.layerCount = 1}
     };
+
+    // Create the Image View for the depth buffer
     if (vkCreateImageView(device,&depthImgViewInfo,nullptr,&depthImageView) != VK_SUCCESS) {
         showError("Error creating depth image view");
         return false;
@@ -497,6 +504,9 @@ void Application::shutdown() {
     }
     volkFinalize();
 
+    //destroy swapchain
+    destroySwapchain();
+
     // VMA
     if (vmaAllocator) {
         vmaDestroyAllocator(vmaAllocator);
@@ -515,4 +525,28 @@ void Application::shutdown() {
         SDL_DestroyWindow(window);
     }
     SDL_Quit();
+}
+void Application::destroySwapchain() {
+    for (VkImageView swapchainImageView : swapchainImageViews) {
+        vkDestroyImageView(device, swapchainImageView, nullptr);
+    }
+    swapchainImageViews.clear();
+
+    // destroy semaphores
+    for (VkSemaphore &semaphore : renderCompleteSemaphores) {
+        vkDestroySemaphore(device, semaphore, nullptr);
+    }
+    renderCompleteSemaphores.clear();
+
+    if (swapchain) {
+        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        swapchain = nullptr;
+    }
+
+    // Destroy Depth Buffer
+    if (depthImageView) {
+        vkDestroyImageView(device, depthImageView, nullptr);
+        vmaDestroyImage(vmaAllocator,depthImage,depthImageAllocation);
+        depthImageView = nullptr;
+    }
 }
