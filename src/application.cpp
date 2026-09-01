@@ -177,8 +177,49 @@ bool Application::initializeVulkan() {
         showError("Unable to initialize graphics pipeline");
         return false;
     }
+
+    if (!createSyncResources()) {
+        showError("Error: Could not create the sync related resources");
+        return false;
+    }
+    if (!createCommandBuffers()) {
+
+    }
 }
 
+// Frames in flight:
+// Multiple copies of our data
+bool Application::createSyncResources() {
+
+    // Timeline semaphore represents a monotonically increasing 64 bit integer. It never decreases
+    // CPU can wait for a timeline value set
+    VkSemaphoreTypeCreateInfo semaphoreTypeInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue = MaxFramesInFlight
+    };
+    VkSemaphoreCreateInfo semaphoreInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &semaphoreTypeInfo
+    };
+    if (vkCreateSemaphore(device,&semaphoreInfo,nullptr,&timelineSemaphore) != VK_SUCCESS) {
+        showError("Failed to create timeline semaphore");
+        return false;
+    }
+
+    // per frame image-require semaphore.
+    for (FrameResources &res : frameResources) {
+        VkSemaphoreCreateInfo semaphoreInfo {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        if (vkCreateSemaphore(device,&semaphoreInfo,nullptr,&res.imageAcquiredSemaphore) != VK_SUCCESS) {
+            showError("Failed to create per-frame image acquired semaphore");
+            return false;
+        }
+    }
+
+    return true;
+}
 
 // Configuration about how we are rendering pixels to the frame buffer
 // Returns a VkPipeline Handle
@@ -752,9 +793,8 @@ bool Application::createSurface() {
 }
 
 void Application::render() {
-    while (running) {
-
-    }
+    std::cout << "RENDERING" << std::endl;
+    shutdown();
 }
 void Application::shutdown() {
     // Some other cleanup
