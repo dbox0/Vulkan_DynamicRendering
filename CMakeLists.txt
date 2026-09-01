@@ -11,7 +11,8 @@ add_executable(vulkanapp
         src/main.cpp
         src/application.h
         src/application.cpp
-        src/utils.h)
+        src/utils.h
+        src/external/tinygltf.cpp)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,3 +29,5 @@ target_link_libraries(vulkanapp PRIVATE
 
 target_compile_definitions(vulkanapp PRIVATE
         SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/")
+
+target_include_directories(vulkanapp PRIVATE /src/external)
