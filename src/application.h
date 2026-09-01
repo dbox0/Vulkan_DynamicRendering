@@ -45,7 +45,7 @@ class Application {
     uint32_t gfxQueueFamIdx = UINT32_MAX;
     VkQueue gfxQueue = nullptr;
 
-    // swapchain
+    // swapchain  (List of Images we get from the OS that we can draw Frame over frame..)
     VkSwapchainKHR swapchain = nullptr;
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
@@ -70,6 +70,12 @@ class Application {
     VkSemaphore timelineSemaphore = nullptr;
     std::array<FrameResources, MaxFramesInFlight> frameResources;
 
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+      VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+      VkDebugUtilsMessageTypeFlagsEXT messageType,
+      const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+      void *pUserData);
+
     void showError(const std::string &errorMsg) const;
 
     bool initializeVulkan();
@@ -77,7 +83,7 @@ class Application {
     bool createSurface();
     VkPhysicalDevice findPhysicalDevice();
     bool findGraphicsQueue();
-    bool createDevice();
+    bool createDevice(VkPhysicalDevice phyiscalDevice);
     bool initializeVMA();
     bool createSwapchain(uint32_t width, uint32_t height);
     void destroySwapchain();
