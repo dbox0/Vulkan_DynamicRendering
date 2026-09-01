@@ -172,11 +172,10 @@ bool Application::initializeVulkan() {
         showError("Error creating shader modules");
         return false;
     }
+
+    if (pipeline)
 }
 
-bool Application::createShaders() {
-
-}
 std::string readTextFile(const std::string &filePath) {
     std::ifstream infile(filePath);
     if (infile.is_open()) {
@@ -235,6 +234,17 @@ VkShaderModule Application::createShaderModule(const std::string &fileName,
     return shaderModule; // Return handle to vkShaderModule to use in our pipeline
 }
 
+
+bool Application::createShaders() {
+    //create shader modules
+    if (vertexShaderModule = createShaderModule("shader.vert",shaderc_vertex_shader); !vertexShaderModule) {
+        return false;
+    }
+    if (fragmentShaderModule = createShaderModule("shader.frag",shaderc_fragment_shader); !fragmentShaderModule) {
+        return false;
+    }
+    return true;
+}
 
 
 bool Application::createSwapchain(uint32_t width, uint32_t height) {

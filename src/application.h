@@ -26,6 +26,7 @@ class Application {
     constexpr static VkFormat swapchainFormat{VK_FORMAT_B8G8R8A8_SRGB};
     constexpr static VkFormat depthFormat{VK_FORMAT_D32_SFLOAT};
 
+    // ================================================================================//
     //SDL
     SDL_Window* window = nullptr;
     uint32_t width = 1280;
@@ -34,6 +35,7 @@ class Application {
     uint64_t frameIndex = 0;
     uint64_t nextSignalValue = MaxFramesInFlight + 1;
 
+    // ================================================================================//
     // Vulkan CORE
     VkInstance vulkanInstance = nullptr;
     VkPhysicalDevice physicalDevice = nullptr;
@@ -41,10 +43,12 @@ class Application {
     VkSurfaceKHR surface = nullptr;
     VmaAllocator vmaAllocator = nullptr;
 
+    // ================================================================================//
     // Queue
     uint32_t gfxQueueFamIdx = UINT32_MAX;
     VkQueue gfxQueue = nullptr;
 
+    // ================================================================================//
     // swapchain  (List of Images we get from the OS that we can draw Frame over frame..)
     VkSwapchainKHR swapchain = nullptr;
     std::vector<VkImage> swapchainImages;
@@ -54,10 +58,12 @@ class Application {
     uint32_t swapchainWidth = 0;
     uint32_t swapchainHeight = 0;
 
+    // Depth Buffer
     VkImage depthImage = nullptr;
     VkImageView depthImageView = nullptr;
     VmaAllocation depthImageAllocation = nullptr;
 
+    // ================================================================================//
     // graphics pipeline
     VkPipelineLayout pipeLayout = nullptr;
     VkPipeline pipeline = nullptr;
