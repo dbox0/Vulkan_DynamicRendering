@@ -8,7 +8,10 @@
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
 #define VMA_IMPLEMENTATION
+#include <fstream>
+#include <sstream>
 #include <vk_mem_alloc.h>
+#include <shaderc/shaderc.hpp>
 
 
 
@@ -164,9 +167,75 @@ bool Application::initializeVulkan() {
 
     // Shaders and Graphics Pipeline
 
-    //Shaders
-    if (!createShaders)
+    //Shaders - compiled in runtime using shaderc
+    if (!createShaders()) {
+        showError("Error creating shader modules");
+        return false;
+    }
 }
+
+bool Application::createShaders() {
+
+}
+std::string readTextFile(const std::string &filePath) {
+    std::ifstream infile(filePath);
+    if (infile.is_open()) {
+        std::stringstream buff;
+        buff << infile.rdbuf();
+        const std::string output = buff.str();
+        infile.close();
+        return output;
+    }
+    return std::string();
+}
+
+VkShaderModule Application::createShaderModule(const std::string &fileName,
+                                                shaderc_shader_kind kind) const
+{
+    // Read shader file
+    const std::string shaderPath = "src/shaders/" + fileName;
+    const std::string src = readTextFile(shaderPath);
+    if (src.empty()) {
+        showError("Shader File does not exist: " + shaderPath);
+        return nullptr;
+    }
+
+    // compile shader to SPIR-V
+    std::cout << "Compiling Shader: " << shaderPath << std::endl;
+    shaderc::Compiler compiler;
+    shaderc::CompileOptions opts;
+
+    opts.SetTargetEnvironment(shaderc_target_env_vulkan,shaderc_env_version_vulkan_1_4);
+    opts.SetTargetSpirv(shaderc_spirv_version_1_6);
+    opts.SetOptimizationLevel(shaderc_optimization_level_performance);
+    // If compiled: we get an object of type CompilationResult containing a buffer of unsigned integers representing
+    // the compiled SPIR-V binary data
+    shaderc::CompilationResult result = compiler.CompileGlslToSpv(src,kind,fileName.c_str(),opts);
+
+    if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
+        std::cerr << "Shader Compilation Error: " << result.GetErrorMessage() << std::endl;
+        return nullptr;
+    }
+
+    // VKShaderModule will be the handle to the compiled Vulkan Shader
+    const size_t shaderSize = (result.end() - result.cbegin()) * sizeof(u_int32_t);
+    // Pass SPIR-V to vulkan and create shader module
+    VkShaderModuleCreateInfo shaderModuleCreateInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = shaderSize, // size in bytes
+        .pCode = result.cbegin() // pointer to the start of the buffer
+    };
+
+    VkShaderModule shaderModule = nullptr;
+    if (vkCreateShaderModule(device,&shaderModuleCreateInfo,nullptr,&shaderModule) != VK_SUCCESS) {
+        showError("Failed to create shader module");
+        return nullptr;
+    }
+    return shaderModule; // Return handle to vkShaderModule to use in our pipeline
+}
+
+
 
 bool Application::createSwapchain(uint32_t width, uint32_t height) {
     // track swapchain size seperate from window size
