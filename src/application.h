@@ -103,6 +103,7 @@ class Application {
     bool createCommandBuffers();
     VkCommandBuffer startTransientCommandBuffer();
     void render();
+    VkCommandPool m_commandPool;
 
 
 public:

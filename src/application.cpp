@@ -71,7 +71,7 @@ bool Application::loadData() {
     m_indices.resize(totalIndices);
 
     uint32_t purplePixelData = 0xFF00FF;
-    Image purplePixeel
+    Image purplePixel
     {
       .width = 1,
         .height = 1,
@@ -80,11 +80,9 @@ bool Application::loadData() {
     };
 
     VkCommandBuffer debugImgCmdBuff = startTransientCommandBuffer();
+    //auto [purpleImageId,purpleStagingBuffer] = createImage();
 }
 
-VkCommandBuffer Application::startTransientCommandBuffer() {
-
-}
 bool Application::createVulkanInstance() {
     if (volkInitialize() != VK_SUCCESS) {
         showError("Error initializing Volk");
@@ -217,11 +215,48 @@ bool Application::initializeVulkan() {
     return true;
 }
 
+VkCommandBuffer Application::startTransientCommandBuffer() {
+    VkCommandBufferAllocateInfo cmdAllocInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = m_commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+
+    VkCommandBuffer commandBuffer = nullptr;
+    if (vkAllocateCommandBuffers(device, &cmdAllocInfo,&commandBuffer ) != VK_SUCCESS) {
+        showError("Unable to allocate command buffer");
+        return nullptr;
+    }
+
+    // begin the cmd buffer
+    VkCommandBufferBeginInfo beginInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+    };
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        showError("Unable to begin command buffer");
+        vkFreeCommandBuffers(device, m_commandPool,1,&commandBuffer);
+        return nullptr;
+    }
+    return commandBuffer;
+}
 
 bool Application::createCommandBuffers() {
-
     // Iterate over Frames in Flight and create a command pool and command buffer for each one
     for (FrameResources &res : frameResources) {
+
+        VkCommandPoolCreateInfo transPoolInfo{
+          .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+            .queueFamilyIndex = gfxQueueFamIdx
+        };
+        if (vkCreateCommandPool(device,&transPoolInfo,nullptr,&m_commandPool) != VK_SUCCESS) {
+            showError("Unable to create transient command buffer pool");
+            return false;
+        }
+
         VkCommandPoolCreateInfo poolInfo
         {
           .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -1132,6 +1167,8 @@ void Application::shutdown() {
         vkDestroySemaphore(device, res.imageAcquiredSemaphore, nullptr);
         vkDestroyCommandPool(device, res.commandPool, nullptr);
     }
+    vkDestroyCommandPool(device, m_commandPool, nullptr);
+
     //pipeline cleanup
     if (pipelineLayout) {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);

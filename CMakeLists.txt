@@ -19,7 +19,8 @@ add_executable(vulkanapp
         src/common/constants.h
         src/Math/Transform.h
         src/Math/Transform.cpp
-        src/Math/LocalFrame.h)
+        src/Math/LocalFrame.h
+)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
