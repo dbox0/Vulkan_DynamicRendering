@@ -12,7 +12,9 @@
 #include <sstream>
 #include <vk_mem_alloc.h>
 #include <shaderc/shaderc.hpp>
-
+#include "external/tiny_gltf_v3.h"
+#include "external/stb_image.h"
+#include "structs.h"
 
 
 
@@ -57,6 +59,31 @@ bool Application::initialize() {
         showError("Unable to initialize SDL3");
     }
     return true;
+}
+
+bool Application::loadData() {
+    constexpr size_t vertexBufferBytes = 64* 1024* 1024; // 64MB vertex budget
+    constexpr size_t indexBufferBytes  = 32* 1024* 1024; // 32MB vertex budget
+    constexpr size_t totalVerts  = vertexBufferBytes / sizeof(Vertex);
+    constexpr size_t totalIndices = indexBufferBytes / sizeof(uint32_t);
+
+    m_vertices.resize(totalVerts);
+    m_indices.resize(totalIndices);
+
+    uint32_t purplePixelData = 0xFF00FF;
+    Image purplePixeel
+    {
+      .width = 1,
+        .height = 1,
+        .channels = 4,
+        .data = reinterpret_cast<unsigned char*>(&purplePixelData),
+    };
+
+    VkCommandBuffer debugImgCmdBuff = startTransientCommandBuffer();
+}
+
+VkCommandBuffer Application::startTransientCommandBuffer() {
+
 }
 bool Application::createVulkanInstance() {
     if (volkInitialize() != VK_SUCCESS) {
@@ -441,7 +468,6 @@ std::string readTextFile(const std::string &filePath) {
         buff << infile.rdbuf();
         const std::string output = buff.str();
         infile.close();
-        std::cout << output << std::endl;
         return output;
     }
     return std::string();
@@ -673,12 +699,13 @@ bool Application::createDevice(VkPhysicalDevice phyiscalDevice) {
     {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &supportedFeatures12};
     vkGetPhysicalDeviceFeatures2(physicalDevice, &supprotedFeatures);
 
-    if (!supportedFeatures13.dynamicRendering || !supportedFeatures13.synchronization2 ||
+    if ( !supportedFeatures13.dynamicRendering || !supportedFeatures13.synchronization2 ||
         !supportedFeatures12.timelineSemaphore)
     {
         showError("Physcical device doesn't meet the feature requirements");
         return false;
     }
+
 
     // Produce another chain of features structure
     // Seperate Features struct chain for device creation

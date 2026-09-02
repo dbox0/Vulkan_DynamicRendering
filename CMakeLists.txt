@@ -12,7 +12,14 @@ add_executable(vulkanapp
         src/application.h
         src/application.cpp
         src/utils.h
-        src/external/tinygltf.cpp)
+        src/external/tinygltf.cpp
+        src/structs.h
+        src/Math/Transform.h
+        src/common/constants.h
+        src/common/constants.h
+        src/Math/Transform.h
+        src/Math/Transform.cpp
+        src/Math/LocalFrame.h)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

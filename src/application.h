@@ -6,6 +6,8 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <array>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <shaderc/shaderc.hpp>
 
 struct SDL_Window;
@@ -19,6 +21,7 @@ struct FrameResources {
     VkCommandBuffer commandBuffer = nullptr;
     VkSemaphore imageAcquiredSemaphore = nullptr;
 };
+
 
 class Application {
     constexpr static uint32_t VulkanVersion{VK_API_VERSION_1_4};
@@ -98,10 +101,13 @@ class Application {
     VkPipeline createGraphicsPipeline();
     bool createSyncResources();
     bool createCommandBuffers();
+    VkCommandBuffer startTransientCommandBuffer();
     void render();
+
 
 public:
     bool initialize();
     void shutdown();
     void run();
+    bool loadData();
 };
