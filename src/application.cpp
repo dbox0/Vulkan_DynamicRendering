@@ -70,7 +70,8 @@ bool Application::loadData() {
     m_vertices.resize(totalVerts);
     m_indices.resize(totalIndices);
 
-    uint32_t purplePixelData = 0xFF00FF;
+    uint32_t purplePixelData = 0xFF00FFFF;
+
     Image purplePixel
     {
       .width = 1,
@@ -80,7 +81,210 @@ bool Application::loadData() {
     };
 
     VkCommandBuffer debugImgCmdBuff = startTransientCommandBuffer();
-    //auto [purpleImageId,purpleStagingBuffer] = createImage();
+
+    auto [purpleImageId,purpleStagingBuffer] = createImage(
+        debugImgCmdBuff, purplePixel.data,purplePixel.width,purplePixel.height,4);
+    m_purplePixelImageId = purpleImageId;
+    submitTransientCommandBuffer(debugImgCmdBuff);
+    vmaDestroyBuffer(m_vmaAllocator,purpleStagingBuffer.vkBuffer,purpleStagingBuffer.allocation);
+}
+
+
+std::pair<uint32_t, GPUBuffer> Application::createImage(VkCommandBuffer commandBuffer, unsigned char *imageData,
+                                uint32_t width, uint32_t height, int channels)
+{
+    // create vk image and allocation
+    VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
+    VkImageCreateInfo imageInfo =
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = imageFormat,
+        .extent {.width = width, .height = height, .depth = 1,},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .initialLayout =  VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    VmaAllocationCreateInfo allocInfo{.usage = VMA_MEMORY_USAGE_AUTO};
+    GPUImage gpuImage;
+    if (vmaCreateImage(m_vmaAllocator, &imageInfo,&allocInfo,&gpuImage.image,&gpuImage.allocation, nullptr) != VK_SUCCESS) {
+        showError("Error creating image");
+        return {0,GPUBuffer{}};
+    }
+    VkImageViewCreateInfo imgViewInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = gpuImage.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = imageFormat,
+        .subresourceRange
+        {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1
+        }
+    };
+
+    if (vkCreateImageView(m_device,&imgViewInfo,nullptr,&gpuImage.imageView) != VK_SUCCESS) {
+        showError("Error creating Image View");
+        return {0,GPUBuffer{}};
+    }
+
+    // Pipeline Barrier to transition the image layout
+    VkImageMemoryBarrier2 transferBarrier
+    {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_NONE,   // transient buff does not wait on cmds
+        .srcAccessMask = VK_ACCESS_2_NONE,          // transient buff does not wait on cmds
+        .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+        .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,  // Vulkan requires images to be created here or in the preinitialized laoyout
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .image = gpuImage.image,
+        .subresourceRange
+        {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1
+        }
+    };
+
+    VkDependencyInfo transferDependencyInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &transferBarrier,
+    };
+    vkCmdPipelineBarrier2(commandBuffer,&transferDependencyInfo);
+    // create staging buffer in System RAM that will get copied into VRAM
+    // by issuing a record copy operation
+
+    const size_t byteSize = width*height*channels;
+    // VK_BUFFER_USAGE_TRANSFER_SRC_BIT - Source of a Transfer/copy operation
+    // Memory Usage: VMA_MEMORY_USAGE_AUTO_PREFER_HOST - Host Memory = System RAM
+    GPUBuffer stageBuff = createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, byteSize,true,VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+    mapCopyBufferData(stageBuff,0,imageData,byteSize);
+
+    // Record the command to copy the image from the staging Buffer (RAM) to VkImage(VRAM)
+
+    VkBufferImageCopy buffImageCopy
+    {
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,.mipLevel = 0,.baseArrayLayer = 0,.layerCount = 1},
+        .imageExtent = {.width = width,.height = height,.depth = 1}
+    };
+
+    // cmdbuffer to record into, staging buffer vkbuffer handle (src), dest VKimg we copy into, layout,
+    vkCmdCopyBufferToImage(commandBuffer,stageBuff.vkBuffer,gpuImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&buffImageCopy);
+
+    // Transition image for shader read / sampling
+    VkImageMemoryBarrier2 shaderReadBarrer
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .image = gpuImage.image,
+        .subresourceRange
+        {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+    VkDependencyInfo shaderDependencyInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &shaderReadBarrer
+    };
+    vkCmdPipelineBarrier2(commandBuffer,&shaderDependencyInfo);
+
+    m_images.push_back(gpuImage);
+    const u_int32_t imageId = m_images.size();
+    return { imageId, stageBuff};
+}
+
+void Application::mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffset, void *data, size_t byteSize) {
+
+    void *buffPtr = nullptr;
+
+    // Get the adress of the buffer in memory and
+    if (vmaMapMemory(m_vmaAllocator,buffer.allocation,&buffPtr) != VK_SUCCESS) {
+        showError("Unable to map buffer memory");
+        return;
+    }
+    std::memcpy(static_cast<char*>(buffPtr) + bufferOffset, data, byteSize);
+    vmaUnmapMemory(m_vmaAllocator,buffer.allocation);
+}
+
+
+GPUBuffer Application::createBuffer(VkBufferUsageFlags usage, size_t byteSize, bool mappable, VmaMemoryUsage memoryUsage) {
+
+    // create Buffer and VMA Alloc
+    VkBufferCreateInfo buffInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = byteSize,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+
+    VmaAllocationCreateInfo allocInfo
+    {
+     //  VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+     //  means we intend to map this buffer and write sequentially into it
+     //  mappable= false evaluates to 0 and means we never plan to map and access
+     //  this buffer on the CPU
+
+     .flags = mappable? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT : 0u,
+     .usage = memoryUsage // VMA_MEMORY_USAGE_AUTO_PREFER_HOST
+                          // if AUTO, the memory will reside in VRAM but coupled with
+                          // HOST_ACCESS_SEQUENTIAL will be memory that is mappable and accessible
+                          // by the CPU -> Memory lands in the Resizable BAR(Base Address Register)
+                          // modern GPUs allow CPU access to the entire memory capacity
+                          // but this is NOT GUARANTEED and ONLY WORKS on new Cards + UEFI/BIOS settings
+    };
+    GPUBuffer gpuBuff;
+    if (vmaCreateBuffer(m_vmaAllocator,&buffInfo,&allocInfo,
+        &gpuBuff.vkBuffer,&gpuBuff.allocation,nullptr) != VK_SUCCESS)
+    {
+        return GPUBuffer{};
+    }
+
+    //BDA Buffer Device Adress Extension lets us acquire pointers into video memory
+    if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+        VkBufferDeviceAddressInfo vertBdaInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+            .buffer = gpuBuff.vkBuffer
+        };
+        gpuBuff.deviceAddress = vkGetBufferDeviceAddress(m_device,&vertBdaInfo);
+    }
+    return gpuBuff;
+}
+
+void Application::submitTransientCommandBuffer(VkCommandBuffer commandBuffer) {
+    vkEndCommandBuffer(commandBuffer);
+    VkSubmitInfo submitInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffer
+    };
+
+    vkQueueSubmit(gfxQueue,1,&submitInfo,nullptr);
+    vkQueueWaitIdle(gfxQueue);
+    vkFreeCommandBuffers(m_device,m_commandPool,1,&commandBuffer);
 }
 
 bool Application::createVulkanInstance() {
@@ -142,6 +346,7 @@ bool Application::createVulkanInstance() {
         return false;
     }
     volkLoadInstance(vulkanInstance);
+
     return true;
 }
 
@@ -224,7 +429,7 @@ VkCommandBuffer Application::startTransientCommandBuffer() {
     };
 
     VkCommandBuffer commandBuffer = nullptr;
-    if (vkAllocateCommandBuffers(device, &cmdAllocInfo,&commandBuffer ) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(m_device, &cmdAllocInfo,&commandBuffer ) != VK_SUCCESS) {
         showError("Unable to allocate command buffer");
         return nullptr;
     }
@@ -237,25 +442,25 @@ VkCommandBuffer Application::startTransientCommandBuffer() {
     };
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         showError("Unable to begin command buffer");
-        vkFreeCommandBuffers(device, m_commandPool,1,&commandBuffer);
+        vkFreeCommandBuffers(m_device, m_commandPool,1,&commandBuffer);
         return nullptr;
     }
     return commandBuffer;
 }
 
 bool Application::createCommandBuffers() {
+    VkCommandPoolCreateInfo transPoolInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+          .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+          .queueFamilyIndex = gfxQueueFamIdx
+      };
+    if (vkCreateCommandPool(m_device,&transPoolInfo,nullptr,&m_commandPool) != VK_SUCCESS) {
+        showError("Unable to create transient command buffer pool");
+        return false;
+    }
+
     // Iterate over Frames in Flight and create a command pool and command buffer for each one
     for (FrameResources &res : frameResources) {
-
-        VkCommandPoolCreateInfo transPoolInfo{
-          .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-            .queueFamilyIndex = gfxQueueFamIdx
-        };
-        if (vkCreateCommandPool(device,&transPoolInfo,nullptr,&m_commandPool) != VK_SUCCESS) {
-            showError("Unable to create transient command buffer pool");
-            return false;
-        }
 
         VkCommandPoolCreateInfo poolInfo
         {
@@ -263,7 +468,7 @@ bool Application::createCommandBuffers() {
             .queueFamilyIndex = gfxQueueFamIdx
         };
 
-        if (vkCreateCommandPool(device, &poolInfo, nullptr, &res.commandPool) != VK_SUCCESS) {
+        if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &res.commandPool) != VK_SUCCESS) {
             showError("Unable to create command buffer pool");
             return false;
         }
@@ -278,7 +483,7 @@ bool Application::createCommandBuffers() {
             .commandBufferCount = 1,
         };
 
-        if (vkAllocateCommandBuffers(device,&cmdAllocInfo,&res.commandBuffer) != VK_SUCCESS) {
+        if (vkAllocateCommandBuffers(m_device,&cmdAllocInfo,&res.commandBuffer) != VK_SUCCESS) {
             showError("Unable to allocate command buffer");
             return false;
         }
@@ -303,7 +508,7 @@ bool Application::createSyncResources() {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         .pNext = &semaphoreTypeInfo
     };
-    if (vkCreateSemaphore(device,&semaphoreInfo,nullptr,&timelineSemaphore) != VK_SUCCESS) {
+    if (vkCreateSemaphore(m_device,&semaphoreInfo,nullptr,&timelineSemaphore) != VK_SUCCESS) {
         showError("Failed to create timeline semaphore");
         return false;
     }
@@ -311,7 +516,7 @@ bool Application::createSyncResources() {
     // per frame image-require semaphore.
     for (FrameResources &res : frameResources) {
         VkSemaphoreCreateInfo semaphoreInfo {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        if (vkCreateSemaphore(device,&semaphoreInfo,nullptr,&res.imageAcquiredSemaphore) != VK_SUCCESS) {
+        if (vkCreateSemaphore(m_device,&semaphoreInfo,nullptr,&res.imageAcquiredSemaphore) != VK_SUCCESS) {
             showError("Failed to create per-frame image acquired semaphore");
             return false;
         }
@@ -346,7 +551,7 @@ VkPipeline Application::createGraphicsPipeline() {
                                     // TODO/NOTE: THIS WILL CHANGE
     };
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         showError("Failed to create the vk pipeline layout");
         return nullptr;
     };
@@ -488,7 +693,7 @@ VkPipeline Application::createGraphicsPipeline() {
 
     VkPipeline newPipeline;
 
-    if (vkCreateGraphicsPipelines(device,nullptr,1,&pipelineInfo,nullptr,&newPipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_device,nullptr,1,&pipelineInfo,nullptr,&newPipeline) != VK_SUCCESS) {
         showError("Failed to create the graphics pipeline");
         return nullptr;
     }
@@ -547,7 +752,7 @@ VkShaderModule Application::createShaderModule(const std::string &fileName,
     };
 
     VkShaderModule shaderModule = nullptr;
-    if (vkCreateShaderModule(device,&shaderModuleCreateInfo,nullptr,&shaderModule) != VK_SUCCESS) {
+    if (vkCreateShaderModule(m_device,&shaderModuleCreateInfo,nullptr,&shaderModule) != VK_SUCCESS) {
         showError("Failed to create shader module");
         return nullptr;
     }
@@ -602,16 +807,16 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
         //.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR //vsync off mode
     };
 
-    if (vkCreateSwapchainKHR(device,&swapchainCreateInfo,nullptr,&swapchain) != VK_SUCCESS) {
+    if (vkCreateSwapchainKHR(m_device,&swapchainCreateInfo,nullptr,&swapchain) != VK_SUCCESS) {
         showError("Error creating swapchain");
         return false;
     }
 
     // ask for the swapchain images
     uint32_t imageCount = 0;
-    vkGetSwapchainImagesKHR(device,swapchain,&imageCount,nullptr);
+    vkGetSwapchainImagesKHR(m_device,swapchain,&imageCount,nullptr);
     swapchainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(device,swapchain,&imageCount,swapchainImages.data());
+    vkGetSwapchainImagesKHR(m_device,swapchain,&imageCount,swapchainImages.data());
     swapchainImageViews.resize(imageCount);
 
     // now create swapchain image views
@@ -631,7 +836,7 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
               .layerCount = 1
             }
         };
-        if (vkCreateImageView(device,&imgViewInfo,nullptr,&swapchainImageViews[i]) != VK_SUCCESS) {
+        if (vkCreateImageView(m_device,&imgViewInfo,nullptr,&swapchainImageViews[i]) != VK_SUCCESS) {
             showError("Error creating swapchain image view");
             return false;
         }
@@ -644,7 +849,7 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
     for (VkSemaphore &semaphore : renderCompleteSemaphores) {
         VkSemaphoreCreateInfo semInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 
-        if (vkCreateSemaphore(device,&semInfo,nullptr,&semaphore) != VK_SUCCESS) {
+        if (vkCreateSemaphore(m_device,&semInfo,nullptr,&semaphore) != VK_SUCCESS) {
             showError("Error creating the ''render-complete'' semaphore");
             return false;
         }
@@ -671,7 +876,7 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
       .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
         .usage = VMA_MEMORY_USAGE_AUTO
     };
-    if (vmaCreateImage(vmaAllocator,&depthCreateInfo,&allocInfo,&depthImage,&depthImageAllocation,nullptr) != VK_SUCCESS)
+    if (vmaCreateImage(m_vmaAllocator,&depthCreateInfo,&allocInfo,&depthImage,&depthImageAllocation,nullptr) != VK_SUCCESS)
     {
         showError("Error creating depth buffer image");
         return false;
@@ -688,7 +893,7 @@ bool Application::createSwapchain(uint32_t width, uint32_t height) {
     };
 
     // Create the Image View for the depth buffer
-    if (vkCreateImageView(device,&depthImgViewInfo,nullptr,&depthImageView) != VK_SUCCESS) {
+    if (vkCreateImageView(m_device,&depthImgViewInfo,nullptr,&depthImageView) != VK_SUCCESS) {
         showError("Error creating depth image view");
         return false;
     }
@@ -706,7 +911,7 @@ bool Application::initializeVMA() {
         // This will allow us to access vram directly using shaders
         .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .physicalDevice = physicalDevice,
-        .device = device,
+        .device = m_device,
         .pVulkanFunctions = &vmaFuncInfo,
         .instance = vulkanInstance,
         .vulkanApiVersion = VulkanVersion
@@ -715,7 +920,7 @@ bool Application::initializeVMA() {
     // import directly from volk
     vmaImportVulkanFunctionsFromVolk(&vmaAllocInfo,&vmaFuncInfo);
 
-    if (vmaCreateAllocator(&vmaAllocInfo,&vmaAllocator) != VK_SUCCESS) {
+    if (vmaCreateAllocator(&vmaAllocInfo,&m_vmaAllocator) != VK_SUCCESS) {
         return false;
     }
     return true;
@@ -797,12 +1002,12 @@ bool Application::createDevice(VkPhysicalDevice phyiscalDevice) {
         // result in a compile error as the types wont match
     };
 
-    if (vkCreateDevice(physicalDevice, &devCreateInfo,nullptr,&device) != VK_SUCCESS) {
+    if (vkCreateDevice(physicalDevice, &devCreateInfo,nullptr,&m_device) != VK_SUCCESS) {
         return false;
     }
 
     // Grab the VkQueue object family
-    vkGetDeviceQueue(device, gfxQueueFamIdx,0,&gfxQueue);
+    vkGetDeviceQueue(m_device, gfxQueueFamIdx,0,&gfxQueue);
     if (!gfxQueue) {
         showError("Could not get the graphics queue");
         return false;
@@ -894,7 +1099,7 @@ bool Application::createSurface() {
 void Application::render() {
     // Check if swapchain is still valid
     if (requireSwapchainRecreate) {
-        vkDeviceWaitIdle(device);
+        vkDeviceWaitIdle(m_device);
         destroySwapchain();
         createSwapchain(width,height);
         requireSwapchainRecreate = false;
@@ -921,20 +1126,20 @@ void Application::render() {
         .pValues = &waitValue
     };
 
-    vkWaitSemaphores(device,&waitInfo,UINT64_MAX);
+    vkWaitSemaphores(m_device,&waitInfo,UINT64_MAX);
 
     // Now we can start recording commands as it is safe
 
     //Grab current  frame resourcves obj and reset the command pool to record a fresh set of commands for this frame
     FrameResources &res = frameResources[frameResIndex];
-    vkResetCommandPool(device,res.commandPool,0);
+    vkResetCommandPool(m_device,res.commandPool,0);
 
     // Get resources for this frame. We need the binary image acquired semaphore
     VkSemaphore imageAcquiredSemaphore = frameResources[frameResIndex].imageAcquiredSemaphore;
 
     uint32_t imageIndex = 0;
                                 // device, swapchain, timeout val, binary semaphore to signal when image is ready to be drawn on
-    VkResult acquireResult = vkAcquireNextImageKHR(device,swapchain,UINT64_MAX,
+    VkResult acquireResult = vkAcquireNextImageKHR(m_device,swapchain,UINT64_MAX,
                                                     imageAcquiredSemaphore,VK_NULL_HANDLE,&imageIndex);
 
     //handle resize and out of date images - maybe swapchain recreate
@@ -1157,48 +1362,48 @@ void Application::shutdown() {
     std::cout << "Cleaning Up and shutting down" << std::endl;
 
     //Flush GPU
-    vkDeviceWaitIdle(device);
+    vkDeviceWaitIdle(m_device);
 
     // frame and sync object cleanup
     if (timelineSemaphore) {
-        vkDestroySemaphore(device, timelineSemaphore, nullptr);
+        vkDestroySemaphore(m_device, timelineSemaphore, nullptr);
     }
     for (auto &res : frameResources) {
-        vkDestroySemaphore(device, res.imageAcquiredSemaphore, nullptr);
-        vkDestroyCommandPool(device, res.commandPool, nullptr);
+        vkDestroySemaphore(m_device, res.imageAcquiredSemaphore, nullptr);
+        vkDestroyCommandPool(m_device, res.commandPool, nullptr);
     }
-    vkDestroyCommandPool(device, m_commandPool, nullptr);
+    vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
     //pipeline cleanup
     if (pipelineLayout) {
-        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        vkDestroyPipelineLayout(m_device, pipelineLayout, nullptr);
     }
     if (pipeline) {
-        vkDestroyPipeline(device, pipeline, nullptr);
+        vkDestroyPipeline(m_device, pipeline, nullptr);
     }
 
     //cleanup shaders
     if (vertexShaderModule) {
-        vkDestroyShaderModule(device, vertexShaderModule, nullptr);
+        vkDestroyShaderModule(m_device, vertexShaderModule, nullptr);
     }
     if (fragmentShaderModule) {
-        vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
+        vkDestroyShaderModule(m_device, fragmentShaderModule, nullptr);
     }
 
     //destroy swapchain
     destroySwapchain();
 
     // VMA
-    if (vmaAllocator) {
-        vmaDestroyAllocator(vmaAllocator);
+    if (m_vmaAllocator) {
+        vmaDestroyAllocator(m_vmaAllocator);
     }
 
     // cleanup Vulkan
     if (surface) {
         vkDestroySurfaceKHR(vulkanInstance, surface, nullptr);
     }
-    if (device) {
-        vkDestroyDevice(device, nullptr);
+    if (m_device) {
+        vkDestroyDevice(m_device, nullptr);
     }
     if (vulkanInstance) {
         vkDestroyInstance(vulkanInstance, nullptr);
@@ -1213,25 +1418,25 @@ void Application::shutdown() {
 }
 void Application::destroySwapchain() {
     for (VkImageView swapchainImageView : swapchainImageViews) {
-        vkDestroyImageView(device, swapchainImageView, nullptr);
+        vkDestroyImageView(m_device, swapchainImageView, nullptr);
     }
     swapchainImageViews.clear();
 
     // destroy semaphores
     for (VkSemaphore &semaphore : renderCompleteSemaphores) {
-        vkDestroySemaphore(device, semaphore, nullptr);
+        vkDestroySemaphore(m_device, semaphore, nullptr);
     }
     renderCompleteSemaphores.clear();
 
     if (swapchain) {
-        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        vkDestroySwapchainKHR(m_device, swapchain, nullptr);
         swapchain = nullptr;
     }
 
     // Destroy Depth Buffer
     if (depthImageView) {
-        vkDestroyImageView(device, depthImageView, nullptr);
-        vmaDestroyImage(vmaAllocator,depthImage,depthImageAllocation);
+        vkDestroyImageView(m_device, depthImageView, nullptr);
+        vmaDestroyImage(m_vmaAllocator,depthImage,depthImageAllocation);
         depthImageView = nullptr;
     }
 }

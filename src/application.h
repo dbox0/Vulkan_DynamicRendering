@@ -6,9 +6,12 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <array>
+#include <vk_mem_alloc.h>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <shaderc/shaderc.hpp>
+#include "structs.h"
 
 struct SDL_Window;
 struct VmaAllocator_T;
@@ -16,18 +19,41 @@ typedef struct VmaAllocator_T* VmaAllocator;
 struct VmaAllocation_T;
 typedef struct VmaAllocation_T* VmaAllocation;
 
-struct FrameResources {
+
+struct FrameConstants {
+    uint64_t vertexBufferAddress = 0;
+    uint64_t materialBufferAddress = 0;
+    uint64_t renderItemsAddress = 0;
+};
+
+
+struct RenderItem
+{
+    glm::mat4 wvp;
+    glm::mat4 worldMatrix;
+    uint32_t materialIndex = 0;
+};
+
+struct FrameResources
+{
     VkCommandPool commandPool = nullptr;
     VkCommandBuffer commandBuffer = nullptr;
     VkSemaphore imageAcquiredSemaphore = nullptr;
+    VkDescriptorSet descSet = nullptr;
+    GPUBuffer indirectDrawBuffer;
+    GPUBuffer renderItemBuffer;
+    VkDrawIndexedIndirectCommand *indirectDrawPtr = nullptr;
+    RenderItem *renderItemPtr = nullptr;
 };
-
 
 class Application {
     constexpr static uint32_t VulkanVersion{VK_API_VERSION_1_4};
     constexpr static uint32_t MaxFramesInFlight{2};
     constexpr static VkFormat swapchainFormat{VK_FORMAT_B8G8R8A8_SRGB};
     constexpr static VkFormat depthFormat{VK_FORMAT_D32_SFLOAT};
+
+
+
 
     // ================================================================================//
     //SDL
@@ -42,9 +68,9 @@ class Application {
     // Vulkan CORE
     VkInstance vulkanInstance = nullptr;
     VkPhysicalDevice physicalDevice = nullptr;
-    VkDevice device = nullptr;
+    VkDevice m_device = nullptr;
     VkSurfaceKHR surface = nullptr;
-    VmaAllocator vmaAllocator = nullptr;
+    VmaAllocator m_vmaAllocator = nullptr;
 
     // ================================================================================//
     // Queue
@@ -79,6 +105,22 @@ class Application {
     VkSemaphore timelineSemaphore = nullptr;
     std::array<FrameResources, MaxFramesInFlight> frameResources;
 
+
+    std::vector<Vertex> m_vertices;
+    std::vector<uint32_t> m_indices;
+
+    // GPU resources
+    uint32_t m_purplePixelImageId = 0;
+    uint32_t m_vertexBufferId = 0;
+    uint32_t m_indexBufferId = 0;
+    uint32_t m_matBufferId = 0;
+
+    std::vector<GPUImage> m_images;
+    std::vector<VkSampler> m_samplers;
+    std::vector<Texture> m_textures;
+    std::vector<GPUBuffer> m_GpuBuffers;
+    std::vector<Material> m_materials;
+
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
       VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
       VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -101,10 +143,14 @@ class Application {
     VkPipeline createGraphicsPipeline();
     bool createSyncResources();
     bool createCommandBuffers();
+    void submitTransientCommandBuffer(VkCommandBuffer commandBuffer);
     VkCommandBuffer startTransientCommandBuffer();
     void render();
     VkCommandPool m_commandPool;
+    std::pair<uint32_t, GPUBuffer> createImage(VkCommandBuffer commandBuffer, unsigned char *imageData, uint32_t width, uint32_t height, int channels);
 
+    GPUBuffer createBuffer(VkBufferUsageFlags usage, size_t byteSize, bool mappable, VmaMemoryUsage memoryUsage);
+    void mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffset, void *data, size_t byteSize);
 
 public:
     bool initialize();
