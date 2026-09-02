@@ -6,12 +6,14 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <array>
+#include <filesystem>
 #include <vk_mem_alloc.h>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <shaderc/shaderc.hpp>
 #include "structs.h"
+#include "external/tiny_gltf_v3.h"
 
 struct SDL_Window;
 struct VmaAllocator_T;
@@ -151,6 +153,14 @@ class Application {
 
     GPUBuffer createBuffer(VkBufferUsageFlags usage, size_t byteSize, bool mappable, VmaMemoryUsage memoryUsage);
     void mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffset, void *data, size_t byteSize);
+    void loadGltf(const std::string &filepath);
+    std::vector<Image> loadImages(const tg3_model &model, const std::filesystem::path &imageDir);
+    std::vector<uint32_t> uploadImages(const std::vector<Image> &images);
+
+    std::vector<uint32_t> loadSamplers(const tg3_model &model);
+    std::vector<uint32_t> loadTextures(const tg3_model &model,const std::vector<uint32_t> imageIds, std::vector<uint32_t> samplerIds);
+    std::vector<uint32_t> loadMaterials(const tg3_model &model,const std::vector<uint32_t> textureIds);
+    std::vector<uint32_t> loadMeshes(const tg3_model &model, const std::vector<uint32_t> materialIds);
 
 public:
     bool initialize();

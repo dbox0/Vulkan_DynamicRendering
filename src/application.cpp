@@ -8,6 +8,7 @@
 #define VOLK_IMPLEMENTATION
 #include <volk.h>
 #define VMA_IMPLEMENTATION
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <vk_mem_alloc.h>
@@ -15,7 +16,7 @@
 #include "external/tiny_gltf_v3.h"
 #include "external/stb_image.h"
 #include "structs.h"
-
+#include <print>
 
 
 void Application::showError(const std::string &errorMessasge) const
@@ -87,9 +88,174 @@ bool Application::loadData() {
     m_purplePixelImageId = purpleImageId;
     submitTransientCommandBuffer(debugImgCmdBuff);
     vmaDestroyBuffer(m_vmaAllocator,purpleStagingBuffer.vkBuffer,purpleStagingBuffer.allocation);
+
+    //fallback TexSampler
+
+    VkSamplerCreateInfo samplerInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .compareEnable = VK_FALSE
+    };
+    VkSampler sampler = nullptr;
+    if (vkCreateSampler(m_device,&samplerInfo,nullptr,&sampler) != VK_SUCCESS) {
+        showError("Unable to create texture sampler for the fallback Texture");
+        return false;
+    }
+    m_samplers.push_back(sampler);
+    uint32_t purpleSamplerId = m_samplers.size();
+
+    m_textures.push_back(Texture {.imageId = m_purplePixelImageId,.samplerId = purpleSamplerId});
+
+    // start loading Scene Data
+    loadGltf();
+
 }
 
+void Application::loadGltf(const std::string &filepath) {
+    if (!std::filesystem::exists(filepath)) {
+        std::cout <<"File does not exist " << filepath << std::endl;;
+        return;
+    }
 
+    std::cout << "Loading GLTF: " << filepath << std::endl;
+    //load and parse Gltf
+
+    tg3_model model;
+    tg3_parse_options opts;
+    tg3_error_stack errors;
+
+    tg3_parse_options_init(&opts);
+    tg3_error_stack_init(&errors);
+    tg3_error_code parseResult = tg3_parse_file(&model,&errors, filepath.c_str(),filepath.size(),&opts);
+
+    if (parseResult != TG3_OK) {
+        std::cout << "Error Parsing GLTF file. Errors found:\n";
+        for (int i = 0; i < errors.count; i++) {
+            std::cout << errors.entries[i].message << std::endl;
+        }
+        tg3_error_stack_free(&errors);
+        return;
+    }
+    tg3_error_stack_free(&errors);
+
+    std::filesystem::path imageDir = std::filesystem::path(filepath).parent_path();
+    std::vector<Image> images = loadImages(model,imageDir); // into RAM
+    std::vector<uint32_t> imageIds = uploadImages(images);  // into VRAM
+
+    // cleanup image memory after uploading to VRAM
+
+    for (const Image &image : images) {
+        stbi_image_free(image.data);
+    }
+
+    std::vector<uint32_t> samplerIds = loadSamplers(model);
+    std::vector<uint32_t> textureIds = loadTextures(model,imageIds,samplerIds);
+    std::vector<uint32_t> materialIds = loadMaterials(model, textureIds);
+    std::vector<uint32_t> meshids = loadMeshes(model,materialIds);
+}
+
+std::vector<uint32_t> Application::loadSamplers(const tg3_model &model)
+{
+	std::vector<uint32_t> samplerIds(model.samplers_count);
+	for (int i = 0; i < model.samplers_count; ++i)
+	{
+		const tg3_sampler &tg3Sampler = model.samplers[i];
+		static const std::unordered_map<int32_t, std::tuple<VkFilter, VkSamplerMipmapMode, float>> filterMap
+		{
+			{ TG3_TEXTURE_FILTER_NEAREST, { VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, 0.25f } },
+			{ TG3_TEXTURE_FILTER_LINEAR, { VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, 0.25f } },
+			{ TG3_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR, { VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_LOD_CLAMP_NONE } },
+			{ TG3_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST, { VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_LOD_CLAMP_NONE } },
+			{ TG3_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR, { VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_LOD_CLAMP_NONE } },
+			{ TG3_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST, { VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_LOD_CLAMP_NONE } }
+		};
+		static const std::unordered_map<int32_t, VkSamplerAddressMode> wrapMap
+		{
+			{ TG3_TEXTURE_WRAP_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT },
+			{ TG3_TEXTURE_WRAP_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE },
+			{ TG3_TEXTURE_WRAP_MIRRORED_REPEAT, VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT }
+		};
+
+		VkSamplerCreateInfo samplerInfo
+		{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = (tg3Sampler.mag_filter == -1) ? VK_FILTER_LINEAR : std::get<0>(filterMap.at(tg3Sampler.mag_filter)),
+			.minFilter = (tg3Sampler.min_filter == -1) ? VK_FILTER_LINEAR : std::get<0>(filterMap.at(tg3Sampler.min_filter)),
+			.mipmapMode = (tg3Sampler.min_filter == -1) ? VK_SAMPLER_MIPMAP_MODE_LINEAR : std::get<1>(filterMap.at(tg3Sampler.min_filter)),
+			.addressModeU = (tg3Sampler.wrap_s == -1) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : wrapMap.at(tg3Sampler.wrap_s),
+			.addressModeV = (tg3Sampler.wrap_t == -1) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : wrapMap.at(tg3Sampler.wrap_t),
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+			.compareEnable = VK_FALSE,
+			.minLod = 0.0f,
+			.maxLod = (tg3Sampler.min_filter == -1) ? VK_LOD_CLAMP_NONE : std::get<2>(filterMap.at(tg3Sampler.min_filter))
+		};
+
+		VkSampler sampler = nullptr;
+		if (vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
+		{
+			showError("Unable to create texture sampler");
+			samplerIds[i] = m_textures[0].samplerId; // fallback texture's sampler
+		}
+		else
+		{
+			m_samplers.push_back(sampler);
+			samplerIds[i] = m_samplers.size();
+		}
+	}
+	return samplerIds;
+}
+std::vector<Image> Application::loadImages(const tg3_model &model, const std::filesystem::path &imageDir) {
+
+    std::vector<Image> images(model.images_count);
+    for (int i =0; i< model.images_count; ++i) {
+        Image &img = images[i];
+        std::filesystem::path imagePath = imageDir / model.images[i].uri.data;
+        std::cout << "Loading Image " << i+1 << " / " << model.images_count << ": " << model.images[i].uri.data << "\n";
+        img.data = stbi_load(imagePath.string().c_str(), &img.width, &img.height, &img.channels, 4);
+
+        if (!img.data) {
+            showError("Failed to load image :" + imagePath.string());
+        }
+    }
+    return images;
+
+
+    //import scene nodes
+
+   // const tg3_scene *scene = &model.scenes[model.default_scene != -1 ? model.default_scene : 0];
+}
+
+std::vector<uint32_t> Application::uploadImages(const std::vector<Image> &images) {
+    VkCommandBuffer commandBuffer = startTransientCommandBuffer();
+    std::vector<GPUBuffer> stagingBuffers;
+    stagingBuffers.reserve(images.size());
+
+    // upload the images to GPU Textures
+
+    std::vector<uint32_t> imageIds(images.size());
+    for (int i = 0; i < images.size(); ++i) {
+        const Image &image = images[i];
+        if (image.data) {
+            auto [imageId, stagingTexBuffer] = createImage(commandBuffer, image.data,image.width,image.height,4);
+            imageIds[i] = imageId;
+            stagingBuffers.push_back(stagingTexBuffer);
+        } else {
+            imageIds[i] = m_purplePixelImageId; // fallback to missing Tex
+        }
+    }
+    submitTransientCommandBuffer(commandBuffer);
+
+    //cleanup
+    for (GPUBuffer &stageBuff : stagingBuffers) {
+        vmaDestroyBuffer(m_vmaAllocator,stageBuff.vkBuffer,stageBuff.allocation);
+    }
+    return imageIds;
+}
 std::pair<uint32_t, GPUBuffer> Application::createImage(VkCommandBuffer commandBuffer, unsigned char *imageData,
                                 uint32_t width, uint32_t height, int channels)
 {
@@ -283,6 +449,8 @@ void Application::submitTransientCommandBuffer(VkCommandBuffer commandBuffer) {
     };
 
     vkQueueSubmit(gfxQueue,1,&submitInfo,nullptr);
+
+    // This is not great for realtime.
     vkQueueWaitIdle(gfxQueue);
     vkFreeCommandBuffers(m_device,m_commandPool,1,&commandBuffer);
 }
