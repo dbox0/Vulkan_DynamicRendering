@@ -15,12 +15,18 @@ class Node
     bool m_dirty = true;
 
 public:
-    uint32_t mehsId         = 0;
+    uint32_t meshId         = 0;
     uint32_t parentId       = 0;
-    uint32_t nextSibling    = 0;
+    uint32_t nextSiblingId  = 0;
     uint32_t firstChildId   = 0;
 
     glm::vec3 getTranslation() const { return m_translation;}
+
+    void setTranslation(glm::vec3 vec) {
+        this->m_translation = vec;
+        m_dirty = true;
+    }
+
     glm::quat getRotation() const { return m_rotation;}
 
     void setRotation(const glm::quat& rotation) {
@@ -48,10 +54,12 @@ public:
     void setTransform(glm::mat4 &transform) {
         glm::vec3 skew;
         glm::vec4 perspective;
-         glm::decompose(transform,m_scale,m_rotation,m_translation,skew,perspective);
+        glm::decompose(transform, m_scale, m_rotation, m_translation, skew, perspective);
 
         m_transform = transform;
         m_dirty = false;
     }
+
+    v
 };
 

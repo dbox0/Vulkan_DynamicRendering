@@ -20,10 +20,10 @@ add_executable(vulkanapp
         src/Math/Transform.h
         src/Math/Transform.cpp
         src/Math/LocalFrame.h
-        src/Geometry/Node.cpp
         src/Geometry/Node.h
-        src/Geometry/NodeWorld.cpp
         src/Geometry/NodeWorld.h
+        src/Geometry/NodePool.cpp
+        src/Geometry/NodePool.h
 )
 
 set(CMAKE_CXX_STANDARD 26)

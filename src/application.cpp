@@ -54,6 +54,9 @@ bool Application::initialize() {
             showError("Error creating window");
             return false;
         }
+
+        m_nodeWorld.initialize(1024);
+
         if (!initializeVulkan()) {
             return false;
         }
@@ -163,9 +166,75 @@ void Application::loadGltf(const std::string &filepath) {
 
     const tg3_scene *scene = &model.scenes[model.default_scene != -1 ? model.default_scene : 0];
 
-    m_rootNodes.reserve(m_rootNodes.size() + scene->nodes_count);
+    for (int i = 0; i < scene->nodes_count; i++) {
+        uint32_t nodeId = importNode(m_nodeWorld,model,scene->nodes[i],0,m_lastRootNodeId,meshIds);
+
+        if (!m_rootNodeId) {
+            m_rootNodeId = nodeId;
+            m_lastRootNodeId = nodeId;
+        }
+        else {
+            m_lastRootNodeId = nodeId;
+        }
+    }
+    tg3_model_free(&model);
+    std::cout << "GLTF loaded successfully" << std::endl;
 }
 
+uint32_t Application::importNode(NodeWorld &nodeWorld ,const tg3_model &model,int32_t nodeIndex,uint32_t parentId,uint32_t prevSiblingId, std::vector<uint32_t> &meshIds)
+{
+    const tg3_node &tg3Node = model.nodes[nodeIndex];
+
+    // Create new node
+    auto [node,nodeId] = nodeWorld.createNode();
+    node.parentId = parentId;
+
+    // Set Transform properties
+    if (tg3Node.has_matrix) {
+        glm::mat4 transform(1.0f);
+        float *transPtr = glm::value_ptr(transform);
+
+        //iterate 4x4 matrix values
+        for (int i =0 ; i < 16; ++i) {
+            transPtr[i] = static_cast<float>(tg3Node.matrix[i]);
+        }
+        node.setTransform(transform);
+    }
+
+    else {
+        glm::vec3 translation(tg3Node.translation[0], tg3Node.translation[1], tg3Node.translation[2]);
+
+        // GLTF: X,Y,Z,W | GLM: W,X,Y,Z
+        glm::quat rotation(tg3Node.rotation[3],tg3Node.rotation[0],tg3Node.rotation[1],tg3Node.rotation[2]);
+        glm::vec3 scale(tg3Node.scale[0],tg3Node.scale[1],tg3Node.scale[2]);
+
+        node.setTranslation(translation);
+        node.setRotation(rotation);
+        node.setScale(scale);
+    }
+
+
+    // Check for mesh
+    if (tg3Node.mesh != -1) {
+        node.meshId = meshIds[tg3Node.mesh];
+    }
+
+    // Previous sibling should point to this node
+    if (prevSiblingId) {
+        nodeWorld.getNode(prevSiblingId).nextSiblingId = nodeId;
+    }
+
+    uint32_t lastChildId = 0;
+    for (int i = 0; i < tg3Node.children_count; ++i) {
+        int32_t childIndex = tg3Node.children[i];
+        lastChildId = importNode(nodeWorld, model, childIndex,nodeId, lastChildId, meshIds);
+
+        if (!node.firstChildId) {
+            node.firstChildId = lastChildId;
+        }
+    }
+    return nodeId;
+}
 
 std::vector<uint32_t> Application::loadMeshes(const tg3_model &model, const std::vector<uint32_t> &materialIds)
 {

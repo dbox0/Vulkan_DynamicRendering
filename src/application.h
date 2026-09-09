@@ -15,6 +15,10 @@
 #include "structs.h"
 #include "external/tiny_gltf_v3.h"
 #include "Geometry/Node.h"
+#include "Geometry/NodeWorld.h"
+#include <glm/gtc/type_ptr.hpp>
+#include "Geometry/Node.h"
+#include "Geometry/NodeWorld.h"
 
 struct SDL_Window;
 struct VmaAllocator_T;
@@ -116,7 +120,9 @@ class Application {
     size_t m_idxOffset = 0;
 
     // Scene Nodes
-    
+    NodeWorld m_nodeWorld;
+    uint32_t m_lastRootNodeId = 0;
+    uint32_t m_rootNodeId = 0;
 
     // GPU resources
     uint32_t m_purplePixelImageId = 0;
@@ -161,6 +167,9 @@ class Application {
     GPUBuffer createBuffer(VkBufferUsageFlags usage, size_t byteSize, bool mappable, VmaMemoryUsage memoryUsage);
     void mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffset, void *data, size_t byteSize);
     void loadGltf(const std::string &filepath);
+
+    uint32_t importNode(NodeWorld &nodeworld ,const tg3_model &model,int32_t nodeIndex,uint32_t parentId,uint32_t prevSiblingId, std::vector<uint32_t> &meshIds);
+
     std::vector<Image> loadImages(const tg3_model &model, const std::filesystem::path &imageDir);
     std::vector<uint32_t> uploadImages(const std::vector<Image> &images);
 

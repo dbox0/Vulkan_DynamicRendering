@@ -1,5 +1,6 @@
 #pragma once
 #include "Node.h"
+#include <vector>
 
 
 class NodeWorld {
@@ -7,6 +8,7 @@ class NodeWorld {
     std::vector<Node> m_nodes;
     size_t m_maxNodes = 0;
 
+public:
     void initialize(const size_t maxNodes) {
         m_maxNodes = maxNodes;
         m_nodes.reserve(m_maxNodes);
