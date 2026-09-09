@@ -14,6 +14,7 @@
 #include <shaderc/shaderc.hpp>
 #include "structs.h"
 #include "external/tiny_gltf_v3.h"
+#include "Geometry/Node.h"
 
 struct SDL_Window;
 struct VmaAllocator_T;
@@ -107,9 +108,15 @@ class Application {
     VkSemaphore timelineSemaphore = nullptr;
     std::array<FrameResources, MaxFramesInFlight> frameResources;
 
-
+    // Geometry: Global Vertex and Index Buffer
+    std::vector<Mesh> m_meshes;
     std::vector<Vertex> m_vertices;
     std::vector<uint32_t> m_indices;
+    size_t m_vertOffset = 0;
+    size_t m_idxOffset = 0;
+
+    // Scene Nodes
+    
 
     // GPU resources
     uint32_t m_purplePixelImageId = 0;
@@ -158,9 +165,9 @@ class Application {
     std::vector<uint32_t> uploadImages(const std::vector<Image> &images);
 
     std::vector<uint32_t> loadSamplers(const tg3_model &model);
-    std::vector<uint32_t> loadTextures(const tg3_model &model,const std::vector<uint32_t> imageIds, std::vector<uint32_t> samplerIds);
-    std::vector<uint32_t> loadMaterials(const tg3_model &model,const std::vector<uint32_t> textureIds);
-    std::vector<uint32_t> loadMeshes(const tg3_model &model, const std::vector<uint32_t> materialIds);
+    std::vector<uint32_t> loadTextures(const tg3_model &model,const std::vector<uint32_t> &imageIds, const std::vector<uint32_t> &samplerIds);
+    std::vector<uint32_t> loadMaterials(const tg3_model &model,const std::vector<uint32_t> &textureIds);
+    std::vector<uint32_t> loadMeshes(const tg3_model &model, const std::vector<uint32_t> &materialIds);
 
 public:
     bool initialize();

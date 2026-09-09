@@ -1,8 +1,10 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <vector>
+#include <glm/detail/type_quat.hpp>
 
 struct SubMesh;
+
 struct Vertex
 {
     glm::vec3 position = glm::vec3(0.0f);

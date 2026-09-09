@@ -16,7 +16,8 @@
 #include "external/tiny_gltf_v3.h"
 #include "external/stb_image.h"
 #include "structs.h"
-#include <print>
+#include "common/constants.h"
+
 
 
 void Application::showError(const std::string &errorMessasge) const
@@ -156,8 +157,158 @@ void Application::loadGltf(const std::string &filepath) {
     std::vector<uint32_t> samplerIds = loadSamplers(model);
     std::vector<uint32_t> textureIds = loadTextures(model,imageIds,samplerIds);
     std::vector<uint32_t> materialIds = loadMaterials(model, textureIds);
-    std::vector<uint32_t> meshids = loadMeshes(model,materialIds);
+    std::vector<uint32_t> meshIds = loadMeshes(model,materialIds);
+
+    // Scene Nodes
+
+    const tg3_scene *scene = &model.scenes[model.default_scene != -1 ? model.default_scene : 0];
+
+    m_rootNodes.reserve(m_rootNodes.size() + scene->nodes_count);
 }
+
+
+std::vector<uint32_t> Application::loadMeshes(const tg3_model &model, const std::vector<uint32_t> &materialIds)
+{
+    std::vector<uint32_t> meshIds(model.meshes_count);
+
+    for (int i = 0;i < model.meshes_count; ++i)
+    {
+        Mesh mesh;
+        const tg3_mesh *tg3mesh = &model.meshes[i];
+        mesh.name = tg3mesh -> name.data != nullptr ? tg3mesh -> name.data : "Unnamed mehs";
+
+        // Lambda : Copy GLTF attribute data copy for every attribute
+        auto writeAttribute = [this,&model]<typename T>(T Vertex::*member, const tg3_str_int_pair *attr)
+        {
+            const tg3_accessor *accessor = &model.accessors[attr->value];
+            const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
+            const tg3_buffer *buffer = &model.buffers[buffer_view->buffer];
+
+            const size_t bufferOffset = buffer_view->byte_offset + accessor->byte_offset;
+            const size_t stride =  buffer_view->byte_stride != 0 ? buffer_view->byte_stride : sizeof(T);
+
+            for (uint64_t index = 0; index < accessor->count; ++index) {
+                const size_t elementOffset = bufferOffset + index + stride;
+                const float *data = reinterpret_cast<const float *>(buffer->data.data + elementOffset);
+
+                if constexpr (std::is_same<T,glm::vec3>()) {
+                    m_vertices[m_vertOffset + index].*member = glm::vec3(data[0], data[1], data[2]);
+                } else if constexpr(std::is_same<T,glm::vec2>()) {
+                    m_vertices[m_vertOffset + index].*member = glm::vec2(data[0], data[1]);
+                }
+            }
+        };
+
+        // vertex data
+
+        mesh.subMeshes.resize(tg3mesh->primitives_count);
+        for (int u = 0; u < tg3mesh->primitives_count; ++u) {
+            const tg3_primitive *primitive = &tg3mesh->primitives[u];
+            mesh.subMeshes[u].materialId = materialIds[primitive->material];
+            mesh.subMeshes[u].vertexStart = m_vertOffset;
+
+            for (int v = 0; v < primitive->attributes_count; ++v) {
+
+                const tg3_str_int_pair *attr = &primitive->attributes[v];
+                if (strcmp(attr->key.data, "POSITION") == 0) {
+                    const tg3_accessor *accessor = &model.accessors[attr->value];
+                    assert(accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+                    assert(m_vertOffset + accessor->count <= m_vertices.size() && "Not enough space to load vertices");
+
+                    mesh.subMeshes[u].vertexCount = accessor->count;
+                    writeAttribute(&Vertex::position, attr);
+                } else if (strcmp(attr->key.data, "NORMAL") == 0)
+                {
+                    const tg3_accessor *accessor = &model.accessors[attr->value];
+                    assert(accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+                    writeAttribute(&Vertex::normal, attr);
+                } else if (strcmp(attr->key.data, "COLOR_0") == 0)
+                {
+                    const tg3_accessor *accessor = &model.accessors[attr->value];
+                    assert(accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+                    writeAttribute(&Vertex::color, attr);
+                }else if (strcmp(attr->key.data, "TEXCOORD_0") == 0)
+                {
+                    const tg3_accessor *accessor = &model.accessors[attr->value];
+                    assert(accessor->type == TG3_TYPE_VEC2 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+                    writeAttribute(&Vertex::uv, attr);
+                }
+            }
+            m_vertOffset += mesh.subMeshes[u].vertexCount;
+
+            if (primitive->indices != -1) {
+                const tg3_accessor *accessor = &model.accessors[primitive->indices];
+                const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
+                const tg3_buffer *buffer = &model.buffers[buffer_view->buffer];
+                assert(m_idxOffset + accessor->count <= m_vertices.size() && "Not enough space for indices");
+
+                mesh.subMeshes[u].indexStart = m_idxOffset;
+                mesh.subMeshes[u].indexCount = accessor->count;
+
+                if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT) {
+                    const uint32_t *buffData = reinterpret_cast<const uint32_t *>(buffer->data.data+ buffer_view->byte_offset+accessor->byte_offset);
+
+                    memcpy(&m_indices[m_idxOffset],buffData,accessor->count*sizeof(uint32_t));
+                } else if (accessor->component_type == TG3_COMPONENT_TYPE_SHORT) {
+                    const uint16_t *buffData = reinterpret_cast<const uint16_t *>(buffer->data.data+ buffer_view->byte_offset+accessor->byte_offset);
+
+                    for (uint64_t idx = 0; idx < accessor->count; ++idx) {
+                        m_indices[m_idxOffset+idx] = static_cast<uint32_t>(buffData[idx]);
+                    }
+                }
+                m_idxOffset += mesh.subMeshes[u].indexCount;
+            }
+        }
+        // std::move
+        m_meshes.push_back(std::move(mesh));
+        meshIds[i] = m_meshes.size();
+    }
+    return meshIds;
+}
+
+std::vector<uint32_t> Application::loadMaterials(const tg3_model &model, const std::vector<uint32_t> &textureIds)
+{
+    std::vector<uint32_t> materialIds(model.materials_count);
+    for (int i = 0; i < model.materials_count; ++i) {
+        const tg3_material *mat = &model.materials[i];
+        m_materials.push_back(Material
+            {
+                .baseColor = glm::vec4(
+                    mat->pbr_metallic_roughness.base_color_factor[0],
+                    mat->pbr_metallic_roughness.base_color_factor[1],
+                    mat->pbr_metallic_roughness.base_color_factor[2],
+                    mat->pbr_metallic_roughness.base_color_factor[4]
+                    ),
+
+                // albedo
+                .textureIndex = mat->pbr_metallic_roughness.base_color_texture.index != -1
+                    ? textureIds[mat->pbr_metallic_roughness.base_color_texture.index] -1
+                    : 0
+            });
+        materialIds[i] = materialIds.size();
+    }
+    return materialIds;
+}
+
+std::vector<uint32_t> Application::loadTextures(const tg3_model &model,
+                                                const std::vector<uint32_t> &imageIds,const std::vector<uint32_t> &samplerIds)
+{
+    assert(m_textures.size() + model.textures_count <= MaxTextures && "Exceeding max texture count");
+    std::vector<uint32_t> textureIds(model.textures_count);
+
+    for (int i = 0; i < model.textures_count; ++i) {
+        const tg3_texture &tex = model.textures[i];
+        m_textures.push_back(
+          Texture{
+            .imageId = imageIds[tex.source],
+            .samplerId = samplerIds[tex.sampler]
+          }
+        );
+        textureIds[i] = m_textures.size();
+    }
+    return textureIds;
+}
+
 
 std::vector<uint32_t> Application::loadSamplers(const tg3_model &model)
 {
@@ -165,6 +316,8 @@ std::vector<uint32_t> Application::loadSamplers(const tg3_model &model)
 	for (int i = 0; i < model.samplers_count; ++i)
 	{
 		const tg3_sampler &tg3Sampler = model.samplers[i];
+
+	    //mipmapping
 		static const std::unordered_map<int32_t, std::tuple<VkFilter, VkSamplerMipmapMode, float>> filterMap
 		{
 			{ TG3_TEXTURE_FILTER_NEAREST, { VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, 0.25f } },
@@ -174,6 +327,8 @@ std::vector<uint32_t> Application::loadSamplers(const tg3_model &model)
 			{ TG3_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR, { VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_LOD_CLAMP_NONE } },
 			{ TG3_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST, { VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_LOD_CLAMP_NONE } }
 		};
+
+	    // texture wrapping
 		static const std::unordered_map<int32_t, VkSamplerAddressMode> wrapMap
 		{
 			{ TG3_TEXTURE_WRAP_REPEAT, VK_SAMPLER_ADDRESS_MODE_REPEAT },
@@ -189,7 +344,7 @@ std::vector<uint32_t> Application::loadSamplers(const tg3_model &model)
 			.mipmapMode = (tg3Sampler.min_filter == -1) ? VK_SAMPLER_MIPMAP_MODE_LINEAR : std::get<1>(filterMap.at(tg3Sampler.min_filter)),
 			.addressModeU = (tg3Sampler.wrap_s == -1) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : wrapMap.at(tg3Sampler.wrap_s),
 			.addressModeV = (tg3Sampler.wrap_t == -1) ? VK_SAMPLER_ADDRESS_MODE_REPEAT : wrapMap.at(tg3Sampler.wrap_t),
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,     // for now: repeat, change later for 3d textures
 			.compareEnable = VK_FALSE,
 			.minLod = 0.0f,
 			.maxLod = (tg3Sampler.min_filter == -1) ? VK_LOD_CLAMP_NONE : std::get<2>(filterMap.at(tg3Sampler.min_filter))

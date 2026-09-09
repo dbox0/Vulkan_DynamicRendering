@@ -6,3 +6,4 @@
 #define EPSILON 1e-12
 #define SQRT_OF_TWO static_cast<float>(sqrt(2.0))
 #define SQRT_OF_HALF 1.0f / SQRT_OF_TWO
+#define MaxTextures 1024
