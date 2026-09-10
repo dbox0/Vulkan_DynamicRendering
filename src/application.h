@@ -138,6 +138,9 @@ class Application {
 
     // Descriptor Sets
     VkDescriptorSet m_globalDescSet;
+    VkDescriptorPool m_descriptorPool;
+    VkDescriptorSetLayout m_globalDescriptorSetLayout;
+
 
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -161,6 +164,9 @@ class Application {
     bool createShaders();
     VkPipeline createGraphicsPipeline();
     bool createSyncResources();
+
+    bool createDescriptorSets();
+
     bool createCommandBuffers();
     void submitTransientCommandBuffer(VkCommandBuffer commandBuffer);
     VkCommandBuffer startTransientCommandBuffer();

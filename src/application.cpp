@@ -220,9 +220,13 @@ void Application::updateTextureDescriptors() const {
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .pImageInfo = imageDescriptors.data()
         };
+
+        // last 2 fields: used to perform GPU side copies of the descriptors
         vkUpdateDescriptorSets(m_device,1,&writeDescriptorSet,0,nullptr);
     }
 }
+
+
 
 
 uint32_t Application::addBuffer(const GPUBuffer &buffer) {
@@ -907,6 +911,12 @@ bool Application::initializeVulkan() {
         return false;
     }
 
+    if (!createDescriptorSets()) {
+        showError("Error creating descriptor sets");
+        return false;
+    }
+
+
     if (pipeline = createGraphicsPipeline(); !pipeline) {
         showError("Unable to initialize graphics pipeline");
         return false;
@@ -995,7 +1005,7 @@ bool Application::createCommandBuffers() {
 }
 
 // Frames in flight:
-// Multiple copies of our data
+// Multiple copies of our data<
 bool Application::createSyncResources() {
 
     // Timeline semaphore represents a monotonically increasing 64 bit integer. It never decreases
@@ -1026,6 +1036,87 @@ bool Application::createSyncResources() {
     }
     return true;
 }
+
+// TODO: Create Descriptor Sets and Descriptor Pool
+bool Application::createDescriptorSets() {
+    std::array<VkDescriptorPoolSize,1> poolSizes
+    {
+        VkDescriptorPoolSize{
+            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = MaxTextures
+        }
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        // Allowed to make updates to descriptor sets allocated from this pool even after they are bound
+        .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+        .maxSets = 1,
+        .poolSizeCount = poolSizes.size(),
+        .pPoolSizes = poolSizes.data()
+    };
+
+    if (vkCreateDescriptorPool(m_device,&poolInfo,nullptr,&m_descriptorPool) != VK_SUCCESS) {
+        showError("Unable to create descriptor pool");
+        return false;
+    }
+
+    // global descriptor set
+
+    std::array<VkDescriptorSetLayoutBinding, 1> bindings
+    {
+        VkDescriptorSetLayoutBinding
+        {
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = MaxTextures,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+        }
+    };
+    std::array<VkDescriptorBindingFlags,1> flags;
+
+    flags[0] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+        .bindingCount = flags.size(),
+        .pBindingFlags = flags.data()
+    };
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo
+    {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = &flagsInfo,
+        .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+        .bindingCount = bindings.size(),
+        .pBindings = bindings.data()
+    };
+
+    if (vkCreateDescriptorSetLayout(m_device,&layoutInfo,nullptr,&m_globalDescriptorSetLayout) != VK_SUCCESS) {
+        showError("Unable to create descriptor set layout");
+        return false;
+    }
+
+    // create the actual descriptor sets
+
+    VkDescriptorSetAllocateInfo descSetAllocInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = m_descriptorPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &m_globalDescriptorSetLayout
+    };
+
+    if (vkAllocateDescriptorSets(m_device,&descSetAllocInfo,&m_globalDescSet) != VK_SUCCESS) {
+        showError("Unable to allocate descriptor set");
+        return false;
+    }
+
+    return true;
+};
+
 
 // Configuration about how we are rendering pixels to the frame buffer
 // Returns a VkPipeline Handle
