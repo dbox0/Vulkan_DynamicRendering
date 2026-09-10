@@ -118,8 +118,118 @@ bool Application::loadData() {
     // start loading Scene Data
     loadGltf("/home/lougi/gltfModels/mariokart8deluxe/scene.gltf");
 
+    //scale root node since model is large (still following tutorial)
+
+    Node &root = m_nodeWorld.getNode(m_rootNodeId);
+    root.setScale(glm::vec3(0.01,0.01,0.01));
+    root.setTranslation(glm::vec3(0,-5,0));
+
+    // Staging buffers for the geometry data
+
+    GPUBuffer vertexBufferStage = createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,vertexBufferBytes,true,VMA_MEMORY_USAGE_AUTO);
+
+    if (!vertexBufferStage.vkBuffer) {
+        showError("Error creating vertex staging buffer");
+        return false;
+    }
+
+    std::cout << "Created vertex staging buffer" << std::endl;
+
+    GPUBuffer indexBufferStage = createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,indexBufferBytes,true,VMA_MEMORY_USAGE_AUTO);
+    if (!indexBufferStage.vkBuffer) {
+        showError("Error creating index staging buffer");
+        return false;
+    }
+
+    std::cout << "Created index staging buffer" << std::endl;
+
+    GPUBuffer vertexBuffer = createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, vertexBufferBytes, false, VMA_MEMORY_USAGE_AUTO);
+
+    if (!vertexBuffer.vkBuffer) {
+        showError("Error creating vertex buffer");
+        return false;
+    }
+
+
+    // Device-local buffers (Video Memory)
+
+
+    m_vertexBufferId = addBuffer(vertexBuffer);
+    // copy vert data to stagingBuffer
+    mapCopyBufferData(vertexBufferStage,0,m_vertices.data(),vertexBufferBytes);
+
+
+    std::cout << "Created vertex buffer" << std::endl;
+
+    // VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT -> vertex pulling
+    GPUBuffer indexBuffer = createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, indexBufferBytes, false, VMA_MEMORY_USAGE_AUTO);
+    if (!indexBuffer.vkBuffer) {
+       showError("Error creating index buffer");
+       return false;
+    }
+
+    m_indexBufferId = addBuffer(indexBuffer);
+    //copy index data to stagingBuffer
+    mapCopyBufferData(indexBufferStage,0,m_indices.data(),indexBufferBytes);
+
+    std::cout << "Created index buffer" << std::endl;
+
+    // Copy staged geo data from staging buffers to device local buffers
+
+    VkCommandBuffer geoCmdBuffer = startTransientCommandBuffer();
+    VkBufferCopy buffCopyVerts{.srcOffset = 0, .dstOffset = 0, .size = vertexBufferBytes};
+    vkCmdCopyBuffer(geoCmdBuffer, vertexBufferStage.vkBuffer, vertexBuffer.vkBuffer, 1, &buffCopyVerts);
+
+    VkBufferCopy buffCopyIndices{.srcOffset = 0,.dstOffset = 0, .size = indexBufferBytes};
+    vkCmdCopyBuffer(geoCmdBuffer, indexBufferStage.vkBuffer, indexBuffer.vkBuffer, 1, &buffCopyIndices);
+    submitTransientCommandBuffer(geoCmdBuffer);
+
+
+    // Destroy Staging Buffers
+    vmaDestroyBuffer(m_vmaAllocator,vertexBufferStage.vkBuffer,vertexBufferStage.allocation);
+    vmaDestroyBuffer(m_vmaAllocator,indexBufferStage.vkBuffer,indexBufferStage.allocation);
+
+    // Bindless textures: Describe textures via descriptor sets
+    updateTextureDescriptors();
+
+    // material Buffer
+
+    return true;
 }
 
+void Application::updateTextureDescriptors() const {
+
+    // combined image & sampler descriptor writes per Texture
+    std::vector<VkDescriptorImageInfo> imageDescriptors;
+    imageDescriptors.resize(m_textures.size());
+
+    for (const Texture &t : m_textures) {
+        imageDescriptors.push_back(
+            {
+                .sampler = m_samplers[t.samplerId -1],
+                .imageView = m_images[t.imageId -1].imageView,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            }
+        );
+        VkWriteDescriptorSet writeDescriptorSet{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = m_globalDescSet,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = static_cast<uint32_t>(imageDescriptors.size()),
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = imageDescriptors.data()
+        };
+        vkUpdateDescriptorSets(m_device,1,&writeDescriptorSet,0,nullptr);
+    }
+}
+
+
+uint32_t Application::addBuffer(const GPUBuffer &buffer) {
+    m_GpuBuffers.push_back(buffer);
+    uint32_t bufferId = m_GpuBuffers.size();
+    return bufferId;
+}
 void Application::loadGltf(const std::string &filepath) {
     if (!std::filesystem::exists(filepath)) {
         std::cout <<"File does not exist " << filepath << std::endl;;
@@ -1333,7 +1443,7 @@ bool Application::createDevice(VkPhysicalDevice phyiscalDevice) {
     vkGetPhysicalDeviceFeatures2(physicalDevice, &supprotedFeatures);
 
     if ( !supportedFeatures13.dynamicRendering || !supportedFeatures13.synchronization2 ||
-        !supportedFeatures12.timelineSemaphore)
+        !supportedFeatures12.timelineSemaphore || !supportedFeatures12.bufferDeviceAddress)
     {
         showError("Physcical device doesn't meet the feature requirements");
         return false;
@@ -1359,7 +1469,8 @@ bool Application::createDevice(VkPhysicalDevice phyiscalDevice) {
     {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
         .pNext = &features13,
-        .timelineSemaphore = VK_TRUE
+        .timelineSemaphore = VK_TRUE,
+        .bufferDeviceAddress = VK_TRUE,
     };
     VkPhysicalDeviceFeatures2 features // streamlined multi-frame-in-flight handling
     {

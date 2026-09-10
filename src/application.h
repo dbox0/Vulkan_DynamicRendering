@@ -136,6 +136,10 @@ class Application {
     std::vector<GPUBuffer> m_GpuBuffers;
     std::vector<Material> m_materials;
 
+    // Descriptor Sets
+    VkDescriptorSet m_globalDescSet;
+
+
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
       VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
       VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -183,4 +187,8 @@ public:
     void shutdown();
     void run();
     bool loadData();
+
+    void updateTextureDescriptors() const;
+
+    uint32_t addBuffer(const GPUBuffer &buffer);
 };
