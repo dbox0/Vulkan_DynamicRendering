@@ -116,10 +116,12 @@ bool Application::loadData() {
     m_textures.push_back(Texture {.imageId = m_purplePixelImageId,.samplerId = purpleSamplerId});
 
     // start loading Scene Data
-    loadGltf();
+    loadGltf("");
 
 }
 
+
+// TODO:: CONTINUE VIDEO 1:27:33
 void Application::loadGltf(const std::string &filepath) {
     if (!std::filesystem::exists(filepath)) {
         std::cout <<"File does not exist " << filepath << std::endl;;
@@ -257,7 +259,7 @@ std::vector<uint32_t> Application::loadMeshes(const tg3_model &model, const std:
             const size_t stride =  buffer_view->byte_stride != 0 ? buffer_view->byte_stride : sizeof(T);
 
             for (uint64_t index = 0; index < accessor->count; ++index) {
-                const size_t elementOffset = bufferOffset + index + stride;
+                const size_t elementOffset = bufferOffset + index * stride;
                 const float *data = reinterpret_cast<const float *>(buffer->data.data + elementOffset);
 
                 if constexpr (std::is_same<T,glm::vec3>()) {
@@ -309,7 +311,7 @@ std::vector<uint32_t> Application::loadMeshes(const tg3_model &model, const std:
                 const tg3_accessor *accessor = &model.accessors[primitive->indices];
                 const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
                 const tg3_buffer *buffer = &model.buffers[buffer_view->buffer];
-                assert(m_idxOffset + accessor->count <= m_vertices.size() && "Not enough space for indices");
+                assert(m_idxOffset + accessor->count <= m_indices.size() && "Not enough space for indices");
 
                 mesh.subMeshes[u].indexStart = m_idxOffset;
                 mesh.subMeshes[u].indexCount = accessor->count;
@@ -318,7 +320,7 @@ std::vector<uint32_t> Application::loadMeshes(const tg3_model &model, const std:
                     const uint32_t *buffData = reinterpret_cast<const uint32_t *>(buffer->data.data+ buffer_view->byte_offset+accessor->byte_offset);
 
                     memcpy(&m_indices[m_idxOffset],buffData,accessor->count*sizeof(uint32_t));
-                } else if (accessor->component_type == TG3_COMPONENT_TYPE_SHORT) {
+                } else if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT) {
                     const uint16_t *buffData = reinterpret_cast<const uint16_t *>(buffer->data.data+ buffer_view->byte_offset+accessor->byte_offset);
 
                     for (uint64_t idx = 0; idx < accessor->count; ++idx) {
@@ -346,7 +348,7 @@ std::vector<uint32_t> Application::loadMaterials(const tg3_model &model, const s
                     mat->pbr_metallic_roughness.base_color_factor[0],
                     mat->pbr_metallic_roughness.base_color_factor[1],
                     mat->pbr_metallic_roughness.base_color_factor[2],
-                    mat->pbr_metallic_roughness.base_color_factor[4]
+                    mat->pbr_metallic_roughness.base_color_factor[3]
                     ),
 
                 // albedo
@@ -354,7 +356,7 @@ std::vector<uint32_t> Application::loadMaterials(const tg3_model &model, const s
                     ? textureIds[mat->pbr_metallic_roughness.base_color_texture.index] -1
                     : 0
             });
-        materialIds[i] = materialIds.size();
+        materialIds[i] = m_materials.size();
     }
     return materialIds;
 }
