@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <glm/detail/type_quat.hpp>
+#include <string>
 
 struct SubMesh;
 
@@ -34,19 +35,6 @@ struct Image
     int height;
     int channels;
     unsigned char *data;
-};
-struct GPUImage
-{
-    VkImage image = nullptr;
-    VkImageView imageView = nullptr;
-    VmaAllocation allocation = nullptr;
-};
-
-struct GPUBuffer
-{
-    VkBuffer vkBuffer = nullptr;
-    uint64_t deviceAddress = 0;
-    VmaAllocation allocation = nullptr;
 };
 struct Material
 {

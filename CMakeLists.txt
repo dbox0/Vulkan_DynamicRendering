@@ -20,10 +20,27 @@ add_executable(vulkanapp
         src/Math/Transform.h
         src/Math/Transform.cpp
         src/Math/LocalFrame.h
-        src/Geometry/Node.h
-        src/Geometry/NodeWorld.h
-        src/Geometry/NodePool.cpp
-        src/Geometry/NodePool.h
+        src/scene/Geometry/Node.h
+        src/scene/Geometry/NodeWorld.h
+        src/common/errors.cpp
+        src/common/errors.h
+        src/common/gpu_types.h
+        src/scene/Scene.cpp
+        src/scene/Scene.h
+        src/scene/Camera.cpp
+        src/scene/Camera.h
+        src/assets/GltfLoader.cpp
+        src/assets/GltfLoader.h
+        src/render/VulkanContext.cpp
+        src/render/VulkanContext.h
+        src/render/Renderer.cpp
+        src/render/Renderer.h
+        src/render/Swapchain.cpp
+        src/render/Swapchain.h
+        src/render/ResourceStore.cpp
+        src/render/ResourceStore.h
+        src/render/GeometryStore.cpp
+        src/render/GeometryStore.h
 )
 
 set(CMAKE_CXX_STANDARD 26)
