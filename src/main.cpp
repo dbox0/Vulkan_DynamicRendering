@@ -4,7 +4,7 @@
 int main(int argc, char* argv[]) {
     Application app;
     if (app.initialize()) {
-        //app.loadData();
+        app.loadData();
         app.run();
     }
     app.shutdown();

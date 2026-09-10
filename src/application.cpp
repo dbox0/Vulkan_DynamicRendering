@@ -116,12 +116,10 @@ bool Application::loadData() {
     m_textures.push_back(Texture {.imageId = m_purplePixelImageId,.samplerId = purpleSamplerId});
 
     // start loading Scene Data
-    loadGltf("");
+    loadGltf("/home/lougi/gltfModels/mariokart8deluxe/scene.gltf");
 
 }
 
-
-// TODO:: CONTINUE VIDEO 1:27:33
 void Application::loadGltf(const std::string &filepath) {
     if (!std::filesystem::exists(filepath)) {
         std::cout <<"File does not exist " << filepath << std::endl;;
@@ -296,7 +294,8 @@ std::vector<uint32_t> Application::loadMeshes(const tg3_model &model, const std:
                 } else if (strcmp(attr->key.data, "COLOR_0") == 0)
                 {
                     const tg3_accessor *accessor = &model.accessors[attr->value];
-                    assert(accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+                    assert(accessor->type == TG3_TYPE_VEC3 || accessor->type == TG3_TYPE_VEC4);
+                    assert(accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
                     writeAttribute(&Vertex::color, attr);
                 }else if (strcmp(attr->key.data, "TEXCOORD_0") == 0)
                 {

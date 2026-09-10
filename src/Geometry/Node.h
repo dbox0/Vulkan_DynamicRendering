@@ -60,6 +60,5 @@ public:
         m_dirty = false;
     }
 
-    v
 };
 
