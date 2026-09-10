@@ -194,6 +194,18 @@ bool Application::loadData() {
 
     // material Buffer
 
+    const size_t matDataBytes = m_materials.size() * sizeof(Material);
+
+    GPUBuffer matBuffer = createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        matDataBytes, true, VMA_MEMORY_USAGE_AUTO);
+
+    if (!matBuffer.vkBuffer) { 
+        showError("Error creating material buffer");
+        return false;
+    }
+
+    m_matBufferId = addBuffer(matBuffer);
+    mapCopyBufferData(matBuffer,0,m_materials.data(),matDataBytes);
     return true;
 }
 
