@@ -139,9 +139,9 @@ class Application {
     std::vector<Material> m_materials;
 
     // Descriptor Sets
-    VkDescriptorSet m_globalDescSet;
-    VkDescriptorPool m_descriptorPool;
-    VkDescriptorSetLayout m_globalDescriptorSetLayout;
+    VkDescriptorSet m_globalDescSet = nullptr;
+    VkDescriptorPool m_descriptorPool= nullptr;
+    VkDescriptorSetLayout m_globalDescriptorSetLayout = nullptr;
 
 
     // camera
