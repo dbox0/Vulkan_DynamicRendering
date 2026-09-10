@@ -1137,12 +1137,25 @@ VkPipeline Application::createGraphicsPipeline() {
 
     // Common : Single Pipeline Layout with various pipelines for different materials
 
+
+    // Push constants are used for smaller data -> recorded directly into command buffers and (usually)
+    // encoded into high speed GPU registries
+    VkPushConstantRange pushConstantRange
+    {
+      .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(FrameConstants)
+    };
+
+    std::array<VkDescriptorSetLayout,1> dsLayouts { m_globalDescriptorSetLayout };
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo
     {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,        // This lets vulkan know that this pipeline layout will not
-        .pushConstantRangeCount = 0 // be associated with any descriptor sets or push constants (used to get data into our shaders)
-                                    // TODO/NOTE: THIS WILL CHANGE
+        .setLayoutCount = dsLayouts.size(),
+        .pSetLayouts = dsLayouts.data(),
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange
     };
 
     if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
