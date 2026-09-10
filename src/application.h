@@ -110,7 +110,7 @@ class Application {
 
     // frame and sync resources
     VkSemaphore timelineSemaphore = nullptr;
-    std::array<FrameResources, MaxFramesInFlight> frameResources;
+    std::array<FrameResources, MaxFramesInFlight> m_frameResources;
 
     // Geometry: Global Vertex and Index Buffer
     std::vector<Mesh> m_meshes;
@@ -123,6 +123,8 @@ class Application {
     NodeWorld m_nodeWorld;
     uint32_t m_lastRootNodeId = 0;
     uint32_t m_rootNodeId = 0;
+
+    std::vector<std::pair<Node *, glm::mat4>> m_nodeRenderStack;
 
     // GPU resources
     uint32_t m_purplePixelImageId = 0;
@@ -142,6 +144,11 @@ class Application {
     VkDescriptorSetLayout m_globalDescriptorSetLayout;
 
 
+    // camera
+
+    float m_camDistance = 3;
+    float m_camYaw = glm::radians(90.0f);
+    float m_camPitch = 0;
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
       VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -170,6 +177,9 @@ class Application {
     bool createCommandBuffers();
     void submitTransientCommandBuffer(VkCommandBuffer commandBuffer);
     VkCommandBuffer startTransientCommandBuffer();
+
+    bool createIndirectDrawBuffers();
+
     void render();
     VkCommandPool m_commandPool;
     std::pair<uint32_t, GPUBuffer> createImage(VkCommandBuffer commandBuffer, unsigned char *imageData, uint32_t width, uint32_t height, int channels);

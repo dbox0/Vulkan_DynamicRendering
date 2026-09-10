@@ -27,7 +27,16 @@ void Application::showError(const std::string &errorMessasge) const
 
 void Application::run() {
     running = true;
+
+    const bool *keys = SDL_GetKeyboardState(nullptr);
+
+    uint64_t prevTime = SDL_GetTicks();
     while (running) {
+
+        uint64_t currentTime = SDL_GetTicks();
+        const float deltaTime = (currentTime - prevTime)/1000.0f;
+        prevTime = currentTime;
+
         SDL_Event event{0};
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
@@ -39,6 +48,35 @@ void Application::run() {
                 height = event.window.data2;
                 break;
             }
+        }
+
+        // Camera
+        constexpr float speed = 1.0f;
+        constexpr float epsilon = 0.01f;
+        constexpr float pitchLimit = glm::half_pi<float>() - epsilon;
+
+        if (keys[SDL_SCANCODE_W]) {
+            m_camDistance -= speed * deltaTime;
+            m_camDistance = std::max(m_camDistance, epsilon);
+        }
+        if (keys[SDL_SCANCODE_A]) {
+            m_camYaw += speed * deltaTime;
+        }
+        if (keys[SDL_SCANCODE_S]) {
+            m_camDistance += speed * deltaTime;
+        }
+        if (keys[SDL_SCANCODE_D]) {
+            m_camYaw -= speed * deltaTime;
+        }
+        if (keys[SDL_SCANCODE_UP])
+        {
+            m_camPitch += speed * deltaTime;
+            m_camPitch = std::clamp(m_camPitch, -pitchLimit, pitchLimit);
+        }
+        if (keys[SDL_SCANCODE_DOWN])
+        {
+            m_camPitch -= speed * deltaTime;
+            m_camPitch = std::clamp(m_camPitch, -pitchLimit, pitchLimit);
         }
         render();
     }
@@ -199,7 +237,7 @@ bool Application::loadData() {
     GPUBuffer matBuffer = createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         matDataBytes, true, VMA_MEMORY_USAGE_AUTO);
 
-    if (!matBuffer.vkBuffer) { 
+    if (!matBuffer.vkBuffer) {
         showError("Error creating material buffer");
         return false;
     }
@@ -942,6 +980,10 @@ bool Application::initializeVulkan() {
         showError("Could not create command buffer objects");
         return false;
     }
+    if (!createIndirectDrawBuffers()) {
+        showError("Could not create indirect draw buffers");
+        return false;
+    }
     return true;
 }
 
@@ -972,8 +1014,39 @@ VkCommandBuffer Application::startTransientCommandBuffer() {
     }
     return commandBuffer;
 }
+bool Application::createIndirectDrawBuffers() {
 
-bool Application::createCommandBuffers() {
+    for (auto &res : m_frameResources) {
+        const size_t indirectBuffByteSize = m_nodeWorld.maxNodes() * sizeof(VkDrawIndexedIndirectCommand);
+        res.indirectDrawBuffer = createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                indirectBuffByteSize,true,VMA_MEMORY_USAGE_AUTO);
+
+        void *indBuffPtr = nullptr;
+        if (vmaMapMemory(m_vmaAllocator,res.indirectDrawBuffer.allocation,&indBuffPtr) != VK_SUCCESS) {
+            showError("Unable to map indirect buffer");
+            return false;
+        }
+        res.indirectDrawPtr = reinterpret_cast<VkDrawIndexedIndirectCommand *>(indBuffPtr);
+
+        // render item buffer
+        const size_t renderItemByteSize = m_nodeWorld.maxNodes() * sizeof(RenderItem);
+
+        res.renderItemBuffer = createBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            renderItemByteSize,true,VMA_MEMORY_USAGE_AUTO);
+
+        // map indirect draw buffer
+        void *renderItemBufferPtr = nullptr;
+        if (vmaMapMemory(m_vmaAllocator,res.renderItemBuffer.allocation,&renderItemBufferPtr) != VK_SUCCESS) {
+            showError("Unable to map render item buffer");
+            return false;
+        }
+        res.renderItemPtr = reinterpret_cast<RenderItem *>(renderItemBufferPtr);
+    }
+
+    return true;
+}
+bool Application::createCommandBuffers(){
     VkCommandPoolCreateInfo transPoolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
           .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
@@ -985,7 +1058,7 @@ bool Application::createCommandBuffers() {
     }
 
     // Iterate over Frames in Flight and create a command pool and command buffer for each one
-    for (FrameResources &res : frameResources) {
+    for (FrameResources &res : m_frameResources) {
 
         VkCommandPoolCreateInfo poolInfo
         {
@@ -1039,7 +1112,7 @@ bool Application::createSyncResources() {
     }
 
     // per frame image-require semaphore.
-    for (FrameResources &res : frameResources) {
+    for (FrameResources &res : m_frameResources) {
         VkSemaphoreCreateInfo semaphoreInfo {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         if (vkCreateSemaphore(m_device,&semaphoreInfo,nullptr,&res.imageAcquiredSemaphore) != VK_SUCCESS) {
             showError("Failed to create per-frame image acquired semaphore");
@@ -1554,12 +1627,12 @@ bool Application::createDevice(VkPhysicalDevice phyiscalDevice) {
     {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,.pNext = &supportedFeatures14};
     VkPhysicalDeviceVulkan12Features supportedFeatures12
     {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,.pNext = &supportedFeatures13};
-    VkPhysicalDeviceFeatures2 supprotedFeatures
+    VkPhysicalDeviceFeatures2 supportedFeatures
     {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &supportedFeatures12};
-    vkGetPhysicalDeviceFeatures2(physicalDevice, &supprotedFeatures);
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &supportedFeatures);
 
     if ( !supportedFeatures13.dynamicRendering || !supportedFeatures13.synchronization2 ||
-        !supportedFeatures12.timelineSemaphore || !supportedFeatures12.bufferDeviceAddress)
+        !supportedFeatures12.timelineSemaphore || !supportedFeatures12.bufferDeviceAddress || !supportedFeatures.features.multiDrawIndirect)
     {
         showError("Physcical device doesn't meet the feature requirements");
         return false;
@@ -1591,7 +1664,12 @@ bool Application::createDevice(VkPhysicalDevice phyiscalDevice) {
     VkPhysicalDeviceFeatures2 features // streamlined multi-frame-in-flight handling
     {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &features12
+        .pNext = &features12,
+        .features
+        {
+            .multiDrawIndirect = VK_TRUE,
+            .shaderInt64 = VK_TRUE,
+        }
     };
 
     // Request the queues we'll be using
@@ -1751,11 +1829,11 @@ void Application::render() {
     // Now we can start recording commands as it is safe
 
     //Grab current  frame resourcves obj and reset the command pool to record a fresh set of commands for this frame
-    FrameResources &res = frameResources[frameResIndex];
+    FrameResources &res = m_frameResources[frameResIndex];
     vkResetCommandPool(m_device,res.commandPool,0);
 
     // Get resources for this frame. We need the binary image acquired semaphore
-    VkSemaphore imageAcquiredSemaphore = frameResources[frameResIndex].imageAcquiredSemaphore;
+    VkSemaphore imageAcquiredSemaphore = m_frameResources[frameResIndex].imageAcquiredSemaphore;
 
     uint32_t imageIndex = 0;
                                 // device, swapchain, timeout val, binary semaphore to signal when image is ready to be drawn on
@@ -1775,124 +1853,204 @@ void Application::render() {
         requireSwapchainRecreate = true;
     }
 
-    // begin rendering commands here
-    VkCommandBufferBeginInfo cmdBeginInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    vkBeginCommandBuffer(res.commandBuffer,&cmdBeginInfo);
+    // Traverse scene and record draw commands
 
-    std::vector<VkImageMemoryBarrier2> layoutBarriers
-    {
-      {
-          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-          .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-          .srcAccessMask = 0,
-          .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-          .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-          .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-          .image = swapchainImages[imageIndex],
-          .subresourceRange
-          {
-              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-              .baseMipLevel = 0,
-              .levelCount = 1,
-              .baseArrayLayer = 0,
-              .layerCount = 1
-          }
-      },
-   {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccessMask = 0,
-        .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .image = depthImage,
-        .subresourceRange
-        {
-            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        }
-      }
-    };
+    glm::vec3 camPosition = glm::vec3(cosf(m_camYaw)*cosf(m_camPitch),
+                                      sinf(m_camPitch),
+                                      sinf(m_camYaw)*cosf(m_camPitch)) * m_camDistance;
 
-    VkDependencyInfo depInfo
-    {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      .imageMemoryBarrierCount = static_cast<uint32_t>(layoutBarriers.size()),
-      .pImageMemoryBarriers = layoutBarriers.data(),
-    };
+    const float aspectRatio = width / static_cast<float>(height);
+    glm::mat4 matView = glm::lookAtRH(camPosition, glm::vec3(0),glm::vec3(0,1,0));
+    glm::mat4 matProj = glm::perspectiveRH(glm::radians(75.0f),aspectRatio,0.01f,1000.0f);
+    glm::mat4 matViewProj = matProj * matView;
 
-    vkCmdPipelineBarrier2(res.commandBuffer,&depInfo);
+    // Multi Draw Indirect
 
-    // setup color and depth attachments and begin rendering (Dynamic)
-    VkRenderingAttachmentInfo colorAttachInfo
-    {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = swapchainImageViews[imageIndex],
-        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,  // clear
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE, // keep data for presentation
-        .clearValue{.color{0.01f,0.01f,0.01f,1}}
-    };
-
-    VkRenderingAttachmentInfo depthAttachInfo
-    {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = depthImageView,
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .clearValue{.depthStencil{1.0f,0}}
-    };
-    VkRenderingInfo renderingInfo
-    {
-      .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-      .renderArea
-      {
-          .offset{.x = 0, .y = 0},
-          .extent = {.width = swapchainWidth, .height = swapchainHeight}
-      },
-      .layerCount = 1,
-      .colorAttachmentCount = 1,
-      .pColorAttachments = &colorAttachInfo,
-      .pDepthAttachment = &depthAttachInfo,
-    };
-
-    // begin dynamic rendering
-
-    vkCmdBeginRendering(res.commandBuffer,&renderingInfo);
-    {
-        VkViewport viewport
-        {
-            .x = 0, .y = 0,
-            .width = static_cast<float>(swapchainWidth),
-            .height = static_cast<float>(swapchainHeight),
-        };
-        vkCmdSetViewport(res.commandBuffer,0,1,&viewport);
-
-        VkRect2D scissor
-        {
-          .offset{.x = 0, .y = 0},
-            .extent{.width = swapchainWidth, .height = swapchainHeight}
-        };
-
-        vkCmdSetScissor(res.commandBuffer,0,1,&scissor);
-
-        // draw the TRIANGLE!
-        vkCmdBindPipeline(res.commandBuffer,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
-        vkCmdDraw(res.commandBuffer,3,1,0,0);
+    // Stack
+    m_nodeRenderStack.clear();
+    uint32_t nodeId = m_rootNodeId;
+    while (nodeId) {
+        Node &node = m_nodeWorld.getNode(nodeId);
+        m_nodeRenderStack.push_back({&node,glm::mat4(1.0f)});
+        nodeId = node.nextSiblingId;
     }
 
-    //end dynamic rendering - we're done with drawing. The command buffer contains rendering commands
-    vkCmdEndRendering(res.commandBuffer);
+    uint32_t drawIndex = 0;
+    while (!m_nodeRenderStack.empty()) {
+        auto [node,parentTransform] = m_nodeRenderStack.back();
+        m_nodeRenderStack.pop_back();
+
+        glm::mat4 matWorld = parentTransform * node->getTransform();
+
+        if (node->meshId) {
+            Mesh &mesh = m_meshes[node->meshId-1];
+
+            for (SubMesh &subMesh : mesh.subMeshes) {
+                res.indirectDrawPtr[drawIndex] = VkDrawIndexedIndirectCommand
+                {
+                  .indexCount = static_cast<uint32_t>(subMesh.indexCount),
+                    .instanceCount = 1,
+                    .firstIndex = static_cast<uint32_t>(subMesh.indexStart),
+                    .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
+                    .firstInstance = drawIndex
+                };
+
+                res.renderItemPtr[drawIndex] = RenderItem
+                {
+                    .wvp = matView * matWorld,
+                    .worldMatrix = matWorld,
+                    .materialIndex = subMesh.materialId -1
+                };
+                drawIndex++;
+            }
+        }
+
+        uint32_t childNodeId = node->firstChildId;
+        while (childNodeId) {
+            Node &child = m_nodeWorld.getNode(childNodeId);
+            m_nodeRenderStack.push_back({&child,matWorld});
+            childNodeId = child.nextSiblingId;
+        }
+
+        // Record the commands
+
+        VkCommandBufferBeginInfo beginInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        };
+
+        vkBeginCommandBuffer(res.commandBuffer,&beginInfo);
+
+        std::array<VkImageMemoryBarrier2, 2> layoutBarriers
+        {
+            VkImageMemoryBarrier2
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .srcAccessMask = 0,
+                .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .image = swapchainImages[imageIndex],
+                .subresourceRange
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            },
+            VkImageMemoryBarrier2
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .srcAccessMask = 0,
+                .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .image = depthImage,
+                .subresourceRange
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                }
+            }
+        };
+
+        VkDependencyInfo depInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = static_cast<uint32_t>(layoutBarriers.size()),
+            .pImageMemoryBarriers = layoutBarriers.data(),
+        };
+        VkRenderingAttachmentInfo colorAttachInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+              .imageView = swapchainImageViews[imageIndex],
+              .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,  // clear
+              .storeOp = VK_ATTACHMENT_STORE_OP_STORE, // keep data for presentation
+              .clearValue{.color{0.01f,0.01f,0.01f,1}}
+        };
+
+        VkRenderingAttachmentInfo depthAttachInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+              .imageView = depthImageView,
+              .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+              .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+              .clearValue{.depthStencil{1.0f,0}}
+        };
+        VkRenderingInfo renderingInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea
+            {
+                .offset{.x = 0, .y = 0},
+                .extent = {.width = swapchainWidth, .height = swapchainHeight}
+            },
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachInfo,
+            .pDepthAttachment = &depthAttachInfo,
+        };
+
+        //setup frame data
+
+        vkCmdBindDescriptorSets(res.commandBuffer,VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,0,1,&m_globalDescSet,0,nullptr);
+        FrameConstants frameConstants;
+        GPUBuffer &vertBuffer = m_GpuBuffers[m_vertexBufferId-1];
+        GPUBuffer &matBuffer = m_GpuBuffers[m_vertexBufferId-1];
+
+        frameConstants.vertexBufferAddress = vertBuffer.deviceAddress;
+        frameConstants.materialBufferAddress = matBuffer.deviceAddress;
+        frameConstants.renderItemsAddress = res.renderItemBuffer.deviceAddress;
+
+        vkCmdPushConstants(res.commandBuffer,pipelineLayout,VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(FrameConstants),&frameConstants);
+
+        GPUBuffer &idxBuffer = m_GpuBuffers[m_vertexBufferId-1];
+        vkCmdBindIndexBuffer(res.commandBuffer,idxBuffer.vkBuffer,0,VK_INDEX_TYPE_UINT32);
+
+        // begin dynamic rendering
+
+        vkCmdBeginRendering(res.commandBuffer,&renderingInfo);
+
+        {
+            VkViewport viewport
+            {
+                .x = 0, .y = static_cast<float>(swapchainHeight),
+                .width = static_cast<float>(swapchainWidth),
+                .height = static_cast<float>(swapchainHeight),
+                .minDepth = 0,
+                .maxDepth = 1
+            };
+            vkCmdSetViewport(res.commandBuffer,0,1,&viewport);
+
+            VkRect2D scissor
+            {
+                .offset{.x = 0, .y = 0},
+                  .extent{.width = swapchainWidth, .height = swapchainHeight}
+            };
+
+            vkCmdSetScissor(res.commandBuffer,0,1,&scissor);
+
+            vkCmdBindPipeline(res.commandBuffer,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
+            vkCmdDrawIndexedIndirect(res.commandBuffer,res.indirectDrawBuffer.vkBuffer,0,drawIndex,sizeof(VkDrawIndexedIndirectCommand));
+        }
+
+        vkCmdEndRendering(res.commandBuffer);
+
+    }
+
 
     //transition the image from color attachment to presentation barrier so we can actually draw it
     VkImageMemoryBarrier2 presentatLayourBattier
@@ -1984,11 +2142,49 @@ void Application::shutdown() {
     //Flush GPU
     vkDeviceWaitIdle(m_device);
 
+    // clean up descriptor layouts and pool
+    vkDestroyDescriptorSetLayout(m_device, m_globalDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+
+    for (auto &img : m_images)
+    {
+        vkDestroyImageView(m_device, img.imageView, nullptr);
+        vkDestroyImage(m_device, img.image, nullptr);
+        vmaFreeMemory(m_vmaAllocator, img.allocation);
+    }
+    for (VkSampler sampler : m_samplers)
+    {
+        vkDestroySampler(m_device, sampler, nullptr);
+    }
+
+    for (auto &buff : m_GpuBuffers)
+    {
+        vkDestroyBuffer(m_device, buff.vkBuffer, nullptr);
+        vmaFreeMemory(m_vmaAllocator, buff.allocation);
+    }
+
     // frame and sync object cleanup
     if (timelineSemaphore) {
         vkDestroySemaphore(m_device, timelineSemaphore, nullptr);
     }
-    for (auto &res : frameResources) {
+
+    for (auto &res : m_frameResources)
+    {
+        vkDestroySemaphore(m_device, res.imageAcquiredSemaphore, nullptr);
+        vkDestroyCommandPool(m_device, res.commandPool, nullptr); // destroys buffers implicitly
+
+        // indirect draw
+        vmaUnmapMemory(m_vmaAllocator, res.indirectDrawBuffer.allocation);
+        vkDestroyBuffer(m_device, res.indirectDrawBuffer.vkBuffer, nullptr);
+        vmaFreeMemory(m_vmaAllocator, res.indirectDrawBuffer.allocation);
+
+        // render items
+        vmaUnmapMemory(m_vmaAllocator, res.renderItemBuffer.allocation);
+        vkDestroyBuffer(m_device, res.renderItemBuffer.vkBuffer, nullptr);
+        vmaFreeMemory(m_vmaAllocator, res.renderItemBuffer.allocation);
+    }
+
+    for (auto &res : m_frameResources) {
         vkDestroySemaphore(m_device, res.imageAcquiredSemaphore, nullptr);
         vkDestroyCommandPool(m_device, res.commandPool, nullptr);
     }
