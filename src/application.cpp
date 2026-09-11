@@ -33,6 +33,7 @@ bool Application::initializeWindow()
 
     // From here on every subsystem can call showError() without holding the window.
     setErrorWindow(m_window);
+
     return true;
 }
 

@@ -1,11 +1,32 @@
 cmake_minimum_required(VERSION 3.24)
 project(Vulkan)
 
+include(FetchContent)
+
 find_package(SDL3 REQUIRED)
 find_package(Vulkan REQUIRED COMPONENTS volk shaderc_combined)
 find_package(glm REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SHADERC REQUIRED IMPORTED_TARGET shaderc)
+
+FetchContent_Declare(imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        v1.91.9)
+FetchContent_MakeAvailable(imgui)
+
+add_library(imgui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+        src/editor/EditorUI.cpp
+        src/editor/EditorUI.h)
+
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_link_libraries(imgui PUBLIC SDL3::SDL3 Vulkan::Headers)
+target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK VK_NO_PROTOTYPES)
 
 add_executable(vulkanapp
         src/main.cpp
@@ -66,4 +87,4 @@ target_link_libraries(vulkanapp PRIVATE
 target_compile_definitions(vulkanapp PRIVATE
         SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/")
 
-target_include_directories(vulkanapp PRIVATE /src/external)
+target_include_directories(vulkanapp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/external)
