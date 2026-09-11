@@ -74,24 +74,15 @@ bool Application::initialize()
 
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
+    const GeometryStore::BatchMark mark = m_geometry.mark();
+
     GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene);
     if (!loader.load(modelPath)) {
         showError("Failed to load model: " + modelPath.string());
         return false;
     }
 
-    // Scale the root down; the test model is authored huge.
-    // (Still following the tutorial here -- this belongs in scene setup later.)
-    if (const uint32_t rootId = m_scene.rootNodeId()) {
-        Node &root = m_scene.getNode(rootId);
-        root.setScale(glm::vec3(0.01f));
-        root.setTranslation(glm::vec3(0.0f, -5.0f, 0.0f));
-    }
-
-    // Everything below has to happen after ALL loading is done, because each
-    // of these commits a snapshot of a store to the GPU. If you later add a
-    // second loadData() call you need to re-run all three, not just the first.
-    if (!m_geometry.uploadToGpu()) {
+    if (!m_geometry.uploadSince(mark)) {
         showError("Failed to upload geometry to device memory");
         return false;
     }
