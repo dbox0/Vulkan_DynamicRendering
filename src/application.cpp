@@ -63,9 +63,11 @@ bool Application::initialize()
         showError("Failed to initialize the renderer");
         return false;
     }
-
+    if (!(m_geometry.reserve(VertexBudgetBytes, IndexBudgetBytes))) {
+        showError("Failed to allocate geometry buffers");
+        return false;
+    }
     m_scene.initialize(MaxNodes);
-    m_geometry.reserve(VertexBudgetBytes, IndexBudgetBytes);
 
     return true;
 }

@@ -8,7 +8,7 @@
 #include "VulkanContext.h"
 #include "../common/errors.h"
 
-void GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
+bool GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 {
     m_vertices.resize(vertexBudgetBytes / sizeof(Vertex));
     m_indices.resize(indexBudgetBytes / sizeof(uint32_t));
