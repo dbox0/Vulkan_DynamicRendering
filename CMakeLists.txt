@@ -22,7 +22,8 @@ add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
         src/editor/EditorUI.cpp
-        src/editor/EditorUI.h)
+        src/editor/EditorUI.h
+)
 
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(imgui PUBLIC SDL3::SDL3 Vulkan::Headers)
@@ -82,7 +83,8 @@ target_link_libraries(vulkanapp PRIVATE
         Vulkan::volk
         PkgConfig::SHADERC
         SDL3::SDL3
-        glm::glm)
+        glm::glm
+        imgui)
 
 target_compile_definitions(vulkanapp PRIVATE
         SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/")

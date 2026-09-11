@@ -15,6 +15,7 @@ class ResourceStore;
 class GeometryStore;
 class Camera;
 
+
 // Push constants. Must match the layout declared in the shaders.
 struct FrameConstants
 {
@@ -56,7 +57,9 @@ public:
     bool initialize(uint32_t maxDrawsPerFrame);
     void shutdown();
 
-    void render(Scene &scene, const Camera &camera, uint32_t windowWidth, uint32_t windowHeight);
+    void render(Scene &scene, const Camera &camera,
+            uint32_t windowWidth, uint32_t windowHeight,
+            const std::function<void(VkCommandBuffer)> &overlay = {});
 
 private:
     bool createShaders();
@@ -69,8 +72,8 @@ private:
     // Fills this frame's indirect + render-item buffers from the draw list.
     // Returns the draw count actually written (clamped to m_maxDraws).
     uint32_t writeDrawCommands(FrameResources &res, const glm::mat4 &viewProj);
-    void recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uint32_t drawCount);
-
+    void recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uint32_t drawCount,
+                         const std::function<void(VkCommandBuffer)> &overlay = {});
     VulkanContext &m_ctx;
     Swapchain     &m_swapchain;
     ResourceStore &m_resources;

@@ -40,6 +40,12 @@ public:
     uint32_t selectedNode() const { return m_selectedNode; }
     void selectNode(uint32_t nodeId) { m_selectedNode = nodeId; }
 
+    void applyTheme();
+    static bool vec3Control(const char *label, glm::vec3 &values,
+                            float resetValue = 0.0f, float speed = 0.05f);
+    static void beginProperties(const char *id);
+    static void endProperties();
+
 private:
     void drawHierarchy(Scene &scene, const GeometryStore &geometry);
     void drawHierarchyNode(Scene &scene, const GeometryStore &geometry, uint32_t nodeId);

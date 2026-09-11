@@ -472,7 +472,8 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
     return drawCount;
 }
 
-void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uint32_t drawCount)
+void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uint32_t drawCount,
+                                   const std::function<void(VkCommandBuffer)> &overlay)
 {
     VkCommandBufferBeginInfo cmdBeginInfo
     {
@@ -589,8 +590,23 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
         vkCmdBindPipeline(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-        vkCmdDrawIndexedIndirect(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, 0,
-                                 drawCount, sizeof(VkDrawIndexedIndirectCommand));
+
+        // Skip the draw entirely on an empty scene. drawCount == 0 is legal,
+        // but it is also the normal state before anything is loaded, and
+        // stepping over it in a debugger is less confusing than a zero-count
+        // indirect draw.
+        if (drawCount > 0) {
+            vkCmdDrawIndexedIndirect(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, 0,
+                                     drawCount, sizeof(VkDrawIndexedIndirectCommand));
+        }
+
+        // Last inside the pass. The overlay binds its own pipeline, descriptor
+        // sets and vertex buffers -- anything recorded after it would inherit
+        // that state, not ours. It must also stay INSIDE begin/endRendering:
+        // draw calls outside a render pass instance are invalid.
+        if (overlay) {
+            overlay(res.commandBuffer);
+        }
     }
     vkCmdEndRendering(res.commandBuffer);
 
@@ -618,11 +634,13 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     vkEndCommandBuffer(res.commandBuffer);
 }
 
+
+
 // ============================================================================
 // frame
 // ============================================================================
 
-void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, uint32_t windowHeight)
+void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, uint32_t windowHeight,const std::function<void(VkCommandBuffer)> &overlay)
 {
     if (m_swapchain.needsRecreate()) {
         if (!m_swapchain.recreate(windowWidth, windowHeight)) {
@@ -667,7 +685,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     scene.collectDrawItems(m_geometry, m_drawItems);
     const uint32_t drawCount = writeDrawCommands(res, viewProj);
 
-    recordCommandBuffer(res, imageIndex, drawCount);
+    recordCommandBuffer(res, imageIndex, drawCount,overlay);
 
     VkSemaphoreSubmitInfo imageAcquireWaitInfo
     {

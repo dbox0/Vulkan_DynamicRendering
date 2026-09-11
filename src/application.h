@@ -8,6 +8,7 @@
 #include "render/Renderer.h"
 #include "scene/Scene.h"
 #include "scene/Camera.h"
+#include "editor/EditorUI.h"
 
 struct SDL_Window;
 
@@ -49,4 +50,5 @@ private:
     Scene         m_scene;
     Camera        m_camera;
     Renderer      m_renderer;
+    EditorUI m_editor;
 };

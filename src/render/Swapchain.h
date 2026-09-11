@@ -38,6 +38,8 @@ public:
     bool needsRecreate() const { return m_needsRecreate; }
     void flagForRecreate()     { m_needsRecreate = true; }
 
+    uint32_t imageCount() const { return static_cast<uint32_t>(m_images.size()); }
+
 private:
     bool createDepthBuffer(uint32_t width, uint32_t height);
 

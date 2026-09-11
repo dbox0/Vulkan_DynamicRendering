@@ -70,6 +70,13 @@ bool Application::initialize()
     }
     m_scene.initialize(MaxNodes);
 
+    if (!m_editor.initialize(m_window, m_ctx,
+                             Swapchain::ColorFormat, Swapchain::DepthFormat,
+                             2, m_swapchain.imageCount(),
+                             m_ctx.gfxQueue(), m_ctx.gfxFamily())) {
+        showError("Failed to initialize the editor UI");
+        return false;
+                             }
     return true;
 }
 
@@ -113,12 +120,14 @@ void Application::run()
     uint64_t prevTime = SDL_GetTicks();
 
     while (m_running) {
+
         const uint64_t currentTime = SDL_GetTicks();
         const float deltaTime = static_cast<float>(currentTime - prevTime) / 1000;
         prevTime = currentTime;
 
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
+            m_editor.processEvent(event);
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     m_running = false;
@@ -133,14 +142,30 @@ void Application::run()
                 default:
                     break;
             }
-            m_camera.handleInput(event, deltaTime);
+            const bool isMouse =
+              event.type == SDL_EVENT_MOUSE_MOTION ||
+              event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+              event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+              event.type == SDL_EVENT_MOUSE_WHEEL;
 
+            const bool isKey =
+                event.type == SDL_EVENT_KEY_DOWN ||
+                event.type == SDL_EVENT_KEY_UP;
+
+            const bool claimed = (isMouse && m_editor.wantsMouse()) ||
+                                (isKey   && m_editor.wantsKeyboard());
+
+            if (!claimed) {
+                m_camera.handleInput(event, deltaTime);
+            }
         }
         m_camera.Update(deltaTime);
         if (!m_running) {
             break;
         }
 
+        m_editor.beginFrame();
+        m_editor.build(m_scene, m_geometry);
         // Minimised window: no valid extent to render into, so idle instead
         // of feeding a 0x0 swapchain.
         if (m_width == 0 || m_height == 0) {
@@ -148,8 +173,15 @@ void Application::run()
             continue;
         }
 
+        // NewFrame must not run on a frame that gets skipped above -- ImGui
+        // asserts if NewFrame is called twice without a Render in between.
 
-        m_renderer.render(m_scene, m_camera, m_width, m_height);
+        // Swallow camera input while a widget has focus, or WASD types into
+        // a text field and dragging a slider spins the view.
+
+
+        m_renderer.render(m_scene, m_camera, m_width, m_height,
+                         [this](VkCommandBuffer cmd) { m_editor.record(cmd); });
     }
 }
 
@@ -165,6 +197,7 @@ void Application::shutdown()
     // Reverse of initialize(). Each subsystem destroys only what it owns, so
     // there is exactly one destroy call per handle -- the old shutdown()
     // freed every frame semaphore and command pool twice.
+    m_editor.shutdown(m_ctx);
     m_renderer.shutdown();
     m_geometry.shutdown();
     m_resources.shutdown();
