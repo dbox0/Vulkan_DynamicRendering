@@ -87,12 +87,7 @@ bool Application::loadData(const std::filesystem::path &modelPath)
         return false;
     }
 
-    if (!m_resources.updateTextureDescriptors()) {
-        showError("Failed to write the bindless texture descriptors");
-        return false;
-    }
-
-    if (!m_resources.uploadMaterialBuffer()) {
+    if (!m_resources.commitTextureDescriptors()){
         showError("Failed to upload the material buffer");
         return false;
     }
@@ -104,6 +99,13 @@ bool Application::loadData(const std::filesystem::path &modelPath)
 
 void Application::run()
 {
+
+
+    // Leave this like this for now
+    // TODO: REMOVE THIS TRASH
+    Node &root = m_scene.getNode(m_scene.rootNodeId());
+    root.setScale(glm::vec3(0.01f));
+
     m_running = true;
 
     const bool *keys = SDL_GetKeyboardState(nullptr);

@@ -18,10 +18,18 @@ bool ResourceStore::initialize()
     if (!createDescriptorSets()) {
         return false;
     }
+    // Before the fallback texture: addMaterial() writes through the mapped
+    // pointer, so the buffer has to exist first.
+    if (!createMaterialBuffer()) {
+        return false;
+    }
     if (!createFallbackTexture()) {
         return false;
     }
-    return true;
+    // Commit slot 0 immediately so the descriptor array is valid even if no
+    // model is ever loaded. An empty scene now renders without validation
+    // errors.
+    return commitTextureDescriptors();
 }
 
 void ResourceStore::shutdown()
@@ -29,6 +37,12 @@ void ResourceStore::shutdown()
     if (!m_ctx.device()) {
         return;
     }
+
+    if (m_materialPtr) {
+        vmaUnmapMemory(m_ctx.allocator(), m_materialBuffer.allocation);
+        m_materialPtr = nullptr;
+    }
+    m_ctx.destroyBuffer(m_materialBuffer);
 
     if (m_globalLayout) {
         vkDestroyDescriptorSetLayout(m_ctx.device(), m_globalLayout, nullptr);
@@ -58,6 +72,7 @@ void ResourceStore::shutdown()
 
     m_textures.clear();
     m_materials.clear();
+    m_texturesWritten = 0;
 }
 
 
@@ -104,11 +119,74 @@ uint32_t ResourceStore::addTexture(uint32_t imageId, uint32_t samplerId)
     return static_cast<uint32_t>(m_textures.size());
 }
 
+bool ResourceStore::createMaterialBuffer()
+{
+    const size_t bytes = MaxMaterials * sizeof(Material);
+
+    // Host-visible and kept mapped. ~80KB at 4096 materials -- comfortably
+    // inside the BAR window, and it means the editor can tweak a material
+    // without touching a transfer queue. Move it device-local with a staged
+    // copy only if profiling ever says the shader read is the problem.
+    m_materialBuffer = m_ctx.createBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        bytes, true, VMA_MEMORY_USAGE_AUTO);
+
+    if (!m_materialBuffer.vkBuffer) {
+        showError("Error creating the material buffer");
+        return false;
+    }
+
+    void *mapped = nullptr;
+    if (vmaMapMemory(m_ctx.allocator(), m_materialBuffer.allocation, &mapped) != VK_SUCCESS) {
+        showError("Unable to map the material buffer");
+        m_ctx.destroyBuffer(m_materialBuffer);
+        return false;
+    }
+    m_materialPtr = static_cast<Material *>(mapped);
+
+    m_materials.reserve(MaxMaterials);
+    return true;
+}
+
+
 uint32_t ResourceStore::addMaterial(const Material &material)
 {
+    if (m_materials.size() >= MaxMaterials) {
+        showError("Exceeded the maximum material count");
+        return 0;
+    }
+    if (!m_materialPtr) {
+        showError("addMaterial before initialize()");
+        return 0;
+    }
+
+    const size_t index = m_materials.size();
     m_materials.push_back(material);
-    return static_cast<uint32_t>(m_materials.size());
+    m_materialPtr[index] = material;
+
+    // No-op on coherent memory, required if VMA hands back non-coherent.
+    vmaFlushAllocation(m_ctx.allocator(), m_materialBuffer.allocation,
+                       index * sizeof(Material), sizeof(Material));
+
+    return static_cast<uint32_t>(index + 1);
 }
+
+bool ResourceStore::updateMaterial(uint32_t materialId, const Material &material)
+{
+    if (!materialId || materialId > m_materials.size() || !m_materialPtr) {
+        showError("updateMaterial with an invalid material ID");
+        return false;
+    }
+
+    const size_t index = materialId - 1;
+    m_materials[index] = material;
+    m_materialPtr[index] = material;
+
+    vmaFlushAllocation(m_ctx.allocator(), m_materialBuffer.allocation,
+                       index * sizeof(Material), sizeof(Material));
+    return true;
+}
+
 
 uint32_t ResourceStore::addBuffer(const GPUBuffer &buffer)
 {
@@ -173,6 +251,102 @@ bool ResourceStore::createFallbackTexture()
 
 // ============================================================================
 // bindless descriptors
+
+VkDescriptorImageInfo ResourceStore::describeTexture(const Texture &t) const
+{
+    const bool imageOk   = t.imageId   > 0 && t.imageId   <= m_images.size();
+    const bool samplerOk = t.samplerId > 0 && t.samplerId <= m_samplers.size();
+
+    const GPUImage &image = imageOk
+        ? m_images[t.imageId - 1]
+        : m_images[m_fallbackImageId - 1];
+    const VkSampler sampler = samplerOk
+        ? m_samplers[t.samplerId - 1]
+        : m_samplers[m_fallbackSamplerId - 1];
+
+    if (!imageOk || !samplerOk || !image.imageView) {
+        showError("Texture references an invalid image or sampler; using the fallback");
+        return VkDescriptorImageInfo
+        {
+            .sampler     = m_samplers[m_fallbackSamplerId - 1],
+            .imageView   = m_images[m_fallbackImageId - 1].imageView,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
+    }
+
+    return VkDescriptorImageInfo
+    {
+        .sampler     = sampler,
+        .imageView   = image.imageView,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+}
+
+bool ResourceStore::commitTextureDescriptors()
+{
+    const uint32_t total = static_cast<uint32_t>(m_textures.size());
+    if (total <= m_texturesWritten) {
+        return true;                       // nothing new since last commit
+    }
+
+    const uint32_t first = m_texturesWritten;
+    const uint32_t count = total - first;
+
+    std::vector<VkDescriptorImageInfo> imageDescriptors;
+    imageDescriptors.reserve(count);
+    for (uint32_t i = first; i < total; ++i) {
+        imageDescriptors.push_back(describeTexture(m_textures[i]));
+    }
+
+    // Writing slots [first, total) is safe with frames in flight: no material
+    // in any submitted command buffer references a slot that did not exist
+    // when it was recorded, and the binding is PARTIALLY_BOUND, so unwritten
+    // slots were never a problem either.
+    VkWriteDescriptorSet write
+    {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_globalDescSet,
+        .dstBinding = 0,
+        .dstArrayElement = first,
+        .descriptorCount = count,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = imageDescriptors.data()
+    };
+
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &write, 0, nullptr);
+    m_texturesWritten = total;
+    return true;
+}
+
+bool ResourceStore::replaceTextureDescriptor(uint32_t textureId)
+{
+    if (!textureId || textureId > m_textures.size()) {
+        showError("replaceTextureDescriptor with an invalid texture ID");
+        return false;
+    }
+
+    const uint32_t slot = textureId - 1;
+    if (slot >= m_texturesWritten) {
+        // Not committed yet -- commitTextureDescriptors() will pick it up.
+        return true;
+    }
+
+    const VkDescriptorImageInfo info = describeTexture(m_textures[slot]);
+
+    VkWriteDescriptorSet write
+    {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_globalDescSet,
+        .dstBinding = 0,
+        .dstArrayElement = slot,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &info
+    };
+
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &write, 0, nullptr);
+    return true;
+}
 
 bool ResourceStore::createDescriptorSets()
 {
@@ -252,97 +426,3 @@ bool ResourceStore::createDescriptorSets()
     return true;
 }
 
-bool ResourceStore::updateTextureDescriptors()
-{
-    if (m_textures.empty()) {
-        return true;
-    }
-
-    std::vector<VkDescriptorImageInfo> imageDescriptors;
-    imageDescriptors.reserve(m_textures.size());
-
-    for (const Texture &t : m_textures) {
-        // addTexture already substitutes the fallback for invalid IDs, but
-        // check again: a null sampler or imageView reaching this write is a
-        // validation error
-
-        const bool imageOk   = t.imageId   > 0 && t.imageId   <= m_images.size();
-        const bool samplerOk = t.samplerId > 0 && t.samplerId <= m_samplers.size();
-
-        if (!imageOk || !samplerOk) {
-            showError("Texture references an invalid image or sampler; using the fallback");
-        }
-
-        const GPUImage &image = imageOk
-            ? m_images[t.imageId - 1]
-            : m_images[m_fallbackImageId - 1];
-        const VkSampler sampler = samplerOk
-            ? m_samplers[t.samplerId - 1]
-            : m_samplers[m_fallbackSamplerId - 1];
-
-        if (!image.imageView) {
-            showError("Texture image has a null image view; using the fallback");
-            imageDescriptors.push_back(
-                {
-                    .sampler = m_samplers[m_fallbackSamplerId - 1],
-                    .imageView = m_images[m_fallbackImageId - 1].imageView,
-                    .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                });
-            continue;
-        }
-
-        imageDescriptors.push_back(
-            {
-                .sampler = sampler,
-                .imageView = image.imageView,
-                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            });
-    }
-
-    VkWriteDescriptorSet writeDescriptorSet
-    {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = m_globalDescSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<uint32_t>(imageDescriptors.size()),
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = imageDescriptors.data()
-    };
-
-    vkUpdateDescriptorSets(m_ctx.device(), 1, &writeDescriptorSet, 0, nullptr);
-    return true;
-}
-
-// ============================================================================
-// material buffer
-
-bool ResourceStore::uploadMaterialBuffer()
-{
-    if (m_materials.empty()) {
-        return true;
-    }
-
-    const size_t matDataBytes = m_materials.size() * sizeof(Material);
-
-    GPUBuffer matBuffer = m_ctx.createBuffer(
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        matDataBytes, true, VMA_MEMORY_USAGE_AUTO);
-
-    if (!matBuffer.vkBuffer) {
-        showError("Error creating material buffer");
-        return false;
-    }
-
-    m_ctx.mapCopyBufferData(matBuffer, 0, m_materials.data(), matDataBytes);
-    m_materialBufferId = addBuffer(matBuffer);
-    return true;
-}
-
-uint64_t ResourceStore::materialBufferAddress() const
-{
-    if (!m_materialBufferId) {
-        return 0;
-    }
-    return m_buffers[m_materialBufferId - 1].deviceAddress;
-}

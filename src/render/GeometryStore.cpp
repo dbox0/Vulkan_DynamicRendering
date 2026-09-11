@@ -22,10 +22,10 @@ bool GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 
     // Alloc at full budget once
 
-    m_vertexBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+    m_vertexBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
         m_vertices.size() * sizeof(Vertex),false, VMA_MEMORY_USAGE_AUTO);
 
-    if (m_vertexBuffer.vkBuffer) {
+    if (!m_vertexBuffer.vkBuffer) {
         showError("GeometryStore::reserve : Error creating the vertex buffer");
         return false;
     }
