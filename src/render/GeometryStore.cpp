@@ -10,10 +10,41 @@
 
 bool GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 {
+    if (m_vertexBuffer.vkBuffer) {
+        showError("GeometryStore::reserve called more than once");
+        return false;
+    }
+
     m_vertices.resize(vertexBudgetBytes / sizeof(Vertex));
     m_indices.resize(indexBudgetBytes / sizeof(uint32_t));
     m_vertOffset = 0;
     m_idxOffset  = 0;
+
+    // Alloc at full budget once
+
+    m_vertexBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        m_vertices.size() * sizeof(Vertex),false, VMA_MEMORY_USAGE_AUTO);
+
+    if (m_vertexBuffer.vkBuffer) {
+        showError("GeometryStore::reserve : Error creating the vertex buffer");
+        return false;
+    }
+
+    m_indexBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        m_indices.size() * sizeof(uint32_t),false, VMA_MEMORY_USAGE_AUTO);
+
+    if (!m_indexBuffer.vkBuffer) {
+        showError("GeometryStore::reserve : Error creating the index buffer");
+        m_ctx.destroyBuffer(m_vertexBuffer);
+        return false;
+    }
+
+    std::cout << "Geometry budget: " << m_vertices.size() << " verts ("
+          << vertexBudgetBytes / 1024 / 1024 << " MB), "
+          << m_indices.size() << " indices ("
+          << indexBudgetBytes / 1024 / 1024 << " MB)" << std::endl;
+    return true;
+
 }
 
 void GeometryStore::shutdown()
@@ -22,16 +53,24 @@ void GeometryStore::shutdown()
     m_ctx.destroyBuffer(m_indexBuffer);
     m_meshes.clear();
     m_vertices.clear();
+    m_vertices.shrink_to_fit();
     m_indices.clear();
+    m_indices.shrink_to_fit();
     m_vertOffset = 0;
     m_idxOffset  = 0;
-    m_uploaded = false;
 }
 
+
+// Suballocation
 size_t GeometryStore::appendVertices(size_t count)
 {
-    assert(!m_uploaded && "Cannot append geometry after uploadToGpu()");
-    assert(m_vertOffset + count <= m_vertices.size() && "Vertex budget exceeded");
+    if (count == 0) {
+        return m_vertOffset;
+    }
+    if (m_vertOffset + count > m_vertices.size()) {
+        showError("Vertex budget exhausted");
+        return kInvalidOffset;
+    }
 
     const size_t start = m_vertOffset;
     m_vertOffset += count;
@@ -40,13 +79,19 @@ size_t GeometryStore::appendVertices(size_t count)
 
 size_t GeometryStore::appendIndices(size_t count)
 {
-    assert(!m_uploaded && "Cannot append geometry after uploadToGpu()");
-    assert(m_idxOffset + count <= m_indices.size() && "Index budget exceeded");
+    if (count == 0) {
+        return m_idxOffset;
+    }
+    if (m_idxOffset + count > m_indices.size()) {
+        showError("Index budget exhausted");
+        return kInvalidOffset;
+    }
 
     const size_t start = m_idxOffset;
     m_idxOffset += count;
     return start;
 }
+
 
 uint32_t GeometryStore::addMesh(Mesh &&mesh)
 {
@@ -54,100 +99,93 @@ uint32_t GeometryStore::addMesh(Mesh &&mesh)
     return static_cast<uint32_t>(m_meshes.size());
 }
 
-bool GeometryStore::uploadToGpu()
+// ======== Uploads to GPU ==========
+
+bool GeometryStore::copyToDevice(const void *src, const GPUBuffer &dst,
+                                 size_t dstOffsetBytes, size_t bytes, const char* what)
 {
-    if (m_uploaded) {
-        showError("GeometryStore::uploadToGpu called twice");
+    if (bytes == 0) {
+        return true;
+    }
+    if (!dst.vkBuffer) {
+        showError(std::string("Upload before reserve(): ") + what);
         return false;
     }
 
-    // Only the bytes actually written, not the whole budget. The old code
-    // staged and copied all 96MB regardless of how much geometry was loaded.
-    const size_t vertexBytes = m_vertOffset * sizeof(Vertex);
-    const size_t indexBytes  = m_idxOffset  * sizeof(uint32_t);
+    // TODO: Persistent staging ring would avoid an allocation per upload.
+    // revisit when we stream
 
-    if (!vertexBytes || !indexBytes) {
-        showError("No geometry to upload");
+    GPUBuffer staging = m_ctx.createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,bytes,true,VMA_MEMORY_USAGE_AUTO);
+
+    if (!staging.vkBuffer) {
+        showError(std::string("Error creating staging buffer for ") + what);
         return false;
     }
 
-    std::cout << "Uploading geometry: " << m_vertOffset << " verts ("
-              << vertexBytes / 1024 / 1024 << " MB), "
-              << m_idxOffset << " indices ("
-              << indexBytes / 1024 / 1024 << " MB)" << std::endl;
-
-    // --- staging (host visible) ------------------------------------------
-    GPUBuffer vertexStage = m_ctx.createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                               vertexBytes, true, VMA_MEMORY_USAGE_AUTO);
-    if (!vertexStage.vkBuffer) {
-        showError("Error creating vertex staging buffer");
-        return false;
-    }
-
-    GPUBuffer indexStage = m_ctx.createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                              indexBytes, true, VMA_MEMORY_USAGE_AUTO);
-    if (!indexStage.vkBuffer) {
-        showError("Error creating index staging buffer");
-        m_ctx.destroyBuffer(vertexStage);
-        return false;
-    }
-
-    m_ctx.mapCopyBufferData(vertexStage, 0, m_vertices.data(), vertexBytes);
-    m_ctx.mapCopyBufferData(indexStage,  0, m_indices.data(),  indexBytes);
-
-    // --- device local ----------------------------------------------------
-    // SHADER_DEVICE_ADDRESS on the vertex buffer: the vertex shader pulls
-    // from it by address rather than through vertex input bindings.
-
-    m_vertexBuffer = m_ctx.createBuffer(
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        vertexBytes, false, VMA_MEMORY_USAGE_AUTO);
-
-    if (!m_vertexBuffer.vkBuffer) {
-        showError("Error creating vertex buffer");
-        m_ctx.destroyBuffer(vertexStage);
-        m_ctx.destroyBuffer(indexStage);
-        return false;
-    }
-
-    // The index buffer is bound through vkCmdBindIndexBuffer, so it needs a
-    // VkBuffer handle rather than an address.
-    m_indexBuffer = m_ctx.createBuffer(
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        indexBytes, false, VMA_MEMORY_USAGE_AUTO);
-
-    if (!m_indexBuffer.vkBuffer) {
-        showError("Error creating index buffer");
-        m_ctx.destroyBuffer(vertexStage);
-        m_ctx.destroyBuffer(indexStage);
-        m_ctx.destroyBuffer(m_vertexBuffer);
-        return false;
-    }
-
-    // --- copy ------------------------------------------------------------
+    m_ctx.mapCopyBufferData(staging,0,src,bytes);
     VkCommandBuffer cmd = m_ctx.beginTransient();
     if (!cmd) {
-        m_ctx.destroyBuffer(vertexStage);
-        m_ctx.destroyBuffer(indexStage);
+        m_ctx.destroyBuffer(staging);
         return false;
     }
 
-    VkBufferCopy vertexCopy{ .srcOffset = 0, .dstOffset = 0, .size = vertexBytes };
-    vkCmdCopyBuffer(cmd, vertexStage.vkBuffer, m_vertexBuffer.vkBuffer, 1, &vertexCopy);
+    VkBufferCopy copy{ .srcOffset = 0, .dstOffset = dstOffsetBytes, .size = bytes };
+    vkCmdCopyBuffer(cmd, staging.vkBuffer, dst.vkBuffer, 1, &copy);
 
-    VkBufferCopy indexCopy{ .srcOffset = 0, .dstOffset = 0, .size = indexBytes };
-    vkCmdCopyBuffer(cmd, indexStage.vkBuffer, m_indexBuffer.vkBuffer, 1, &indexCopy);
-
+    // TODO: Still a full queue stall. Swap for a fence + deferred destroy when the
+    // hitch starts showing up in the editor.
     m_ctx.endTransient(cmd);
-
-    m_ctx.destroyBuffer(vertexStage);
-    m_ctx.destroyBuffer(indexStage);
-
-    m_vertices.clear();
-    m_vertices.shrink_to_fit();
-    m_indices.clear();
-    m_indices.shrink_to_fit();
-
-    m_uploaded = true;
+    m_ctx.destroyBuffer(staging);
     return true;
+}
+
+bool GeometryStore::uploadVertexRange(size_t firstVertex, size_t count)
+{
+    if (count == 0) {
+        return true;
+    }
+    if (firstVertex + count > m_vertices.size()) {
+        showError("uploadVertexRange out of bounds");
+        return false;
+    }
+    return copyToDevice(&m_vertices[firstVertex], m_vertexBuffer,
+                        firstVertex * sizeof(Vertex), count * sizeof(Vertex),
+                        "vertices");
+}
+
+bool GeometryStore::uploadIndexRange(size_t firstIndex, size_t count)
+{
+    if (count == 0) {
+        return true;
+    }
+    if (firstIndex + count > m_indices.size()) {
+        showError("uploadIndexRange out of bounds");
+        return false;
+    }
+    return copyToDevice(&m_indices[firstIndex], m_indexBuffer,
+                        firstIndex * sizeof(uint32_t), count * sizeof(uint32_t),
+                        "indices");
+}
+
+bool GeometryStore::uploadSince(const BatchMark &since)
+{
+    assert(since.vertexStart <= m_vertOffset && since.indexStart <= m_idxOffset &&
+           "BatchMark is from the future -- cursors only move forward");
+
+    const size_t vertexCount = m_vertOffset - since.vertexStart;
+    const size_t indexCount  = m_idxOffset  - since.indexStart;
+
+    if (vertexCount == 0 && indexCount == 0) {
+        // An empty batch is not an error: a glTF with no drawable primitives
+        // still imports its node hierarchy.
+        return true;
+    }
+
+    std::cout << "Uploading batch: " << vertexCount << " verts @ " << since.vertexStart
+              << ", " << indexCount << " indices @ " << since.indexStart << std::endl;
+
+    if (!uploadVertexRange(since.vertexStart, vertexCount)) {
+        return false;
+    }
+    return uploadIndexRange(since.indexStart, indexCount);
 }

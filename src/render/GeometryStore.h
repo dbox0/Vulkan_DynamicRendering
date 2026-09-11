@@ -24,7 +24,7 @@ class VulkanContext;
 class GeometryStore
 {
 public:
-    static constexpr size_t kInvalidIndex = std::numeric_limits<size_t>::max();
+    static constexpr size_t kInvalidOffset = std::numeric_limits<size_t>::max();
 
     struct BatchMark {
         size_t vertexStart = 0;
@@ -75,6 +75,7 @@ public:
     size_t indexCapacity()  const{ return m_indices.size(); }
     size_t vertexUsed()     const{ return m_vertOffset;}
     size_t indexUsed()      const{ return m_idxOffset;}
+
 private:
     VulkanContext &m_ctx;
 
@@ -86,5 +87,8 @@ private:
 
     GPUBuffer m_vertexBuffer;
     GPUBuffer m_indexBuffer;
-    bool m_uploaded = false;
+
+    bool copyToDevice(const void *src, const GPUBuffer &dst,
+                  size_t dstOffsetBytes, size_t bytes, const char *what);
+
 };
