@@ -8,6 +8,9 @@
 
 class Node
 {
+
+
+    // TODO: Replace this with a Transform Component?
     glm::vec3 m_translation = glm::vec3(0,0,0);
     glm::vec3 m_scale = glm::vec3(1.0f);
     glm::quat m_rotation = glm::quat(1,0,0,0);

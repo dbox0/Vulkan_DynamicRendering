@@ -41,6 +41,13 @@ add_executable(vulkanapp
         src/render/ResourceStore.h
         src/render/GeometryStore.cpp
         src/render/GeometryStore.h
+        src/engine/Component.cpp
+        src/engine/Component.h
+        src/engine/Entity.cpp
+        src/engine/Entity.h
+        src/engine/components/TransformComponent.h
+        src/engine/components/MeshComponent.cpp
+        src/engine/components/MeshComponent.h
 )
 
 set(CMAKE_CXX_STANDARD 26)

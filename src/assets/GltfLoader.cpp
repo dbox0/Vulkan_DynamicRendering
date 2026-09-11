@@ -13,7 +13,6 @@
 #include "../external/stb_image.h"
 
 #include "../common/errors.h"
-#include "../common/constants.h"
 #include "../render/GeometryStore.h"
 #include "../render/ResourceStore.h"
 #include "../render/VulkanContext.h"

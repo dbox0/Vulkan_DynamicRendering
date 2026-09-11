@@ -118,7 +118,7 @@ void Application::run()
 
     while (m_running) {
         const uint64_t currentTime = SDL_GetTicks();
-        const float deltaTime = static_cast<float>(currentTime - prevTime) / 1000.0f;
+        const float deltaTime = static_cast<float>(currentTime - prevTime) / 1000;
         prevTime = currentTime;
 
         SDL_Event event{};
@@ -137,8 +137,10 @@ void Application::run()
                 default:
                     break;
             }
-        }
+            m_camera.handleInput(event, deltaTime);
 
+        }
+        m_camera.Update(deltaTime);
         if (!m_running) {
             break;
         }
@@ -150,7 +152,7 @@ void Application::run()
             continue;
         }
 
-        m_camera.handleInput(keys, deltaTime);
+
         m_renderer.render(m_scene, m_camera, m_width, m_height);
     }
 }
