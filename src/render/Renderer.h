@@ -8,6 +8,7 @@
 #include <cstdint>
 #include "../common/gpu_types.h"
 #include "../scene/Scene.h"
+#include "GpuShared.h"
 
 class VulkanContext;
 class Swapchain;
@@ -16,22 +17,6 @@ class GeometryStore;
 class Camera;
 
 
-// Push constants. Must match the layout declared in the shaders.
-struct FrameConstants
-{
-    uint64_t vertexBufferAddress   = 0;
-    uint64_t materialBufferAddress = 0;
-    uint64_t renderItemsAddress    = 0;
-};
-
-// Per-draw data the vertex shader pulls via renderItemsAddress.
-struct RenderItem
-{
-    glm::mat4 wvp;
-    glm::mat4 worldMatrix;
-    uint32_t  materialIndex = 0;
-};
-
 struct FrameResources
 {
     VkCommandPool   commandPool           = nullptr;
@@ -39,6 +24,8 @@ struct FrameResources
     VkSemaphore     imageAcquiredSemaphore = nullptr;
     GPUBuffer       indirectDrawBuffer;
     GPUBuffer       renderItemBuffer;
+    GPUBuffer  frameDataBuffer;
+    FrameData *frameDataPtr = nullptr;
     VkDrawIndexedIndirectCommand *indirectDrawPtr = nullptr;
     RenderItem                   *renderItemPtr   = nullptr;
 };

@@ -30,7 +30,7 @@ private:
 
     static constexpr uint32_t VulkanVersion     = VK_API_VERSION_1_4;
     static constexpr size_t   MaxNodes          = 1024;
-    static constexpr size_t   VertexBudgetBytes = 64ull * 1024 * 1024;
+    static constexpr size_t VertexBudgetBytes = 128ull * 1024 * 1024;
     static constexpr size_t   IndexBudgetBytes  = 32ull * 1024 * 1024;
     static constexpr uint32_t MaxDrawsPerFrame  = 8192;
 

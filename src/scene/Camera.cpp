@@ -19,7 +19,19 @@ void Camera::handleInput(const SDL_Event& e, float deltaTime)
         if (e.key.key == SDLK_D) velocity.x = 0.0f;
     }
 
-    if (e.type == SDL_EVENT_MOUSE_MOTION) {
+    if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (e.button.button == SDL_BUTTON_RIGHT) {
+            rightMouseHeld = true;
+        }
+    }
+
+    if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        if (e.button.button == SDL_BUTTON_RIGHT) {
+            rightMouseHeld = false;
+        }
+    }
+
+    if (e.type == SDL_EVENT_MOUSE_MOTION && rightMouseHeld) {
         yaw   += static_cast<float>(e.motion.xrel) / 200.0f;
         pitch -= static_cast<float>(e.motion.yrel) / 200.0f;
     }

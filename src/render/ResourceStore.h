@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <cstdint>
-#include "../structs.h"
+#include <../assets/Material.h>
 #include "../common/gpu_types.h"
 #include <volk.h>
 
@@ -80,6 +80,13 @@ private:
     bool createDescriptorSets();
     bool createMaterialBuffer();
     bool createFallbackTexture();
+
+
+    struct Texture
+    {
+        uint32_t imageId = 0;
+        uint32_t samplerId = 0;
+    };
 
     // Builds the VkDescriptorImageInfo for one texture, substituting the
     // fallback for anything malformed.

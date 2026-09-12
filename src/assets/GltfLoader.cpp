@@ -9,6 +9,7 @@
 #include <volk.h>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "Mesh.h"
 #include "../external/tiny_gltf_v3.h"
 #include "../external/stb_image.h"
 
@@ -17,11 +18,20 @@
 #include "../render/ResourceStore.h"
 #include "../render/VulkanContext.h"
 #include "../scene/Scene.h"
-#include "../structs.h"
+#include "../render/GpuShared.h"
 
 // ============================================================================
 // entry point
 // ============================================================================
+
+struct Image
+{
+    int width;
+    int height;
+    int channels;
+    unsigned char *data;
+};
+
 
 bool GltfLoader::load(const std::filesystem::path &filepath)
 {
@@ -285,27 +295,50 @@ std::vector<uint32_t> GltfLoader::loadMaterials(const tg3_model &model,
 {
     std::vector<uint32_t> materialIds(model.materials_count);
 
-    for (int i = 0; i < model.materials_count; ++i) {
-        const tg3_material *mat = &model.materials[i];
-        const int32_t texIndex = mat->pbr_metallic_roughness.base_color_texture.index;
+    // 0 means "this material has no such texture" -- ResourceStore::toGpu
+    // substitutes the white default. Out-of-range indices are malformed
+    // files, so they get 0 too rather than the error texture.
+    auto texId = [&](int32_t index) -> uint32_t {
+        return (index >= 0 && static_cast<size_t>(index) < textureIds.size())
+                   ? textureIds[index]
+                   : 0;
+    };
 
-        const uint32_t textureId =
-            (texIndex != -1 && static_cast<size_t>(texIndex) < textureIds.size())
-                ? textureIds[texIndex]
-                : m_resources.fallbackTextureId();
+    for (uint32_t i = 0; i < model.materials_count; ++i) {
+        const tg3_material &src = model.materials[i];
+        const auto &pbr = src.pbr_metallic_roughness;
 
-        materialIds[i] = m_resources.addMaterial(Material
-        {
-            .baseColor = glm::vec4(
-                mat->pbr_metallic_roughness.base_color_factor[0],
-                mat->pbr_metallic_roughness.base_color_factor[1],
-                mat->pbr_metallic_roughness.base_color_factor[2],
-                mat->pbr_metallic_roughness.base_color_factor[3]),
+        Material material;
+        material.name = src.name.data ? std::string(src.name.data, src.name.len)
+                                      : std::string();
 
-            // Material::textureIndex is the 0-based descriptor slot the
-            // shader samples. ResourceStore owns that conversion.
-            .textureIndex = m_resources.textureDescriptorSlot(textureId)
-        });
+        material.baseColorFactor = glm::vec4(pbr.base_color_factor[0],
+                                             pbr.base_color_factor[1],
+                                             pbr.base_color_factor[2],
+                                             pbr.base_color_factor[3]);
+        material.metallicFactor  = static_cast<float>(pbr.metallic_factor);
+        material.roughnessFactor = static_cast<float>(pbr.roughness_factor);
+
+        material.emissiveFactor = glm::vec3(src.emissive_factor[0],
+                                            src.emissive_factor[1],
+                                            src.emissive_factor[2]);
+
+        material.normalScale       = static_cast<float>(src.normal_texture.scale);
+        material.occlusionStrength = static_cast<float>(src.occlusion_texture.strength);
+        material.alphaCutoff       = static_cast<float>(src.alpha_cutoff);
+        material.doubleSided       = src.double_sided != 0;
+
+        material.alphaMode = tg3_str_equals_cstr(src.alpha_mode, "MASK")  ? AlphaMode::Mask
+                           : tg3_str_equals_cstr(src.alpha_mode, "BLEND") ? AlphaMode::Blend
+                                                                          : AlphaMode::Opaque;
+
+        material.baseColorTexture         = texId(pbr.base_color_texture.index);
+        material.metallicRoughnessTexture = texId(pbr.metallic_roughness_texture.index);
+        material.normalTexture            = texId(src.normal_texture.index);
+        material.occlusionTexture         = texId(src.occlusion_texture.index);
+        material.emissiveTexture          = texId(src.emissive_texture.index);
+
+        materialIds[i] = m_resources.addMaterial(material);
     }
     return materialIds;
 }

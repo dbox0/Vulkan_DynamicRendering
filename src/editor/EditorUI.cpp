@@ -170,7 +170,7 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
     ImGui::PushID(label);
 
     const float lineHeight = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2.0f;
-    const ImVec2 buttonSize(lineHeight + 3.0f, lineHeight);
+    const ImVec2 buttonSize(lineHeight*.2f, lineHeight);
 
     // Divides the remaining width into three equal fields, accounting for the
     // buttons we are about to insert.
@@ -180,7 +180,7 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
     struct Axis { const char *name; ImVec4 base, hover, active; float *value; };
     const Axis axes[3]
     {
-        { "X", ImVec4(0.72f, 0.24f, 0.28f, 1.0f), ImVec4(0.82f, 0.32f, 0.36f, 1.0f),
+        { "X", ImVec4(0.72f, 0.14f, 0.18f, 1.0f), ImVec4(0.82f, 0.32f, 0.36f, 1.0f),
                ImVec4(0.72f, 0.24f, 0.28f, 1.0f), &values.x },
         { "Y", ImVec4(0.35f, 0.62f, 0.28f, 1.0f), ImVec4(0.43f, 0.72f, 0.36f, 1.0f),
                ImVec4(0.35f, 0.62f, 0.28f, 1.0f), &values.y },
@@ -205,7 +205,7 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
-        changed |= ImGui::DragFloat("##v", axis.value, speed, 0.0f, 0.0f, "%.3f");
+        changed |= ImGui::DragFloat("##v", axis.value, speed, 0.0f, 0.0f, "%.2f");
         ImGui::PopID();
         ImGui::PopItemWidth();
 

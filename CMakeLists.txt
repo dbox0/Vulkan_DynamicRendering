@@ -35,7 +35,6 @@ add_executable(vulkanapp
         src/application.cpp
         src/utils.h
         src/external/tinygltf.cpp
-        src/structs.h
         src/Math/Transform.h
         src/common/constants.h
         src/common/constants.h
@@ -70,6 +69,10 @@ add_executable(vulkanapp
         src/engine/components/TransformComponent.h
         src/engine/components/MeshComponent.cpp
         src/engine/components/MeshComponent.h
+        src/render/GpuShared.h
+        src/render/GpuShared.h
+        src/assets/Material.h
+        src/assets/Mesh.h
 )
 
 set(CMAKE_CXX_STANDARD 26)

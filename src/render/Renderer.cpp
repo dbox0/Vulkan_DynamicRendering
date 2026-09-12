@@ -16,7 +16,6 @@
 #include "../common/errors.h"
 #include "../common/constants.h"
 #include "../scene/Camera.h"
-#include "../structs.h"
 
 // ============================================================================
 // lifetime
@@ -79,6 +78,12 @@ void Renderer::shutdown()
             res.renderItemPtr = nullptr;
         }
         m_ctx.destroyBuffer(res.renderItemBuffer);
+        
+        if (res.frameDataPtr) {
+            vmaUnmapMemory(m_ctx.allocator(), res.frameDataBuffer.allocation);
+            res.frameDataPtr = nullptr;
+        }
+        m_ctx.destroyBuffer(res.frameDataBuffer);
     }
 
     if (m_timelineSemaphore) {
@@ -164,11 +169,11 @@ VkShaderModule Renderer::createShaderModule(const std::string &fileName, shaderc
 
 bool Renderer::createShaders()
 {
-    m_vertexShader = createShaderModule("shader.vert", shaderc_vertex_shader);
+    m_vertexShader = createShaderModule("pbr.vert", shaderc_vertex_shader);
     if (!m_vertexShader) {
         return false;
     }
-    m_fragmentShader = createShaderModule("shader.frag", shaderc_fragment_shader);
+    m_fragmentShader = createShaderModule("pbr.frag", shaderc_fragment_shader);
     return m_fragmentShader != nullptr;
 }
 
@@ -398,35 +403,50 @@ bool Renderer::createFrameBuffers(uint32_t maxDrawsPerFrame)
     const size_t indirectBytes   = static_cast<size_t>(maxDrawsPerFrame) * sizeof(VkDrawIndexedIndirectCommand);
     const size_t renderItemBytes = static_cast<size_t>(maxDrawsPerFrame) * sizeof(RenderItem);
 
+    // Every per-frame buffer here is host-visible and persistently mapped:
+    // written once per frame by the CPU, read straight from host memory by
+    // the GPU. On ReBAR hardware that beats staging + copy for data this small.
+    auto createMapped = [this](VkBufferUsageFlags usage, size_t bytes,
+                               GPUBuffer &outBuffer, void *&outPtr, const char *what) -> bool
+    {
+        outBuffer = m_ctx.createBuffer(usage, bytes, true, VMA_MEMORY_USAGE_AUTO);
+        if (!outBuffer.vkBuffer) {
+            showError(std::string("Unable to create the ") + what);
+            return false;
+        }
+        if (vmaMapMemory(m_ctx.allocator(), outBuffer.allocation, &outPtr) != VK_SUCCESS) {
+            showError(std::string("Unable to map the ") + what);
+            return false;
+        }
+        return true;
+    };
+
     for (FrameResources &res : m_frameResources) {
-        res.indirectDrawBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                                                    indirectBytes, true, VMA_MEMORY_USAGE_AUTO);
-        if (!res.indirectDrawBuffer.vkBuffer) {
-            showError("Unable to create the indirect draw buffer");
-            return false;
-        }
+        void *ptr = nullptr;
 
-        void *indirectPtr = nullptr;
-        if (vmaMapMemory(m_ctx.allocator(), res.indirectDrawBuffer.allocation, &indirectPtr) != VK_SUCCESS) {
-            showError("Unable to map the indirect draw buffer");
+        // Indirect commands. Not read through BDA, so no device address needed.
+        if (!createMapped(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, indirectBytes,
+                          res.indirectDrawBuffer, ptr, "indirect draw buffer")) {
             return false;
         }
-        res.indirectDrawPtr = static_cast<VkDrawIndexedIndirectCommand *>(indirectPtr);
+        res.indirectDrawPtr = static_cast<VkDrawIndexedIndirectCommand *>(ptr);
 
-        res.renderItemBuffer = m_ctx.createBuffer(
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-            renderItemBytes, true, VMA_MEMORY_USAGE_AUTO);
-        if (!res.renderItemBuffer.vkBuffer) {
-            showError("Unable to create the render item buffer");
+        // Per-draw world/normal matrices + material index, indexed by
+        // gl_InstanceIndex in the vertex shader.
+        if (!createMapped(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          renderItemBytes, res.renderItemBuffer, ptr, "render item buffer")) {
             return false;
         }
+        res.renderItemPtr = static_cast<RenderItem *>(ptr);
 
-        void *renderItemPtr = nullptr;
-        if (vmaMapMemory(m_ctx.allocator(), res.renderItemBuffer.allocation, &renderItemPtr) != VK_SUCCESS) {
-            showError("Unable to map the render item buffer");
+        // Camera + lighting for this frame. One struct, not an array -- but
+        // still per frame-in-flight, because the other frame may still be
+        // reading its copy on the GPU.
+        if (!createMapped(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          sizeof(FrameData), res.frameDataBuffer, ptr, "frame data buffer")) {
             return false;
         }
-        res.renderItemPtr = static_cast<RenderItem *>(renderItemPtr);
+        res.frameDataPtr = static_cast<FrameData *>(ptr);
     }
     return true;
 }
@@ -464,8 +484,8 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
 
         res.renderItemPtr[i] = RenderItem
         {
-            .wvp = viewProj * item.worldMatrix,
-            .worldMatrix = item.worldMatrix,
+            .worldMatrix   = item.worldMatrix,
+            .normalMatrix  = glm::transpose(glm::inverse(glm::mat3(item.worldMatrix))),
             .materialIndex = materialIndex
         };
     }
@@ -558,9 +578,10 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     FrameConstants frameConsts
     {
-        .vertexBufferAddress   = m_geometry.vertexBufferAddress(),
-        .materialBufferAddress = m_resources.materialBufferAddress(),
-        .renderItemsAddress    = res.renderItemBuffer.deviceAddress
+        .vertexBufferAddress     = m_geometry.vertexBufferAddress(),
+        .materialBufferAddress   = m_resources.materialBufferAddress(),
+        .renderItemBufferAddress = res.renderItemBuffer.deviceAddress,
+        .frameDataAddress        = res.frameDataBuffer.deviceAddress
     };
     vkCmdPushConstants(res.commandBuffer, m_pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

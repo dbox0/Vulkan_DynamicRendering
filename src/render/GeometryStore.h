@@ -1,9 +1,9 @@
 #pragma once
-#define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <cstdint>
-#include "../structs.h"
+#include "../assets/Mesh.h"
+#include "GpuShared.h"
 #include "../common/gpu_types.h"
 
 class VulkanContext;

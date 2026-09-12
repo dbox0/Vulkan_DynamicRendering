@@ -1,6 +1,6 @@
 #include "Scene.h"
 #include "../render/GeometryStore.h"
-#include "../structs.h"
+
 
 void Scene::initialize(size_t maxNodes)
 {
