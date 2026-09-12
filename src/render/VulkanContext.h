@@ -40,8 +40,9 @@ public:
     // --- images ----------------------------------------------------------
 
     bool createImage2D(VkCommandBuffer commandBuffer, const unsigned char *imageData,
-                       uint32_t width, uint32_t height, int channels,
-                       GPUImage &outImage, GPUBuffer &outStagingBuffer) const;
+                   uint32_t width, uint32_t height, int channels, VkFormat format,
+                   GPUImage &outImage, GPUBuffer &outStagingBuffer) const;
+
     void destroyImage(GPUImage &image) const;
 
     // --- transient (load-time) command buffers ---------------------------

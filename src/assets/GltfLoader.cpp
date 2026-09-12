@@ -19,17 +19,17 @@
 #include "../render/VulkanContext.h"
 #include "../scene/Scene.h"
 #include "../render/GpuShared.h"
-
-// ============================================================================
-// entry point
-// ============================================================================
-
 struct Image
 {
-    int width;
-    int height;
-    int channels;
-    unsigned char *data;
+    int width  = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char *data = nullptr;
+
+    // glTF images carry no colour space of their own -- only the material
+    // slot that samples one knows whether it is colour or data. Decided by
+    // the pre-pass in load(), consumed by uploadImages().
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 };
 
 
@@ -66,7 +66,21 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
     const std::filesystem::path imageDir = filepath.parent_path();
 
     std::vector<Image> images = loadImages(model, imageDir);   // -> RAM
+    assignImageColorSpaces(model, images);                     // sRGB vs linear
     std::vector<uint32_t> imageIds = uploadImages(images);     // -> VRAM
+
+    // Names are for the editor's texture previews, so they can only be set
+    // after upload -- image IDs do not exist until then.
+    for (size_t i = 0; i < imageIds.size(); ++i) {
+        // Images that failed to load all share the one error image; naming
+        // that after a file would mislabel it everywhere else it appears.
+        if (!images[i].data || imageIds[i] == m_resources.errorImageId()) {
+            continue;
+        }
+        const tg3_str &uri = model.images[i].uri;
+        m_resources.setImageName(imageIds[i], uri.data ? std::string(uri.data, uri.len)
+                                                       : std::string());
+    }
 
     for (const Image &image : images) {
         stbi_image_free(image.data);
@@ -218,17 +232,33 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
 
                 const size_t bufferOffset = buffer_view->byte_offset + accessor->byte_offset;
-                const size_t stride = buffer_view->byte_stride != 0 ? buffer_view->byte_stride : sizeof(T);
+
+                // Stride comes from the ACCESSOR, not from the destination
+                // member: a tightly packed VEC4 has stride 16 while
+                // sizeof(glm::vec3) is 12, so the old sizeof(T) fallback read
+                // every vertex after the first at the wrong offset.
+                const size_t stride = static_cast<size_t>(tg3_accessor_byte_stride(accessor, buffer_view));
+
+                // How many floats the file actually supplies -- a VEC3
+                // COLOR_0 feeding a vec4 member must not read a 4th float.
+                const int components = tg3_num_components(accessor->type);
 
                 for (uint64_t index = 0; index < accessor->count; ++index) {
                     const size_t elementOffset = bufferOffset + index * stride;
                     const float *data = reinterpret_cast<const float *>(buffer->data.data + elementOffset);
 
                     Vertex *vertex = m_geometry.vertexAt(vertexStart + index);
-                    if constexpr (std::is_same_v<T, glm::vec3>) {
+                    if constexpr (std::is_same_v<T, glm::vec4>) {
+                        vertex->*member = glm::vec4(data[0], data[1], data[2],
+                                                    components >= 4 ? data[3] : 1.0f);
+                    } else if constexpr (std::is_same_v<T, glm::vec3>) {
                         vertex->*member = glm::vec3(data[0], data[1], data[2]);
                     } else if constexpr (std::is_same_v<T, glm::vec2>) {
                         vertex->*member = glm::vec2(data[0], data[1]);
+                    } else {
+                        // Vertex::color silently did nothing when it became a
+                        // vec4 and no branch matched. Fail the build instead.
+                        static_assert(sizeof(T) == 0, "writeAttribute: unhandled attribute type");
                     }
                 }
             };
@@ -246,6 +276,12 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                     assert(accessor->type == TG3_TYPE_VEC3 || accessor->type == TG3_TYPE_VEC4);
                     assert(accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
                     writeAttribute(&Vertex::color, attr);
+                } else if (std::strcmp(attr->key.data, "TANGENT") == 0) {
+                    // w carries the bitangent sign. No TANGENT leaves w at 0,
+                    // which the fragment shader reads as "derive a tangent
+                    // frame from screen-space derivatives instead".
+                    assert(accessor->type == TG3_TYPE_VEC4 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+                    writeAttribute(&Vertex::tangent, attr);
                 } else if (std::strcmp(attr->key.data, "TEXCOORD_0") == 0) {
                     assert(accessor->type == TG3_TYPE_VEC2 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
                     writeAttribute(&Vertex::uv, attr);
@@ -289,6 +325,32 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
 // ============================================================================
 // materials / textures / samplers / images
 // ============================================================================
+
+// Walks the MATERIALS to decide each image's format, because that is the only
+// place the information exists: the same PNG is sRGB as a base colour map and
+// linear as a roughness map. Sampling a normal map through an sRGB view bends
+// the normals in a way that looks almost right, which is the worst kind of bug.
+void GltfLoader::assignImageColorSpaces(const tg3_model &model, std::vector<Image> &images) const
+{
+    // Anything no material references keeps the linear default; it is never
+    // sampled anyway.
+    auto markSrgb = [&](int32_t textureIndex) {
+        if (textureIndex < 0 || static_cast<uint32_t>(textureIndex) >= model.textures_count) {
+            return;
+        }
+        const int32_t source = model.textures[textureIndex].source;
+        if (source >= 0 && static_cast<size_t>(source) < images.size()) {
+            images[source].format = VK_FORMAT_R8G8B8A8_SRGB;
+        }
+    };
+
+    for (uint32_t i = 0; i < model.materials_count; ++i) {
+        // Only base colour and emissive are colour. Metallic-roughness,
+        // normal and occlusion are all data.
+        markSrgb(model.materials[i].pbr_metallic_roughness.base_color_texture.index);
+        markSrgb(model.materials[i].emissive_texture.index);
+    }
+}
 
 std::vector<uint32_t> GltfLoader::loadMaterials(const tg3_model &model,
                                                 const std::vector<uint32_t> &textureIds)
@@ -357,12 +419,15 @@ std::vector<uint32_t> GltfLoader::loadTextures(const tg3_model &model,
         const uint32_t imageId =
             (tex.source != -1 && static_cast<size_t>(tex.source) < imageIds.size())
                 ? imageIds[tex.source]
-                : m_resources.fallbackImageId();
+                : m_resources.errorImageId();
 
         const uint32_t samplerId =
             (tex.sampler != -1 && static_cast<size_t>(tex.sampler) < samplerIds.size())
                 ? samplerIds[tex.sampler]
-                : m_resources.fallbackSamplerId();
+                // A texture with no sampler is legal glTF (use the defaults),
+                // so this falls back to the default SAMPLER. An image ID is a
+                // different namespace and would land on an arbitrary sampler.
+                : m_resources.defaultSamplerId();
 
         textureIds[i] = m_resources.addTexture(imageId, samplerId);
     }
@@ -423,7 +488,7 @@ std::vector<uint32_t> GltfLoader::loadSamplers(const tg3_model &model)
         };
 
         const uint32_t samplerId = m_resources.addSampler(samplerInfo);
-        samplerIds[i] = samplerId ? samplerId : m_resources.fallbackSamplerId();
+        samplerIds[i] = samplerId ? samplerId : m_resources.defaultSamplerId();
     }
     return samplerIds;
 }
@@ -437,7 +502,7 @@ std::vector<Image> GltfLoader::loadImages(const tg3_model &model,
         Image &img = images[i];
 
         // Embedded/buffer-view images have no URI. Those aren't handled yet;
-        // they fall through to the purple fallback rather than crashing.
+        // they fall through to the error texture rather than crashing.
         if (!model.images[i].uri.data) {
             showError("glTF image has no URI (embedded images are not supported yet)");
             continue;
@@ -465,7 +530,7 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
     VkCommandBuffer commandBuffer = m_ctx.beginTransient();
     if (!commandBuffer) {
         for (uint32_t &id : imageIds) {
-            id = m_resources.fallbackImageId();
+            id = m_resources.errorImageId();
         }
         return imageIds;
     }
@@ -476,19 +541,21 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
     for (size_t i = 0; i < images.size(); ++i) {
         const Image &image = images[i];
         if (!image.data) {
-            imageIds[i] = m_resources.fallbackImageId();
+            imageIds[i] = m_resources.errorImageId();
             continue;
         }
 
         GPUBuffer staging;
         const uint32_t imageId = m_resources.addImage(commandBuffer, image.data,
-                                                      image.width, image.height, 4, staging);
-        imageIds[i] = imageId ? imageId : m_resources.fallbackImageId();
+                                                      static_cast<uint32_t>(image.width),
+                                                      static_cast<uint32_t>(image.height),
+                                                      4, image.format, staging);
+        imageIds[i] = imageId ? imageId : m_resources.errorImageId();
         if (staging.vkBuffer) {
             stagingBuffers.push_back(staging);
         }
     }
-
+ 
     // Staging buffers stay alive until the copies have actually executed.
     m_ctx.endTransient(commandBuffer);
 

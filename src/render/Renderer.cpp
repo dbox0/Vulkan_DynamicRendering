@@ -78,7 +78,7 @@ void Renderer::shutdown()
             res.renderItemPtr = nullptr;
         }
         m_ctx.destroyBuffer(res.renderItemBuffer);
-        
+
         if (res.frameDataPtr) {
             vmaUnmapMemory(m_ctx.allocator(), res.frameDataBuffer.allocation);
             res.frameDataPtr = nullptr;
@@ -702,6 +702,16 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
     const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
     const glm::mat4 viewProj = camera.viewProjection(aspectRatio);
+
+    *res.frameDataPtr = FrameData
+    {
+        .viewProj       = viewProj,
+        .cameraPosition = camera.position,
+        .exposure       = 1.0f,
+        .sunDirection   = glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)),
+        .sunIntensity   = 3.0f,
+        .sunColor       = glm::vec3(1.0f, 0.96f, 0.9f),
+    };
 
     scene.collectDrawItems(m_geometry, m_drawItems);
     const uint32_t drawCount = writeDrawCommands(res, viewProj);

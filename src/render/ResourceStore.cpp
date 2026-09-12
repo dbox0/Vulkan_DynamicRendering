@@ -3,32 +3,33 @@
 #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <array>
+#include <utility>
 #include <vector>
 
 #include "VulkanContext.h"
 #include "../common/errors.h"
 #include "../common/constants.h"
 
-// ============================================================================
-// lifetime
-// ============================================================================
-
 bool ResourceStore::initialize()
 {
     if (!createDescriptorSets()) {
         return false;
     }
-    // Before the fallback texture: addMaterial() writes through the mapped
-    // pointer, so the buffer has to exist first.
+    // Before the default textures: addImage() records bookkeeping, and
+    // addMaterial() writes through the mapped pointer, so the buffer has to
+    // exist first.
     if (!createMaterialBuffer()) {
         return false;
     }
-    if (!createFallbackTexture()) {
+    if (!createDefaultTextures()) {
         return false;
     }
-    // Commit slot 0 immediately so the descriptor array is valid even if no
-    // model is ever loaded. An empty scene now renders without validation
-    // errors.
+    if (!createDefaultMaterial()) {
+        return false;
+    }
+    // Commit slots 0 and 1 immediately so the descriptor array is valid even
+    // if no model is ever loaded. An empty scene now renders without
+    // validation errors.
     return commitTextureDescriptors();
 }
 
@@ -59,6 +60,7 @@ void ResourceStore::shutdown()
         m_ctx.destroyImage(img);
     }
     m_images.clear();
+    m_imageInfos.clear();
 
     for (VkSampler sampler : m_samplers) {
         vkDestroySampler(m_ctx.device(), sampler, nullptr);
@@ -76,17 +78,21 @@ void ResourceStore::shutdown()
 }
 
 
+// ============================================================================
 // adders -- 1-based IDs, 0 means failure/none
+
 
 uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const unsigned char *data,
                                  uint32_t width, uint32_t height, int channels,
-                                 GPUBuffer &outStagingBuffer)
+                                 VkFormat format, GPUBuffer &outStagingBuffer)
 {
     GPUImage gpuImage;
-    if (!m_ctx.createImage2D(commandBuffer, data, width, height, channels, gpuImage, outStagingBuffer)) {
+    if (!m_ctx.createImage2D(commandBuffer, data, width, height, channels,
+                             format, gpuImage, outStagingBuffer)) {
         return 0;
     }
     m_images.push_back(gpuImage);
+    m_imageInfos.push_back(ImageInfo{ .width = width, .height = height, .format = format });
     return static_cast<uint32_t>(m_images.size());
 }
 
@@ -105,25 +111,38 @@ uint32_t ResourceStore::addTexture(uint32_t imageId, uint32_t samplerId)
 {
     if (m_textures.size() >= MaxTextures) {
         showError("Exceeded the maximum texture count");
-        return m_fallbackTextureId;
+        return m_errorTextureId;
     }
 
+    // A texture asked for an image that does not exist -- that is broken, not
+    // missing, so it gets magenta rather than white.
     if (imageId == 0 || imageId > m_images.size()) {
-        imageId = m_fallbackImageId;
+        imageId = m_errorImageId;
     }
     if (samplerId == 0 || samplerId > m_samplers.size()) {
-        samplerId = m_fallbackSamplerId;
+        samplerId = m_defaultSamplerId;
     }
 
     m_textures.push_back(Texture{ .imageId = imageId, .samplerId = samplerId });
     return static_cast<uint32_t>(m_textures.size());
 }
 
+uint32_t ResourceStore::addBuffer(const GPUBuffer &buffer)
+{
+    m_buffers.push_back(buffer);
+    return static_cast<uint32_t>(m_buffers.size());
+}
+
+
+// ============================================================================
+// materials
+// ============================================================================
+
 bool ResourceStore::createMaterialBuffer()
 {
-    const size_t bytes = MaxMaterials * sizeof(Material);
+    const size_t bytes = MaxMaterials * sizeof(GpuMaterial);
 
-    // Host-visible and kept mapped. ~80KB at 4096 materials -- comfortably
+    // Host-visible and kept mapped. ~288KB at 4096 materials -- comfortably
     // inside the BAR window, and it means the editor can tweak a material
     // without touching a transfer queue. Move it device-local with a staged
     // copy only if profiling ever says the shader read is the problem.
@@ -142,12 +161,52 @@ bool ResourceStore::createMaterialBuffer()
         m_ctx.destroyBuffer(m_materialBuffer);
         return false;
     }
-    m_materialPtr = static_cast<Material *>(mapped);
+    m_materialPtr = static_cast<GpuMaterial *>(mapped);
 
+    // Reserved so the CPU mirror never reallocates; material() hands out
+    // references and the editor holds them across a frame.
     m_materials.reserve(MaxMaterials);
     return true;
 }
 
+GpuMaterial ResourceStore::toGpu(const Material &m) const
+{
+    // 0 = "this material has no such texture" -> white, which is the identity
+    // for every slot that gets multiplied by a factor. Anything non-zero goes
+    // through textureDescriptorSlot, which falls back to the ERROR slot: a
+    // texture ID that does not resolve is a bug worth seeing.
+    auto slot = [this](uint32_t textureId) {
+        return textureId ? textureDescriptorSlot(textureId)
+                         : (m_whiteTextureId ? m_whiteTextureId - 1 : 0);
+    };
+
+    uint32_t flags = 0;
+    if (m.alphaMode == AlphaMode::Mask)  flags |= MaterialFlag_AlphaMask;
+    if (m.alphaMode == AlphaMode::Blend) flags |= MaterialFlag_AlphaBlend;
+    if (m.doubleSided)                   flags |= MaterialFlag_DoubleSided;
+    // Only set when a normal map actually exists: the shader skips the whole
+    // tangent-frame branch otherwise, so there is no "neutral normal" default
+    // texture to maintain.
+    if (m.normalTexture)                 flags |= MaterialFlag_NormalMap;
+
+    return GpuMaterial
+    {
+        .baseColorFactor      = m.baseColorFactor,
+        // Folded here so the shader does one multiply less per fragment.
+        .emissiveFactor       = m.emissiveFactor * m.emissiveStrength,
+        .metallicFactor       = m.metallicFactor,
+        .roughnessFactor      = m.roughnessFactor,
+        .normalScale          = m.normalScale,
+        .occlusionStrength    = m.occlusionStrength,
+        .alphaCutoff          = m.alphaCutoff,
+        .baseColorTex         = slot(m.baseColorTexture),
+        .metallicRoughnessTex = slot(m.metallicRoughnessTexture),
+        .normalTex            = slot(m.normalTexture),
+        .occlusionTex         = slot(m.occlusionTexture),
+        .emissiveTex          = slot(m.emissiveTexture),
+        .flags                = flags
+    };
+}
 
 uint32_t ResourceStore::addMaterial(const Material &material)
 {
@@ -162,11 +221,11 @@ uint32_t ResourceStore::addMaterial(const Material &material)
 
     const size_t index = m_materials.size();
     m_materials.push_back(material);
-    m_materialPtr[index] = material;
+    m_materialPtr[index] = toGpu(material);
 
     // No-op on coherent memory, required if VMA hands back non-coherent.
     vmaFlushAllocation(m_ctx.allocator(), m_materialBuffer.allocation,
-                       index * sizeof(Material), sizeof(Material));
+                       index * sizeof(GpuMaterial), sizeof(GpuMaterial));
 
     return static_cast<uint32_t>(index + 1);
 }
@@ -180,18 +239,11 @@ bool ResourceStore::updateMaterial(uint32_t materialId, const Material &material
 
     const size_t index = materialId - 1;
     m_materials[index] = material;
-    m_materialPtr[index] = material;
+    m_materialPtr[index] = toGpu(material);
 
     vmaFlushAllocation(m_ctx.allocator(), m_materialBuffer.allocation,
-                       index * sizeof(Material), sizeof(Material));
+                       index * sizeof(GpuMaterial), sizeof(GpuMaterial));
     return true;
-}
-
-
-uint32_t ResourceStore::addBuffer(const GPUBuffer &buffer)
-{
-    m_buffers.push_back(buffer);
-    return static_cast<uint32_t>(m_buffers.size());
 }
 
 uint32_t ResourceStore::textureDescriptorSlot(uint32_t textureId) const
@@ -199,34 +251,53 @@ uint32_t ResourceStore::textureDescriptorSlot(uint32_t textureId) const
     // Descriptor array is 0-based; our IDs are 1-based. This is the ONLY
     // place that conversion is allowed to happen.
     if (textureId == 0 || textureId > m_textures.size()) {
-        return m_fallbackTextureId ? m_fallbackTextureId - 1 : 0;
+        return m_errorTextureId ? m_errorTextureId - 1 : 0;
     }
     return textureId - 1;
 }
 
-// fallback texture
 
-bool ResourceStore::createFallbackTexture()
+// ============================================================================
+// defaults
+// ============================================================================
+
+bool ResourceStore::createDefaultTextures()
 {
-    // Magenta 1x1. Must be the first image, sampler and texture created, so
-    // it always occupies descriptor slot 0.
-    uint32_t purplePixelData = 0xFF00FFFF;
+    // ORDER MATTERS. White must be texture ID 1 (descriptor slot 0) so a
+    // zero-initialised GpuMaterial is always safe to sample, and magenta
+    // second so "broken" stays visually distinct from "not supplied".
+    //
+    // Byte arrays, not a packed uint32_t: 0xFF00FFFF is stored little-endian
+    // as FF FF 00 FF, which uploads as YELLOW, not magenta.
+    static constexpr uint8_t whitePixel[4]   = { 255, 255, 255, 255 };
+    static constexpr uint8_t magentaPixel[4] = { 255,   0, 255, 255 };
+
+    // UNORM, not SRGB: these are engine-authored constants, not decoded image
+    // files, so there is no colour space to undo.
+    constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
     VkCommandBuffer cmd = m_ctx.beginTransient();
     if (!cmd) {
         return false;
     }
 
-    GPUBuffer staging;
-    m_fallbackImageId = addImage(cmd, reinterpret_cast<const unsigned char *>(&purplePixelData),
-                                 1, 1, 4, staging);
-    m_ctx.endTransient(cmd);
-    m_ctx.destroyBuffer(staging);
+    GPUBuffer whiteStaging;
+    GPUBuffer errorStaging;
+    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, 4, format, whiteStaging);
+    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, 4, format, errorStaging);
 
-    if (!m_fallbackImageId) {
-        showError("Unable to create the fallback image");
+    // Both copies are recorded before the single submit, so one transient
+    // command buffer covers both uploads.
+    m_ctx.endTransient(cmd);
+    m_ctx.destroyBuffer(whiteStaging);
+    m_ctx.destroyBuffer(errorStaging);
+
+    if (!m_whiteImageId || !m_errorImageId) {
+        showError("Unable to create the default images");
         return false;
     }
+    setImageName(m_whiteImageId, "<white>");
+    setImageName(m_errorImageId, "<missing>");
 
     VkSamplerCreateInfo samplerInfo
     {
@@ -239,18 +310,48 @@ bool ResourceStore::createFallbackTexture()
         .compareEnable = VK_FALSE
     };
 
-    m_fallbackSamplerId = addSampler(samplerInfo);
-    if (!m_fallbackSamplerId) {
-        showError("Unable to create the fallback texture sampler");
+    m_defaultSamplerId = addSampler(samplerInfo);
+    if (!m_defaultSamplerId) {
+        showError("Unable to create the default texture sampler");
         return false;
     }
 
-    m_fallbackTextureId = addTexture(m_fallbackImageId, m_fallbackSamplerId);
-    return m_fallbackTextureId != 0;
+    m_whiteTextureId = addTexture(m_whiteImageId, m_defaultSamplerId);
+    m_errorTextureId = addTexture(m_errorImageId, m_defaultSamplerId);
+
+    // The invariant the rest of the class depends on. If anything ever gets
+    // added before these, every zeroed GpuMaterial silently samples the wrong
+    // texture -- so fail loudly here instead.
+    if (m_whiteTextureId != 1 || m_errorTextureId != 2) {
+        showError("Default textures did not land in descriptor slots 0 and 1");
+        return false;
+    }
+    return true;
+}
+
+bool ResourceStore::createDefaultMaterial()
+{
+    // What a submesh with materialId 0 renders as. Deliberately NOT the glTF
+    // spec default (metallic 1, roughness 1), which reads as near-black
+    // chrome without IBL -- this is meant to look like untextured plastic.
+    Material def;
+    def.name            = "Default";
+    def.metallicFactor  = 0.0f;
+    def.roughnessFactor = 0.5f;
+
+    m_defaultMaterialId = addMaterial(def);
+
+    // Must be index 0, because Renderer maps materialId 0 to GPU index 0.
+    if (m_defaultMaterialId != 1) {
+        showError("Default material did not land at index 0");
+        return false;
+    }
+    return true;
 }
 
 // ============================================================================
 // bindless descriptors
+// ============================================================================
 
 VkDescriptorImageInfo ResourceStore::describeTexture(const Texture &t) const
 {
@@ -259,17 +360,17 @@ VkDescriptorImageInfo ResourceStore::describeTexture(const Texture &t) const
 
     const GPUImage &image = imageOk
         ? m_images[t.imageId - 1]
-        : m_images[m_fallbackImageId - 1];
+        : m_images[m_errorImageId - 1];
     const VkSampler sampler = samplerOk
         ? m_samplers[t.samplerId - 1]
-        : m_samplers[m_fallbackSamplerId - 1];
+        : m_samplers[m_defaultSamplerId - 1];
 
     if (!imageOk || !samplerOk || !image.imageView) {
-        showError("Texture references an invalid image or sampler; using the fallback");
+        showError("Texture references an invalid image or sampler; using the error texture");
         return VkDescriptorImageInfo
         {
-            .sampler     = m_samplers[m_fallbackSamplerId - 1],
-            .imageView   = m_images[m_fallbackImageId - 1].imageView,
+            .sampler     = m_samplers[m_defaultSamplerId - 1],
+            .imageView   = m_images[m_errorImageId - 1].imageView,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
     }
@@ -298,10 +399,6 @@ bool ResourceStore::commitTextureDescriptors()
         imageDescriptors.push_back(describeTexture(m_textures[i]));
     }
 
-    // Writing slots [first, total) is safe with frames in flight: no material
-    // in any submitted command buffer references a slot that did not exist
-    // when it was recorded, and the binding is PARTIALLY_BOUND, so unwritten
-    // slots were never a problem either.
     VkWriteDescriptorSet write
     {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -425,4 +522,3 @@ bool ResourceStore::createDescriptorSets()
     }
     return true;
 }
-

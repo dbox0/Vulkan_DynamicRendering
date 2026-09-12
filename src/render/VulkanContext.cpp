@@ -406,8 +406,8 @@ void VulkanContext::mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffs
 // ============================================================================
 
 bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const unsigned char *imageData,
-                                  uint32_t width, uint32_t height, int channels,
-                                  GPUImage &outImage, GPUBuffer &outStagingBuffer) const
+                   uint32_t width, uint32_t height, int channels, VkFormat format,
+                   GPUImage &outImage, GPUBuffer &outStagingBuffer) const
 {
     outImage = GPUImage{};
     outStagingBuffer = GPUBuffer{};

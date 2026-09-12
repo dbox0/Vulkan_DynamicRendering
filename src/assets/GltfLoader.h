@@ -29,6 +29,11 @@ public:
 
 private:
     std::vector<Image>    loadImages(const tg3_model &model, const std::filesystem::path &imageDir) const;
+
+    // Decides each image's VkFormat (sRGB vs linear) from the material slots
+    // that reference it. Must run between loadImages() and uploadImages().
+    void assignImageColorSpaces(const tg3_model &model, std::vector<Image> &images) const;
+
     std::vector<uint32_t> uploadImages(const std::vector<Image> &images);
     std::vector<uint32_t> loadSamplers(const tg3_model &model);
     std::vector<uint32_t> loadTextures(const tg3_model &model,
