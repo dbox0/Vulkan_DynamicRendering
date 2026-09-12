@@ -11,6 +11,8 @@
 
 #include "../render/VulkanContext.h"
 #include "../render/GeometryStore.h"
+#include "../render/ResourceStore.h"
+#include "../common/constants.h"
 #include "../scene/Scene.h"
 #include "../common/errors.h"
 #include <glm/gtx/euler_angles.hpp>
@@ -205,7 +207,7 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
-        changed |= ImGui::DragFloat("##v", axis.value, speed, 0.0f, 0.0f, "%.2f");
+        changed |= ImGui::DragFloat("##v", axis.value, speed, 0.0f, 0.0f, "%.3f");
         ImGui::PopID();
         ImGui::PopItemWidth();
 
@@ -223,27 +225,31 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
 // panels
 // ---------------------------------------------------------------------------
 
-void EditorUI::build(Scene &scene, const GeometryStore &geometry)
+void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources)
 {
-    ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(340, 620), ImGuiCond_FirstUseEver);
+    // Two windows now: with mesh + material data the inspector is far too
+    // tall to share a panel with a fixed-height hierarchy.
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
 
-    if (ImGui::Begin("Scene", nullptr, ImGuiWindowFlags_NoCollapse)) {
+    ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(300, 520), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse)) {
         drawHierarchy(scene, geometry);
-        ImGui::Dummy(ImVec2(0.0f, 4.0f));
-        drawInspector(scene);
+    }
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(display.x - 372.0f, 12.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360, display.y - 24.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        drawInspector(scene, geometry, resources);
     }
     ImGui::End();
 }
 
 void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.60f, 1.0f));
-    ImGui::TextUnformatted("HIERARCHY");
-    ImGui::PopStyleColor();
-
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
-    if (ImGui::BeginChild("hierarchy", ImVec2(0, 260), ImGuiChildFlags_Borders)) {
+    if (ImGui::BeginChild("hierarchy", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
         for (uint32_t id = scene.rootNodeId(); id != 0; ) {
             const uint32_t next = scene.getNode(id).nextSiblingId;
             drawHierarchyNode(scene, geometry, id);
@@ -259,12 +265,8 @@ void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
     ImGui::PopStyleVar();
 }
 
-void EditorUI::drawInspector(Scene &scene)
+void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, ResourceStore &resources)
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.60f, 1.0f));
-    ImGui::TextUnformatted("INSPECTOR");
-    ImGui::PopStyleColor();
-
     if (m_selectedNode == 0) {
         ImGui::Dummy(ImVec2(0.0f, 8.0f));
         ImGui::TextDisabled("Select a node in the hierarchy");
@@ -312,6 +314,36 @@ void EditorUI::drawInspector(Scene &scene)
 
         endProperties();
     }
+
+    // Mesh + material. Submesh selection is per node: picking another node
+    // goes back to its first submesh.
+    const uint32_t meshId = node.meshId;
+    if (meshId == 0 || meshId > geometry.meshCount()) {
+        return;
+    }
+    if (m_subMeshOwner != m_selectedNode) {
+        m_subMeshOwner    = m_selectedNode;
+        m_selectedSubMesh = 0;
+    }
+
+    const Mesh &mesh = geometry.mesh(meshId);
+    drawMeshSection(mesh, resources);
+
+    if (m_selectedSubMesh < mesh.subMeshes.size()) {
+        drawMaterialSection(resources, mesh.subMeshes[m_selectedSubMesh].materialId);
+    }
+}
+
+void EditorUI::invalidateTexturePreview(uint32_t textureId)
+{
+    const auto it = m_previewSets.find(textureId);
+    if (it == m_previewSets.end()) {
+        return;
+    }
+    if (it->second) {
+        ImGui_ImplVulkan_RemoveTexture(it->second);
+    }
+    m_previewSets.erase(it);
 }
 
 
@@ -320,19 +352,22 @@ bool EditorUI::initialize(SDL_Window *window, VulkanContext &ctx,
                           uint32_t minImageCount, uint32_t imageCount,
                           VkQueue graphicsQueue, uint32_t graphicsQueueFamily)
 {
-    // Imgui allovcates one combined image samlpler per texture it binds.
-    // Font is the only one for now until we preview textures.
+    // ImGui allocates one combined image sampler set per texture it binds:
+    // the font atlas, plus one per texture preview. Previews are cached per
+    // texture ID, so MaxTextures + headroom can never be exhausted. A few
+    // thousand descriptors is kilobytes -- not worth an eviction scheme.
+    constexpr uint32_t PoolSets = MaxTextures + 16;
 
     VkDescriptorPoolSize poolSize
     {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 16
+        .descriptorCount = PoolSets
     };
     VkDescriptorPoolCreateInfo poolInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-        .maxSets = 16,
+        .maxSets = PoolSets,
         .poolSizeCount = 1,
         .pPoolSizes = &poolSize
     };
@@ -395,6 +430,9 @@ void EditorUI::shutdown(VulkanContext &ctx)
         return;
     }
     vkDeviceWaitIdle(ctx.device());
+
+    // Preview sets die with the pool below; just forget the handles.
+    m_previewSets.clear();
 
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
@@ -478,6 +516,3 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
         ImGui::TreePop();
     }
 }
-
-
-

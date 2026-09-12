@@ -112,7 +112,8 @@ void Application::run()
     // Leave this like this for now
     // TODO: REMOVE THIS TRASH
     Node &root = m_scene.getNode(m_scene.rootNodeId());
-    root.setScale(glm::vec3(0.01f));
+    root.setScale(glm::vec3(20.0f));
+    root.setTranslation(glm::vec3(0,2,0));
 
     m_running = true;
 
@@ -165,7 +166,7 @@ void Application::run()
         }
 
         m_editor.beginFrame();
-        m_editor.build(m_scene, m_geometry);
+        m_editor.build(m_scene, m_geometry, m_resources);
         // Minimised window: no valid extent to render into, so idle instead
         // of feeding a 0x0 swapchain.
         if (m_width == 0 || m_height == 0) {

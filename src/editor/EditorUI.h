@@ -1,20 +1,23 @@
-#pragma oince
+#pragma once
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <glm/vec3.hpp>
+#include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 
 struct SDL_Window;
 union SDL_Event;
 class VulkanContext;
 class Scene;
 class GeometryStore;
+class ResourceStore;
+struct Mesh;
 
-// DearImgui Overlay: Scene Hierarchy on the left
-// Transform inspector below.
-
-// Holds NodeID.
-
+// Dear ImGui overlay:
+//   * "Hierarchy" window on the left  -- click a node to select it
+//   * "Inspector" window on the right -- transform, mesh / submeshes, and the
+//     material of the selected submesh with texture previews
 
 class EditorUI
 {
@@ -34,11 +37,16 @@ public:
 
     // Per frame: beginFrame() -> build() -> (renderer records) -> record().
     void beginFrame();
-    void build(Scene &scene, const GeometryStore &geometry);
+    void build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources);
     void record(VkCommandBuffer cmd);
 
     uint32_t selectedNode() const { return m_selectedNode; }
     void selectNode(uint32_t nodeId) { m_selectedNode = nodeId; }
+
+    // Drop a cached preview. Call this if a texture's image/sampler is ever
+    // swapped (ResourceStore::replaceTextureDescriptor), behind the same
+    // frames-in-flight rule, since ImGui may still be sampling the old set.
+    void invalidateTexturePreview(uint32_t textureId);
 
     void applyTheme();
     static bool vec3Control(const char *label, glm::vec3 &values,
@@ -49,12 +57,30 @@ public:
 private:
     void drawHierarchy(Scene &scene, const GeometryStore &geometry);
     void drawHierarchyNode(Scene &scene, const GeometryStore &geometry, uint32_t nodeId);
-    void drawInspector(Scene &scene);
+    void drawInspector(Scene &scene, const GeometryStore &geometry, ResourceStore &resources);
+
+    // EditorInspectorPanels.cpp
+    void drawMeshSection(const Mesh &mesh, const ResourceStore &resources);
+    void drawMaterialSection(ResourceStore &resources, uint32_t materialId);
+    void textureSlot(const char *label, uint32_t textureId, bool expectSrgb,
+                     const ResourceStore &resources);
+    VkDescriptorSet texturePreview(const ResourceStore &resources, uint32_t textureId);
 
     VkDescriptorPool m_pool = nullptr;
     bool m_initialized = false;
 
     uint32_t m_selectedNode = 0;
+
+    // Which submesh of the selected node's mesh the material panel shows.
+    // Reset whenever the node selection changes.
+    uint32_t m_subMeshOwner    = 0;
+    size_t   m_selectedSubMesh = 0;
+
+    // Texture ID -> ImGui descriptor set. ImGui's Vulkan backend can't read
+    // the bindless array, so each texture we preview gets its own combined
+    // image sampler set, created lazily on first draw and kept until
+    // shutdown (the pool is sized so this never runs out).
+    std::unordered_map<uint32_t, VkDescriptorSet> m_previewSets;
 
     // Quaternions have no unique Euler decomposition, so round-tripping every
     // frame makes the sliders jitter and flip. Cache the Euler angles the
