@@ -307,7 +307,9 @@ bool ResourceStore::createDefaultTextures()
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .compareEnable = VK_FALSE
+        .compareEnable = VK_FALSE,
+        .minLod = 0.0f,
+        .maxLod = VK_LOD_CLAMP_NONE
     };
 
     m_defaultSamplerId = addSampler(samplerInfo);
