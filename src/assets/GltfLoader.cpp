@@ -224,7 +224,40 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
             // vertexStart. Captures vertexStart rather than reading a member,
             // which is what makes this independent of GeometryStore's cursor.
             const size_t vertexStart = subMesh.vertexStart;
-            auto writeAttribute = [this, &model, vertexStart]<typename T>(
+
+
+            // glTF allows normalized u8/u16 for COLOR_0 and TEXCOORD_0
+            auto readComponent = [](const unsigned char *base, const tg3_accessor *accessor, int c) -> float
+            {
+                switch (accessor->component_type) {
+                    case TG3_COMPONENT_TYPE_FLOAT:
+                        return reinterpret_cast<const float *>(base)[c];
+                    case TG3_COMPONENT_TYPE_UNSIGNED_BYTE:
+                        return static_cast<float>(base[c]) / 255.0f;
+                    case TG3_COMPONENT_TYPE_UNSIGNED_SHORT:
+                        return static_cast<float>(reinterpret_cast<const uint16_t *>(base)[c]) / 65535.0f;
+                    default:
+                        return 0.0f;
+                }
+            };
+
+            // Mirrors what readComponent decodes. glTF requires the integer
+            // forms be normalized; an unnormalized one would read as 0..255
+
+            auto isReadableComponent = [](const tg3_accessor *accessor) -> bool
+            {
+                switch (accessor->component_type) {
+                    case TG3_COMPONENT_TYPE_FLOAT:
+                        return true;
+                    case TG3_COMPONENT_TYPE_UNSIGNED_BYTE:
+                    case TG3_COMPONENT_TYPE_UNSIGNED_SHORT:
+                        return accessor->normalized != 0;
+                    default:
+                        return false;
+                }
+            };
+
+            auto writeAttribute = [this, &model, vertexStart, &readComponent]<typename T>(
                 T Vertex::*member, const tg3_str_int_pair *attr)
             {
                 const tg3_accessor    *accessor    = &model.accessors[attr->value];
@@ -244,20 +277,22 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 const int components = tg3_num_components(accessor->type);
 
                 for (uint64_t index = 0; index < accessor->count; ++index) {
-                    const size_t elementOffset = bufferOffset + index * stride;
-                    const float *data = reinterpret_cast<const float *>(buffer->data.data + elementOffset);
+                    const unsigned char *element = buffer->data.data + bufferOffset + index * stride;
 
                     Vertex *vertex = m_geometry.vertexAt(vertexStart + index);
                     if constexpr (std::is_same_v<T, glm::vec4>) {
-                        vertex->*member = glm::vec4(data[0], data[1], data[2],
-                                                    components >= 4 ? data[3] : 1.0f);
+                        vertex->*member = glm::vec4(readComponent(element, accessor, 0),
+                                                    readComponent(element, accessor, 1),
+                                                    readComponent(element, accessor, 2),
+                                                    components >= 4 ? readComponent(element, accessor, 3) : 1.0f);
                     } else if constexpr (std::is_same_v<T, glm::vec3>) {
-                        vertex->*member = glm::vec3(data[0], data[1], data[2]);
+                        vertex->*member = glm::vec3(readComponent(element, accessor, 0),
+                                                    readComponent(element, accessor, 1),
+                                                    readComponent(element, accessor, 2));
                     } else if constexpr (std::is_same_v<T, glm::vec2>) {
-                        vertex->*member = glm::vec2(data[0], data[1]);
+                        vertex->*member = glm::vec2(readComponent(element, accessor, 0),
+                                                    readComponent(element, accessor, 1));
                     } else {
-                        // Vertex::color silently did nothing when it became a
-                        // vec4 and no branch matched. Fail the build instead.
                         static_assert(sizeof(T) == 0, "writeAttribute: unhandled attribute type");
                     }
                 }
@@ -274,8 +309,13 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                     writeAttribute(&Vertex::normal, attr);
                 } else if (std::strcmp(attr->key.data, "COLOR_0") == 0) {
                     assert(accessor->type == TG3_TYPE_VEC3 || accessor->type == TG3_TYPE_VEC4);
-                    assert(accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::color, attr);
+                    assert(isReadableComponent(accessor));
+                    if (isReadableComponent(accessor)) {
+                        writeAttribute(&Vertex::color, attr);
+                    } else {
+                        std::cerr << "[warn] COLOR_0 has an unsupported component type; "
+                                     "leaving vertex colours at white" << std::endl;
+                    }
                 } else if (std::strcmp(attr->key.data, "TANGENT") == 0) {
                     // w carries the bitangent sign. No TANGENT leaves w at 0,
                     // which the fragment shader reads as "derive a tangent
@@ -283,8 +323,14 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                     assert(accessor->type == TG3_TYPE_VEC4 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
                     writeAttribute(&Vertex::tangent, attr);
                 } else if (std::strcmp(attr->key.data, "TEXCOORD_0") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC2 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::uv, attr);
+                    assert(accessor->type == TG3_TYPE_VEC2);
+                    assert(isReadableComponent(accessor));
+                    if (isReadableComponent(accessor)) {
+                        writeAttribute(&Vertex::uv, attr);
+                    } else {
+                        std::cerr << "[warn] TEXCOORD_0 has an unsupported component type; "
+                                     "UVs will be zero" << std::endl;
+                    }
                 }
             }
 
