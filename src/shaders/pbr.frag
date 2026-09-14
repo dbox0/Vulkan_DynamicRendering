@@ -165,6 +165,11 @@ void main()
     // ---- normal -------------------------------------------------------------
     vec3 N = normalize(inNormal);
 
+
+    if ((mat.flags & MAT_DOUBLE_SIDED) != 0u && !gl_FrontFacing) {
+        N = -N;
+    }
+
     if ((mat.flags & MAT_NORMAL_MAP) != 0u) {
         vec3 T, B;
         if (inTangent.w != 0.0) {
@@ -187,9 +192,6 @@ void main()
         N = normalize(mat3(T, B, N) * n);
     }
 
-    if ((mat.flags & MAT_DOUBLE_SIDED) != 0u && !gl_FrontFacing) {
-        N = -N;
-    }
 
     // ---- lighting -----------------------------------------------------------
     vec3  V     = normalize(frame.cameraPosition - inWorldPos);
