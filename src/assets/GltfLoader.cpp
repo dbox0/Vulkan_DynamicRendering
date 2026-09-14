@@ -220,6 +220,14 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
             subMesh.vertexCount = positionAccessor->count;
             subMesh.vertexStart = m_geometry.appendVertices(positionAccessor->count);
 
+            if (subMesh.vertexStart == GeometryStore::kInvalidOffset) {
+                std::cerr << "[warn] Vertex budget exhausted in mesh '" << mesh.name
+              << "'; primitive " << u << " skipped" << std::endl;
+                subMesh = SubMesh{};
+                continue;
+            }
+            subMesh.vertexCount = positionAccessor->count;
+
             // Copies one float attribute into the vertex slots starting at
             // vertexStart. Captures vertexStart rather than reading a member,
             // which is what makes this independent of GeometryStore's cursor.
@@ -341,7 +349,16 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
 
                 subMesh.indexCount = accessor->count;
-                subMesh.indexStart = m_geometry.appendIndices(accessor->count);
+                const size_t indexStart = m_geometry.appendIndices(accessor->count);
+
+                if (subMesh.indexStart == GeometryStore::kInvalidOffset) {
+                    std::cerr << "Index budget exhausted"<< std::endl;
+                    subMesh = SubMesh{};
+                    continue;
+                }
+
+                subMesh.indexStart = indexStart;
+                subMesh.indexCount = accessor->count;
 
                 const unsigned char *src = buffer->data.data + buffer_view->byte_offset + accessor->byte_offset;
                 uint32_t *dst = m_geometry.indexAt(subMesh.indexStart);
