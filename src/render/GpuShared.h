@@ -95,8 +95,13 @@ struct FrameData
     float     ambientIntensity = 1.0f;
     glm::vec3 skyColor{ 0.15f, 0.18f, 0.25f };
     glm::vec3 groundColor{ 0.05f, 0.03f, 0.02f };
+
+    uint  envTex;        // 0 = no environment, fall back to the hemisphere
+    float envIntensity;
+    float envMaxLod;     // mipLevels - 1 of the environment image
 };
-static_assert(sizeof(FrameData) == 136);
+
+static_assert(sizeof(FrameData) == 148);
 static_assert(offsetof(FrameData, cameraPosition) == 64);
 static_assert(offsetof(FrameData, sunDirection)   == 80);
 static_assert(offsetof(FrameData, skyColor)       == 112);

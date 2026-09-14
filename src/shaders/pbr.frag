@@ -41,6 +41,9 @@ layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
     float ambientIntensity;
     vec3  skyColor;
     vec3  groundColor;
+    uint  envTex;        // 0 = no environment, fall back to the hemisphere
+    float envIntensity;
+    float envMaxLod;     // mipLevels - 1 of the environment image
 };
 
 layout(push_constant, scalar) uniform FrameConstants
@@ -70,6 +73,14 @@ const float PI = 3.14159265359;
 vec4 sampleTex(uint slot, vec2 uv)
 {
     return texture(textures[nonuniformEXT(slot)], uv);
+}
+
+vec3 sampleEnv(uint slot, vec3 dir, float lod)
+{
+    vec2 uv = vec2(atan(dir.z, dir.x), asin(clamp(dir.y, -1.0, 1.0)));
+    uv *= vec2(0.1591, 0.3183);   // 1/(2pi), 1/pi
+    uv += 0.5;
+    return textureLod(textures[nonuniformEXT(slot)], uv, lod).rgb;
 }
 
 // ---- BRDF (glTF 2.0 spec, Appendix B) -------------------------------------
@@ -224,16 +235,33 @@ void main()
     vec3 diffuse  = (1.0 - F) * cDiff / PI;
     vec3 direct   = (diffuse + specular) * frame.sunColor * frame.sunIntensity * NdotL;
 
-    // Ambient: hemisphere "environment" until real IBL. Diffuse samples it
-    // along N, specular along the reflection vector (blurrier when rough).
-    vec3 R          = reflect(-V, N);
-    vec3 hemiN      = mix(frame.groundColor, frame.skyColor, N.y * 0.5 + 0.5);
-    vec3 hemiR      = mix(frame.groundColor, frame.skyColor, R.y * 0.5 + 0.5);
-    vec3 ambientDif = hemiN * cDiff;
-    vec3 ambientSpc = mix(hemiR, hemiN, roughness) * EnvBRDFApprox(F0, roughness, NdotV);
+    // Reflective environment
+
+    vec3 R = reflect(-V, N);
+    vec3 irradiance;
+    vec3 radiance;
+
+    if (frame.envTex != 0u) {
+        // Crude prefilter: the mip chain blurs isotropically rather than by a
+        // GGX lobe, so rough metals are approximate. Good enough until a real
+        // prefilter pass exists. sqrt maps roughness to lobe width better than
+        // a linear ramp does.
+        float lod = sqrt(roughness) * frame.envMaxLod;
+        irradiance = sampleEnv(frame.envTex, N, frame.envMaxLod) * frame.envIntensity;
+        radiance   = sampleEnv(frame.envTex, R, lod)             * frame.envIntensity;
+    } else {
+        irradiance = mix(frame.groundColor, frame.skyColor, N.y * 0.5 + 0.5);
+        radiance   = mix(frame.groundColor, frame.skyColor, R.y * 0.5 + 0.5);
+        radiance   = mix(radiance, irradiance, roughness);
+    }
+
+    vec3 ambientDif = irradiance * cDiff;
+    vec3 ambientSpc = radiance * EnvBRDFApprox(F0, roughness, NdotV);
     vec3 ambient    = (ambientDif + ambientSpc) * ao * frame.ambientIntensity;
 
     vec3 hdr = direct + ambient + emissive;
-    
+    vec3 invalid = max(vec3(isnan(hdr)), vec3(isinf(hdr)));
+    hdr = mix(hdr, vec3(0.0), invalid);
+
     fragColor = vec4(PBRNeutralToneMapping(hdr * frame.exposure), baseColor.a);
 }
