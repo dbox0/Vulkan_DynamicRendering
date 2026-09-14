@@ -10,8 +10,8 @@ void Camera::handleInput(const SDL_Event& e, float deltaTime)
         if (e.key.key == SDLK_S) velocity.z =  1.0f;
         if (e.key.key == SDLK_A) velocity.x = -1.0f;
         if (e.key.key == SDLK_D) velocity.x =  1.0f;
-        if (e.key.key == SDLK_Q) velocity.y =  1.0f;
-        if (e.key.key == SDLK_E) velocity.y = -1.0f;
+        if (e.key.key == SDLK_E) velocity.y =  1.0f;
+        if (e.key.key == SDLK_Q) velocity.y = -1.0f;
 
     }
 
