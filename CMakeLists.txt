@@ -11,7 +11,7 @@ pkg_check_modules(SHADERC REQUIRED IMPORTED_TARGET shaderc)
 
 FetchContent_Declare(imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        v1.91.9)
+        GIT_TAG        v1.92.0-docking)
 FetchContent_MakeAvailable(imgui)
 
 add_library(imgui STATIC
