@@ -203,7 +203,7 @@ void Application::pickAt(float mouseX, float mouseY)
     // built from the window size, and SDL reports mouse positions in the same
     // space
     const Ray ray = screenPointToRay(m_camera, mouseX, mouseY, m_width, m_height);
-    const PickResult hit = pickNode(m_scene, m_geometry, ray, m_pickScratch);
+    const PickResult hit = pickNode(m_scene, m_geometry, ray);
 
     // A miss selects node 0, which is how the inspector already spells
     // "nothing selected" -- clicking empty space deselects.

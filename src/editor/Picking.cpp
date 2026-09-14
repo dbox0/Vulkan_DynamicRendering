@@ -100,37 +100,31 @@ bool rayTriangle(const Ray &ray, const glm::vec3 &v0, const glm::vec3 &v1,
 }
 
 PickResult pickNode(Scene &scene, const GeometryStore &geometry,
-                    const Ray &ray, std::vector<DrawItem> &scratch)
+                    const Ray &ray)
 {
-    scene.collectDrawItems(geometry, scratch);
-
     PickResult best;
 
-    for (const DrawItem &item : scratch) {
+    for (const DrawItem &item : scene.drawItems(geometry)) {
         const SubMesh &subMesh = *item.subMesh;
-
-        // Non-indexed submeshes are not drawn -> they are not pickable.
         if (subMesh.indexCount < 3 || subMesh.vertexCount == 0) {
             continue;
         }
 
-        // Push the ray into the node's local space rather than pulling every
-        // vertex into world space: one 4x4 inverse per submesh instead of a
-        // transform per triangle.
-
-        const glm::mat4 invWorld = glm::inverse(item.worldMatrix);
-
-        Ray localRay;
-        localRay.origin    = glm::vec3(invWorld * glm::vec4(ray.origin, 1.0f));
-        localRay.direction = glm::vec3(invWorld * glm::vec4(ray.direction, 0.0f));
-
+        // World-space reject first: no inverse, no matrix-vector products.
         float tBounds = 0.0f;
-        if (!rayAabb(localRay, subMesh.boundsMin, subMesh.boundsMax, tBounds)) {
+        if (!rayAabb(ray, item.worldBoundsMin, item.worldBoundsMax, tBounds)) {
             continue;
         }
         if (tBounds > best.distance) {
-            continue;                       // already have something closer
+            continue;
         }
+
+        // Survivors only. The direction is deliberately not renormalised, so t
+        // stays in world units and stays comparable across submeshes.
+        const glm::mat4 invWorld = glm::inverse(item.worldMatrix);
+        Ray localRay;
+        localRay.origin    = glm::vec3(invWorld * glm::vec4(ray.origin, 1.0f));
+        localRay.direction = glm::vec3(invWorld * glm::vec4(ray.direction, 0.0f));
 
         const Vertex   *vertices = geometry.vertexAt(subMesh.vertexStart);
         const uint32_t *indices  = geometry.indexAt(subMesh.indexStart);

@@ -39,6 +39,21 @@ struct FrameResources
     RenderItem                   *renderItemPtr   = nullptr;
 };
 
+struct RenderView
+{
+    const Camera *camera;
+    VkImageView   colorTarget;      // per-view offscreen target
+    VkImageView   depthTarget;
+    VkExtent2D    extent;
+
+    bool drawGrid           = false;
+    bool drawSelectionOutline = false;
+    bool drawGizmos         = false;
+    bool drawDebugBounds    = false;
+
+};
+
+
 class Renderer
 {
 public:
@@ -149,6 +164,6 @@ private:
     float    m_envMaxLod = 0.0f;
 
     // Reused across frames so traversal doesn't allocate per frame.
-    std::vector<DrawItem> m_drawItems;
+    const std::vector<DrawItem> *m_drawItems = nullptr;
     std::vector<SortedDraw> m_sorted;
 };

@@ -49,7 +49,7 @@ Ray screenPointToRay(const Camera &camera, float mouseX, float mouseY,
 // traversal fills
 // keep alive between calls so a click doesn't allocate.
 PickResult pickNode(Scene &scene, const GeometryStore &geometry,
-                    const Ray &ray, std::vector<DrawItem> &scratch);
+                    const Ray &ray);
 
 // Exposed because gizmos and camera-focus will need them too.
 bool rayAabb(const Ray &ray, const glm::vec3 &boundsMin, const glm::vec3 &boundsMax,

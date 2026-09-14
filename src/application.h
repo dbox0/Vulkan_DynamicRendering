@@ -55,6 +55,4 @@ private:
     Camera        m_camera;
     Renderer      m_renderer;
     EditorUI m_editor;
-
-    std::vector<DrawItem> m_pickScratch;
 };

@@ -26,7 +26,6 @@
 bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 {
     m_maxDraws = maxDrawsPerFrame;
-    m_drawItems.reserve(maxDrawsPerFrame);
 
     if (!createShaders()) {
         showError("Error creating shader modules");
@@ -1077,10 +1076,10 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         batch = DrawBatch{};
     }
 
-    const uint32_t drawCount = static_cast<uint32_t>(std::min<size_t>(m_drawItems.size(), m_maxDraws));
+    const uint32_t drawCount = static_cast<uint32_t>(std::min<size_t>((*m_drawItems).size(), m_maxDraws));
 
-    if (m_drawItems.size() > m_maxDraws) {
-        std::cerr << "[warn] Draw list of " << m_drawItems.size()
+    if ((*m_drawItems).size() > m_maxDraws) {
+        std::cerr << "[warn] Draw list of " << (*m_drawItems).size()
                   << " exceeds the per-frame limit of " << m_maxDraws
                   << "; clamping" << std::endl;
     }
@@ -1097,7 +1096,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
     m_sorted.reserve(drawCount);
 
     for (uint32_t i = 0; i < drawCount; ++i) {
-        const SubMesh &subMesh = *m_drawItems[i].subMesh;
+        const SubMesh &subMesh = *(*m_drawItems)[i].subMesh;
         const uint32_t materialId = subMesh.materialId ? subMesh.materialId
                                                        : m_resources.defaultMaterialId();
         const Material &material = m_resources.material(materialId);
@@ -1108,7 +1107,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         // w of the clip-space origin is the view depth. Crude -- per-object,
         // not per-triangle -- but it is what makes blended geometry stack in
         // the right order without a real sorted transparency pass.
-        const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(m_drawItems[i].worldMatrix[3]), 1.0f);
+        const glm::vec4 clip = viewProj * glm::vec4(glm::vec3((*m_drawItems)[i].worldMatrix[3]), 1.0f);
         m_sorted.push_back(SortedDraw{ bucket, clip.w, i });
     }
 
@@ -1122,7 +1121,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
 
     for (uint32_t slot = 0; slot < drawCount; ++slot) {
         const SortedDraw &sorted = m_sorted[slot];
-        const DrawItem &item = m_drawItems[sorted.index];
+        const DrawItem &item = (*m_drawItems)[sorted.index];
         const SubMesh &subMesh = *item.subMesh;
 
         res.indirectDrawPtr[slot] = VkDrawIndexedIndirectCommand
@@ -1423,7 +1422,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .envMaxLod    = m_envMaxLod,
     };
 
-    scene.collectDrawItems(m_geometry, m_drawItems);
+    m_drawItems = &scene.drawItems(m_geometry);
     const uint32_t drawCount = writeDrawCommands(res, viewProj);
 
     recordCommandBuffer(res, imageIndex, drawCount,overlay);
