@@ -10,13 +10,18 @@ void Camera::handleInput(const SDL_Event& e, float deltaTime)
         if (e.key.key == SDLK_S) velocity.z =  1.0f;
         if (e.key.key == SDLK_A) velocity.x = -1.0f;
         if (e.key.key == SDLK_D) velocity.x =  1.0f;
+        if (e.key.key == SDLK_Q) velocity.y =  1.0f;
+        if (e.key.key == SDLK_E) velocity.y = -1.0f;
+
     }
 
     if (e.type == SDL_EVENT_KEY_UP) {
-        if (e.key.key == SDLK_W) velocity.z = 0.0f;
-        if (e.key.key == SDLK_S) velocity.z = 0.0f;
-        if (e.key.key == SDLK_A) velocity.x = 0.0f;
-        if (e.key.key == SDLK_D) velocity.x = 0.0f;
+        if (e.key.key == SDLK_W) velocity.z = .0f;
+        if (e.key.key == SDLK_S) velocity.z = .0f;
+        if (e.key.key == SDLK_A) velocity.x = .0f;
+        if (e.key.key == SDLK_D) velocity.x = .0f;
+        if (e.key.key == SDLK_Q) velocity.y = .0f;
+        if (e.key.key == SDLK_E) velocity.y = .0f;
     }
 
     if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
