@@ -24,6 +24,8 @@ add_library(imgui STATIC
         src/editor/EditorUI.cpp
         src/editor/EditorUI.h
         src/editor/EditorInspectorPanels.cpp
+        src/editor/Picking.cpp
+        src/editor/Picking.h
 )
 
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
@@ -49,6 +51,8 @@ add_executable(vulkanapp
         src/common/gpu_types.h
         src/scene/Scene.cpp
         src/scene/Scene.h
+        src/editor/Picking.cpp
+        src/editor/Picking.h
         src/scene/Camera.cpp
         src/scene/Camera.h
         src/assets/GltfLoader.cpp
@@ -91,6 +95,7 @@ target_link_libraries(vulkanapp PRIVATE
         imgui)
 
 target_compile_definitions(vulkanapp PRIVATE
-        SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/")
+        SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/"
+        ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/res/")
 
 target_include_directories(vulkanapp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/external)

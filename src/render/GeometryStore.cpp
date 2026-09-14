@@ -93,8 +93,30 @@ size_t GeometryStore::appendIndices(size_t count)
 }
 
 
+void GeometryStore::computeBounds(SubMesh &subMesh) const
+{
+    if (subMesh.vertexCount == 0 || subMesh.vertexStart == kInvalidOffset) {
+        return;
+    }
+
+    glm::vec3 lo( std::numeric_limits<float>::max());
+    glm::vec3 hi(-std::numeric_limits<float>::max());
+
+    for (size_t i = 0; i < subMesh.vertexCount; ++i) {
+        const glm::vec3 &position = m_vertices[subMesh.vertexStart + i].position;
+        lo = glm::min(lo, position);
+        hi = glm::max(hi, position);
+    }
+
+    subMesh.boundsMin = lo;
+    subMesh.boundsMax = hi;
+}
+
 uint32_t GeometryStore::addMesh(Mesh &&mesh)
 {
+    for (SubMesh &subMesh : mesh.subMeshes) {
+        computeBounds(subMesh);
+    }
     m_meshes.push_back(std::move(mesh));
     return static_cast<uint32_t>(m_meshes.size());
 }

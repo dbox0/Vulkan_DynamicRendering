@@ -51,6 +51,10 @@ public:
     Vertex   *vertexAt(size_t index) { return &m_vertices[index]; }
     uint32_t *indexAt(size_t index)  { return &m_indices[index];  }
 
+    // Read-only views for picking
+    const Vertex   *vertexAt(size_t index) const { return &m_vertices[index]; }
+    const uint32_t *indexAt(size_t index)  const { return &m_indices[index];  }
+
     uint32_t addMesh(Mesh &&mesh);                          // -> 1-based mesh ID
     const Mesh &mesh(uint32_t meshId) const { return m_meshes[meshId - 1]; }
     size_t meshCount() const { return m_meshes.size(); }
@@ -90,5 +94,9 @@ private:
 
     bool copyToDevice(const void *src, const GPUBuffer &dst,
                   size_t dstOffsetBytes, size_t bytes, const char *what);
+
+    // Vertices are already written by the time addMesh() is called, so the
+    // AABB can be swept here instead of burdening every loader with it.
+    void computeBounds(SubMesh &subMesh) const;
 
 };

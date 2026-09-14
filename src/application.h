@@ -9,6 +9,7 @@
 #include "scene/Scene.h"
 #include "scene/Camera.h"
 #include "editor/EditorUI.h"
+#include "editor/Picking.h"
 
 struct SDL_Window;
 
@@ -27,6 +28,9 @@ public:
 
 private:
     bool initializeWindow();
+
+    // Left-click in the viewport -> ray cast -> inspector selection.
+    void pickAt(float mouseX, float mouseY);
 
     static constexpr uint32_t VulkanVersion     = VK_API_VERSION_1_4;
     static constexpr size_t   MaxNodes          = 1024;
@@ -51,4 +55,6 @@ private:
     Camera        m_camera;
     Renderer      m_renderer;
     EditorUI m_editor;
+
+    std::vector<DrawItem> m_pickScratch;
 };

@@ -43,6 +43,13 @@ public:
     uint32_t selectedNode() const { return m_selectedNode; }
     void selectNode(uint32_t nodeId) { m_selectedNode = nodeId; }
 
+    void selectNode(uint32_t nodeId, uint32_t subMesh)
+    {
+        m_selectedNode    = nodeId;
+        m_subMeshOwner    = nodeId;
+        m_selectedSubMesh = subMesh;
+    }
+
     // Drop a cached preview. Call this if a texture's image/sampler is ever
     // swapped (ResourceStore::replaceTextureDescriptor), behind the same
     // frames-in-flight rule, since ImGui may still be sampling the old set.

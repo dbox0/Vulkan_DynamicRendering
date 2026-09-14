@@ -157,6 +157,12 @@ void Application::run()
                                 (isKey   && m_editor.wantsKeyboard());
 
             if (!claimed) {
+                // wantsMouse() already excluded clicks that landed on a panel,
+                // so anything arriving here is a click in the viewport.
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                    event.button.button == SDL_BUTTON_LEFT) {
+                    pickAt(event.button.x, event.button.y);
+                }
                 m_camera.handleInput(event, deltaTime);
             }
         }
@@ -184,6 +190,19 @@ void Application::run()
         m_renderer.render(m_scene, m_camera, m_width, m_height,
                          [this](VkCommandBuffer cmd) { m_editor.record(cmd); });
     }
+}
+
+void Application::pickAt(float mouseX, float mouseY)
+{
+    // camera's aspect ratio is
+    // built from the window size, and SDL reports mouse positions in the same
+    // space
+    const Ray ray = screenPointToRay(m_camera, mouseX, mouseY, m_width, m_height);
+    const PickResult hit = pickNode(m_scene, m_geometry, ray, m_pickScratch);
+
+    // A miss selects node 0, which is how the inspector already spells
+    // "nothing selected" -- clicking empty space deselects.
+    m_editor.selectNode(hit.nodeId, hit.subMesh);
 }
 
 void Application::shutdown()

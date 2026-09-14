@@ -27,31 +27,29 @@ void Scene::collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem
     m_traversalStack.clear();
 
     // Seed with the root sibling chain.
-    uint32_t nodeId = m_rootNodeId;
-    while (nodeId) {
-        Node &node = m_nodeWorld.getNode(nodeId);
-        m_traversalStack.push_back({ &node, glm::mat4(1.0f) });
-        nodeId = node.nextSiblingId;
+    for (uint32_t nodeId = m_rootNodeId; nodeId; ) {
+        m_traversalStack.push_back({ nodeId, glm::mat4(1.0f) });
+        nodeId = m_nodeWorld.getNode(nodeId).nextSiblingId;
     }
 
     while (!m_traversalStack.empty()) {
-        auto [node, parentTransform] = m_traversalStack.back();
+        const auto [nodeId, parentTransform] = m_traversalStack.back();
         m_traversalStack.pop_back();
 
-        const glm::mat4 matWorld = parentTransform * node->getTransform();
+        Node &node = m_nodeWorld.getNode(nodeId);
+        const glm::mat4 matWorld = parentTransform * node.getTransform();
 
-        if (node->meshId) {
-            const Mesh &mesh = geometry.mesh(node->meshId);
-            for (const SubMesh &subMesh : mesh.subMeshes) {
-                out.push_back(DrawItem{ &subMesh, matWorld });
+        if (node.meshId) {
+            const Mesh &mesh = geometry.mesh(node.meshId);
+            const uint32_t subMeshCount = static_cast<uint32_t>(mesh.subMeshes.size());
+            for (uint32_t s = 0; s < subMeshCount; ++s) {
+                out.push_back(DrawItem{ &mesh.subMeshes[s], matWorld, nodeId, s });
             }
         }
 
-        uint32_t childNodeId = node->firstChildId;
-        while (childNodeId) {
-            Node &child = m_nodeWorld.getNode(childNodeId);
-            m_traversalStack.push_back({ &child, matWorld });
-            childNodeId = child.nextSiblingId;
+        for (uint32_t childNodeId = node.firstChildId; childNodeId; ) {
+            m_traversalStack.push_back({ childNodeId, matWorld });
+            childNodeId = m_nodeWorld.getNode(childNodeId).nextSiblingId;
         }
     }
 }

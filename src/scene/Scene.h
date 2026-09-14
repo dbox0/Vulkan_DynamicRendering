@@ -12,6 +12,11 @@ struct DrawItem
 {
     const SubMesh *subMesh    = nullptr;
     glm::mat4      worldMatrix{1.0f};
+
+    // Which node produced this draw. The renderer ignores both; picking needs
+    // them to map a triangle hit back to something the inspector can show.
+    uint32_t       nodeId       = 0;
+    uint32_t       subMeshIndex = 0;
 };
 
 
@@ -34,6 +39,6 @@ private:
     uint32_t  m_rootNodeId     = 0;
     uint32_t  m_lastRootNodeId = 0;
 
-    // Kept as a member so traversal doesn't reallocate every frame.
-    std::vector<std::pair<Node *, glm::mat4>> m_traversalStack;
+    // Kept as a member so traversal doesn't reallocate every frame. Node IDs
+    std::vector<std::pair<uint32_t, glm::mat4>> m_traversalStack;
 };
