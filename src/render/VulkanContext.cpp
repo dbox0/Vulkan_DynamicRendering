@@ -223,7 +223,8 @@ bool VulkanContext::createDevice()
         !supported12.descriptorIndexing || !supported12.runtimeDescriptorArray ||
         !supported12.descriptorBindingPartiallyBound ||
         !supported12.descriptorBindingSampledImageUpdateAfterBind ||
-        !supported.features.multiDrawIndirect)
+        !supported.features.multiDrawIndirect ||
+        !supported.features.drawIndirectFirstInstance)
     {
         showError("Physical device does not meet the feature requirements");
         return false;
@@ -262,6 +263,7 @@ bool VulkanContext::createDevice()
         .features
         {
             .multiDrawIndirect = VK_TRUE,
+            .drawIndirectFirstInstance = VK_TRUE,
             .shaderInt64 = VK_TRUE,
         }
     };
@@ -412,13 +414,12 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const unsigned 
     outImage = GPUImage{};
     outStagingBuffer = GPUBuffer{};
 
-    constexpr VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
     VkImageCreateInfo imageInfo
     {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = imageFormat,
+        .format = format,
         .extent{ .width = width, .height = height, .depth = 1 },
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -442,7 +443,7 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const unsigned 
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = outImage.image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = imageFormat,
+        .format = format,
         .subresourceRange
         {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,

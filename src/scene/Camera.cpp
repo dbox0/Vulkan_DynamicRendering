@@ -80,12 +80,12 @@ glm::mat4 Camera::viewProjection(float aspectRatio) const
     const glm::mat4 view = getViewMatrix();
 
     const glm::mat4 proj =
-        glm::perspectiveRH(
-            glm::radians(fovDegrees),
-            aspectRatio,
-            nearPlane,
-            farPlane
-        );
+    glm::perspectiveRH_ZO(
+        glm::radians(fovDegrees),
+        aspectRatio,
+        nearPlane,
+        farPlane
+    );
 
     return proj * view;
 }
