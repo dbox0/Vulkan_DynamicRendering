@@ -473,6 +473,10 @@ bool Renderer::createFrameBuffers(uint32_t maxDrawsPerFrame)
 
 uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewProj)
 {
+    for (DrawBatch &batch : m_batches) {
+        batch = DrawBatch{};
+    }
+
     const uint32_t drawCount = static_cast<uint32_t>(std::min<size_t>(m_drawItems.size(), m_maxDraws));
 
     if (m_drawItems.size() > m_maxDraws) {
@@ -481,29 +485,69 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
                   << "; clamping" << std::endl;
     }
 
+    // Bucket 0/1 = opaque single/double sided, 2/3 = blended single/double.
+    // Each bucket is one contiguous indirect draw with its own cull mode and
+    // pipeline, which is why the sort has to happen before anything is written.
+    m_sorted.clear();
+    m_sorted.reserve(drawCount);
+
     for (uint32_t i = 0; i < drawCount; ++i) {
-        const DrawItem &item = m_drawItems[i];
+        const SubMesh &subMesh = *m_drawItems[i].subMesh;
+        const uint32_t materialId = subMesh.materialId ? subMesh.materialId
+                                                       : m_resources.defaultMaterialId();
+        const Material &material = m_resources.material(materialId);
+
+        const uint32_t bucket = (material.alphaMode == AlphaMode::Blend ? 2u : 0u)
+                              + (material.doubleSided ? 1u : 0u);
+
+        // w of the clip-space origin is the view depth. Crude -- per-object,
+        // not per-triangle -- but it is what makes blended geometry stack in
+        // the right order without a real sorted transparency pass.
+        const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(m_drawItems[i].worldMatrix[3]), 1.0f);
+        m_sorted.push_back(SortedDraw{ bucket, clip.w, i });
+    }
+
+    std::stable_sort(m_sorted.begin(), m_sorted.end(),
+        [](const SortedDraw &a, const SortedDraw &b)
+        {
+            if (a.bucket != b.bucket) return a.bucket < b.bucket;
+            if (a.bucket < 2)         return false;        // opaque: submission order
+            return a.depth > b.depth;                      // blended: far to near
+        });
+
+    for (uint32_t slot = 0; slot < drawCount; ++slot) {
+        const SortedDraw &sorted = m_sorted[slot];
+        const DrawItem &item = m_drawItems[sorted.index];
         const SubMesh &subMesh = *item.subMesh;
 
-        res.indirectDrawPtr[i] = VkDrawIndexedIndirectCommand
+        res.indirectDrawPtr[slot] = VkDrawIndexedIndirectCommand
         {
             .indexCount = static_cast<uint32_t>(subMesh.indexCount),
             .instanceCount = 1,
             .firstIndex = static_cast<uint32_t>(subMesh.indexStart),
             .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
-            .firstInstance = i
+            .firstInstance = slot
         };
 
-        // materialId is 1-based; 0 means "no material". Subtracting blindly
-        // wrapped to UINT32_MAX and made the shader read garbage.
         const uint32_t materialIndex = subMesh.materialId ? subMesh.materialId - 1 : 0;
 
-        res.renderItemPtr[i] = RenderItem
+        res.renderItemPtr[slot] = RenderItem
         {
             .worldMatrix   = item.worldMatrix,
             .normalMatrix  = glm::transpose(glm::inverse(glm::mat3(item.worldMatrix))),
             .materialIndex = materialIndex
         };
+
+        DrawBatch &batch = m_batches[sorted.bucket];
+        if (batch.count == 0) {
+            batch.first = slot;
+        }
+        ++batch.count;
+    }
+
+    for (uint32_t b = 0; b < m_batches.size(); ++b) {
+        m_batches[b].cullMode = (b & 1u) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        m_batches[b].blend    = b >= 2;
     }
     return drawCount;
 }
@@ -626,21 +670,25 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         };
         vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
-        vkCmdBindPipeline(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        VkPipeline boundPipeline = nullptr;
 
-        // Skip the draw entirely on an empty scene. drawCount == 0 is legal,
-        // but it is also the normal state before anything is loaded, and
-        // stepping over it in a debugger is less confusing than a zero-count
-        // indirect draw.
-        if (drawCount > 0) {
-            vkCmdDrawIndexedIndirect(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, 0,
-                                     drawCount, sizeof(VkDrawIndexedIndirectCommand));
+        for (const DrawBatch &batch : m_batches) {
+            if (batch.count == 0) {
+                continue;
+            }
+            VkPipeline wantedPipeline = batch.blend? m_pipelineBlend : m_pipelineOpaque;
+
+            if (wantedPipeline != boundPipeline) {
+                vkCmdBindPipeline(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wantedPipeline);
+                boundPipeline = wantedPipeline;
+            }
+            vkCmdSetCullMode(res.commandBuffer, batch.cullMode);
+            vkCmdDrawIndexedIndirect(
+                res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
+                static_cast<VkDeviceSize>(batch.first) * sizeof(VkDrawIndexedIndirectCommand),
+                batch.count, sizeof(VkDrawIndexedIndirectCommand));
         }
 
-        // Last inside the pass. The overlay binds its own pipeline, descriptor
-        // sets and vertex buffers -- anything recorded after it would inherit
-        // that state, not ours. It must also stay INSIDE begin/endRendering:
-        // draw calls outside a render pass instance are invalid.
         if (overlay) {
             overlay(res.commandBuffer);
         }
