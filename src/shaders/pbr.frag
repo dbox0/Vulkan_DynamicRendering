@@ -130,6 +130,16 @@ vec3 PBRNeutralToneMapping(vec3 color)
     return mix(color, vec3(newPeak), g);
 }
 
+float geometricSpecularAA(vec3 N, float alpha)
+{
+    const float sigma2 = 0.25;
+    const float kappa  = 0.18;
+    vec3  dNdx = dFdx(N);
+    vec3  dNdy = dFdy(N);
+    float variance = sigma2 * (dot(dNdx, dNdx) + dot(dNdy, dNdy));
+    return clamp(alpha + min(2.0 * variance, kappa), 0.0, 1.0);
+}
+
 // ---------------------------------------------------------------------------
 
 void main()
@@ -197,6 +207,7 @@ void main()
     vec3  V     = normalize(frame.cameraPosition - inWorldPos);
     float NdotV = max(dot(N, V), 1e-4);
     float alpha = roughness * roughness;
+    alpha = geometricSpecularAA(N, alpha); // AA
 
     vec3 cDiff = mix(baseColor.rgb, vec3(0.0), metallic);
     vec3 F0    = mix(vec3(0.04),    baseColor.rgb, metallic);
