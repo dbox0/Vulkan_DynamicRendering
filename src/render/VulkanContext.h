@@ -57,12 +57,14 @@ public:
     VkCommandBuffer beginTransient() const;
     void            endTransient(VkCommandBuffer commandBuffer) const;
 
-private:
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT severity,
         VkDebugUtilsMessageTypeFlagsEXT type,
         const VkDebugUtilsMessengerCallbackDataEXT *callbackData,
         void *userData);
+
+private:
+
 
     bool createInstance(uint32_t apiVersion);
 
@@ -83,4 +85,5 @@ private:
     VkQueue          m_gfxQueue       = nullptr;
     uint32_t         m_gfxQueueFamIdx = UINT32_MAX;
     VkCommandPool    m_transientPool  = nullptr;
+    VkDebugUtilsMessengerEXT m_debugMessenger = nullptr;
 };

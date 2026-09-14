@@ -19,6 +19,23 @@
 
 #include "../common/errors.h"
 
+
+
+namespace {
+    VkDebugUtilsMessengerCreateInfoEXT debugMessengerInfo()
+    {
+        return VkDebugUtilsMessengerCreateInfoEXT
+        {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = VulkanContext::debugCallback
+        };
+    }
+}
+
 // ============================================================================
 // lifetime
 // ============================================================================
@@ -29,6 +46,12 @@ bool VulkanContext::initialize(SDL_Window *window, uint32_t apiVersion)
         showError("Error creating Vulkan instance");
         return false;
     }
+
+    if (!createDebugMessenger()) {
+        showError("Error creating the debug messenger");
+        return false;
+    }
+
     if (!createSurface(window)) {
         showError("Error creating surface");
         return false;
@@ -74,6 +97,12 @@ void VulkanContext::shutdown()
         vkDestroyDevice(m_device, nullptr);
         m_device = nullptr;
     }
+
+    if (m_debugMessenger) {
+        vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
+        m_debugMessenger = nullptr;
+    }
+
     if (m_instance) {
         vkDestroyInstance(m_instance, nullptr);
         m_instance = nullptr;
@@ -91,12 +120,35 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::debugCallback(
     const VkDebugUtilsMessengerCallbackDataEXT *callbackData,
     void * /*userData*/)
 {
-    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        std::cerr << "Validation Layer: " << callbackData->pMessage << std::endl;
+    if (severity < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        return VK_FALSE;
     }
+
+    const char *idName = callbackData->pMessageIdName ? callbackData->pMessageIdName : "";
+    std::cerr << "[vk] " << idName << ": " << callbackData->pMessage << std::endl;
+
+#ifndef NDEBUG
+    if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        __builtin_trap();
+    }
+#endif
     return VK_FALSE;
 }
 
+bool VulkanContext::createDebugMessenger()
+{
+    // volkLoadInstance leaves this null when VK_EXT_debug_utils isn't present.
+    // Not fatal: the instance-scoped pNext messenger still covered creation.
+    if (!vkCreateDebugUtilsMessengerEXT) {
+        std::cerr << "[warn] VK_EXT_debug_utils unavailable; "
+                     "no runtime validation callback" << std::endl;
+        return true;
+    }
+
+    const VkDebugUtilsMessengerCreateInfoEXT info = debugMessengerInfo();
+    return vkCreateDebugUtilsMessengerEXT(m_instance, &info, nullptr,
+                                          &m_debugMessenger) == VK_SUCCESS;
+}
 bool VulkanContext::createInstance(uint32_t apiVersion)
 {
     if (volkInitialize() != VK_SUCCESS) {
