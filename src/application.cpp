@@ -173,6 +173,10 @@ void Application::run()
 
         m_editor.beginFrame();
         m_editor.build(m_scene, m_geometry, m_resources);
+
+        // Pushed in rather than pulled out: the renderer knows nothing about
+        // EditorUI, so a build without an editor still compiles and runs.
+        m_renderer.setSelection(m_editor.selectedNode());
         // Minimised window: no valid extent to render into, so idle instead
         // of feeding a 0x0 swapchain.
         if (m_width == 0 || m_height == 0) {

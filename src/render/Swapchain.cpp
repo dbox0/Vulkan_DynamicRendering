@@ -111,6 +111,9 @@ bool Swapchain::create(uint32_t width, uint32_t height)
     if (!createDepthBuffer(m_width, m_height)) {
         return false;
     }
+    if (!createSelectionMask(m_width, m_height)) {
+        return false;
+    }
 
     m_needsRecreate = false;
     return true;
@@ -161,6 +164,53 @@ bool Swapchain::createDepthBuffer(uint32_t width, uint32_t height)
     return true;
 }
 
+bool Swapchain::createSelectionMask(uint32_t width, uint32_t height)
+{
+    VkImageCreateInfo maskCreateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = SelectionMaskFormat,
+        .extent{ .width = width, .height = height, .depth = 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        // Written as an attachment by the mask pass, read as a texture by the
+        // composite pass in the same frame.
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+
+    VmaAllocationCreateInfo allocInfo
+    {
+        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO
+    };
+
+    if (vmaCreateImage(m_ctx.allocator(), &maskCreateInfo, &allocInfo,
+                       &m_maskImage, &m_maskAllocation, nullptr) != VK_SUCCESS)
+    {
+        showError("Error creating the selection mask image");
+        return false;
+    }
+
+    VkImageViewCreateInfo maskViewInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = m_maskImage,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = SelectionMaskFormat,
+        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
+    };
+
+    if (vkCreateImageView(m_ctx.device(), &maskViewInfo, nullptr, &m_maskImageView) != VK_SUCCESS) {
+        showError("Error creating the selection mask image view");
+        return false;
+    }
+    return true;
+}
+
 void Swapchain::destroy()
 {
     if (!m_ctx.device()) {
@@ -192,6 +242,16 @@ void Swapchain::destroy()
         vmaDestroyImage(m_ctx.allocator(), m_depthImage, m_depthImageAllocation);
         m_depthImage = nullptr;
         m_depthImageAllocation = nullptr;
+    }
+
+    if (m_maskImageView) {
+        vkDestroyImageView(m_ctx.device(), m_maskImageView, nullptr);
+        m_maskImageView = nullptr;
+    }
+    if (m_maskImage) {
+        vmaDestroyImage(m_ctx.allocator(), m_maskImage, m_maskAllocation);
+        m_maskImage = nullptr;
+        m_maskAllocation = nullptr;
     }
 }
 

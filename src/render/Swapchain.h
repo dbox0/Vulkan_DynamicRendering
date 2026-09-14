@@ -15,6 +15,12 @@ public:
     static constexpr VkFormat ColorFormat = VK_FORMAT_B8G8R8A8_SRGB;
     static constexpr VkFormat DepthFormat = VK_FORMAT_D32_SFLOAT;
 
+    // Coverage of the editor's selection, one byte per pixel. Lives here
+    // rather than in Renderer because it is screen-sized: it has to be
+    // rebuilt on resize alongside the depth buffer, and there is exactly one
+    // place that already knows how to do that.
+    static constexpr VkFormat SelectionMaskFormat = VK_FORMAT_R8_UNORM;
+
     explicit Swapchain(VulkanContext &ctx) : m_ctx(ctx) {}
     Swapchain(const Swapchain &) = delete;
     Swapchain &operator=(const Swapchain &) = delete;
@@ -31,6 +37,8 @@ public:
     VkSemaphore    renderCompleteSemaphore(uint32_t i) const { return m_renderCompleteSemaphores[i]; }
     VkImage        depthImage()     const { return m_depthImage; }
     VkImageView    depthImageView() const { return m_depthImageView; }
+    VkImage        selectionMaskImage()     const { return m_maskImage; }
+    VkImageView    selectionMaskImageView() const { return m_maskImageView; }
 
     // Acquire wraps the OUT_OF_DATE / SUBOPTIMAL handling so the renderer
     // doesn't have to. Returns false when the caller should skip the frame.
@@ -42,6 +50,7 @@ public:
 
 private:
     bool createDepthBuffer(uint32_t width, uint32_t height);
+    bool createSelectionMask(uint32_t width, uint32_t height);
 
     VulkanContext &m_ctx;
 
@@ -56,4 +65,8 @@ private:
     VkImage       m_depthImage           = nullptr;
     VkImageView   m_depthImageView       = nullptr;
     VmaAllocation m_depthImageAllocation = nullptr;
+
+    VkImage       m_maskImage      = nullptr;
+    VkImageView   m_maskImageView  = nullptr;
+    VmaAllocation m_maskAllocation = nullptr;
 };

@@ -57,9 +57,37 @@ public:
             uint32_t windowWidth, uint32_t windowHeight,
             const std::function<void(VkCommandBuffer)> &overlay = {});
 
+    // Node ID the editor has selected, 0 for none. The renderer never reaches
+    // into EditorUI for it -- the application pushes it in once per frame, so
+    // rendering stays independent of whether there is an editor at all.
+    void setSelection(uint32_t nodeId) { m_selectedNode = nodeId; }
+
+    // Colour and pixel width, live-editable from the inspector.
+    OutlineConstants &outlineSettings() { return m_outline; }
+
 private:
     bool createShaders();
     bool createPipeline(bool blendEnabled, VkPipeline &outPipeline);
+    bool createMaskPipeline();
+    bool createOutlinePipeline();
+    bool createOutlineDescriptors();
+
+    // The mask view changes identity on every swapchain recreate, so the
+    // descriptor has to be rewritten with it.
+    void updateSelectionMaskDescriptor();
+
+    // Draws the selected submeshes into the mask image and leaves it in
+    // SHADER_READ_ONLY_OPTIMAL.
+    void recordSelectionMask(FrameResources &res);
+
+    // Screen-space box around the selection, padded by the outline width.
+    // Scissoring the composite to this is what keeps a fullscreen dilate from
+    // costing a fullscreen dilate.
+    VkRect2D selectionScissor() const;
+    void accumulateSelectionBounds(const glm::mat4 &viewProj, const glm::mat4 &worldMatrix,
+                                   const SubMesh &subMesh);
+
+
     bool createSyncResources();
     bool createCommandBuffers();
     bool createFrameBuffers(uint32_t maxDrawsPerFrame);
@@ -82,6 +110,34 @@ private:
 
     VkShaderModule   m_vertexShader   = nullptr;
     VkShaderModule   m_fragmentShader = nullptr;
+
+    // --- selection outline ------------------------------------------------
+    // The mask pipeline shares m_pipelineLayout: it reads the same push
+    // constants and the same RenderItem buffer, so the descriptor set and
+    // constants bound for the scene pass already cover it.
+    VkPipeline     m_pipelineMask         = nullptr;
+    VkShaderModule m_maskVertexShader     = nullptr;
+    VkShaderModule m_maskFragmentShader   = nullptr;
+
+    // The composite needs a sampler, which the bindless global layout has no
+    // free slot for, so it gets a one-binding layout of its own.
+    VkPipeline            m_pipelineOutline    = nullptr;
+    VkShaderModule        m_outlineVertexShader   = nullptr;
+    VkShaderModule        m_outlineFragmentShader = nullptr;
+    VkPipelineLayout      m_outlineLayout      = nullptr;
+    VkDescriptorSetLayout m_outlineSetLayout   = nullptr;
+    VkDescriptorPool      m_outlinePool        = nullptr;
+    VkDescriptorSet       m_outlineSet         = nullptr;
+    VkSampler             m_maskSampler        = nullptr;
+
+    uint32_t         m_selectedNode = 0;
+    OutlineConstants m_outline{};
+
+    // Slots in this frame's indirect buffer that belong to the selection.
+    std::vector<uint32_t> m_selectedSlots;
+    glm::vec2 m_selectionMin{ 0.0f };
+    glm::vec2 m_selectionMax{ 0.0f };
+    bool      m_selectionBoundsValid = true;
 
     VkSemaphore m_timelineSemaphore = nullptr;
     std::array<FrameResources, MaxFramesInFlight> m_frameResources;
