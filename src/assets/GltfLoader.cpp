@@ -612,7 +612,8 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
         const uint32_t imageId = m_resources.addImage(commandBuffer, image.data,
                                                       static_cast<uint32_t>(image.width),
                                                       static_cast<uint32_t>(image.height),
-                                                      4, image.format, staging);
+                                                      image.format, staging);
+
         imageIds[i] = imageId ? imageId : m_resources.errorImageId();
         if (staging.vkBuffer) {
             stagingBuffers.push_back(staging);

@@ -474,9 +474,14 @@ void VulkanContext::mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffs
 // ============================================================================
 
 bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *imageData,
-                   uint32_t width, uint32_t height, uint32_t bytesPerPixel, VkFormat format,
-                   GPUImage &outImage, GPUBuffer &outStagingBuffer) const
+                                  uint32_t width, uint32_t height, VkFormat format,
+                                  GPUImage &outImage, GPUBuffer &outStagingBuffer) const
 {
+    const uint32_t bytesPerPixel = formatBytesPerPixel(format);
+    if (bytesPerPixel == 0) {
+        showError("createImage2D: unsupported format");
+        return false;
+    }
     outImage = GPUImage{};
     outStagingBuffer = GPUBuffer{};
 

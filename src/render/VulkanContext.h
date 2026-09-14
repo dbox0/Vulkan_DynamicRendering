@@ -41,8 +41,8 @@ public:
     // --- images ----------------------------------------------------------
 
     bool createImage2D(VkCommandBuffer commandBuffer, const void *imageData,
-                     uint32_t width, uint32_t height, uint32_t bytesPerPixel, VkFormat format,
-                     GPUImage &outImage, GPUBuffer &outStagingBuffer) const;
+                                  uint32_t width, uint32_t height, VkFormat format,
+                                  GPUImage &outImage, GPUBuffer &outStagingBuffer) const;
 
     static uint32_t mipLevelCount(uint32_t width, uint32_t height)
     {

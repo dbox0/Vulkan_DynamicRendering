@@ -108,13 +108,13 @@ void ResourceStore::shutdown()
 // adders -- 1-based IDs, 0 means failure/none
 
 
-uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const unsigned char *data,
-                                 uint32_t width, uint32_t height, int channels,
+uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const void *data,
+                                 uint32_t width, uint32_t height,
                                  VkFormat format, GPUBuffer &outStagingBuffer)
 {
     GPUImage gpuImage;
-    if (!m_ctx.createImage2D(commandBuffer, data, width, height, 4,
-                             format, gpuImage, outStagingBuffer)) {
+    if (!m_ctx.createImage2D(commandBuffer, data, width, height, format,
+                             gpuImage, outStagingBuffer)) {
         return 0;
                              }
     m_images.push_back(gpuImage);
@@ -122,7 +122,6 @@ uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const unsigned c
         .width = width, .height = height,
         .mipLevels = VulkanContext::mipLevelCount(width, height),
         .format = format });
-
     return static_cast<uint32_t>(m_images.size());
 }
 
@@ -178,9 +177,9 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
         return 0;
     }
 
-    const size_t texelCount = static_cast<size_t>(width) * height;
-    std::vector<uint16_t> halfPixels(texelCount * 4);
-    for (size_t i = 0; i < texelCount * 4; ++i) {
+    const size_t componentCount = static_cast<size_t>(width) * height * 4;
+    std::vector<uint16_t> halfPixels(componentCount);
+    for (size_t i = 0; i < componentCount; ++i) {
         halfPixels[i] = floatToHalf(pixels[i]);
     }
     stbi_image_free(pixels);
@@ -190,28 +189,18 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
         return 0;
     }
 
-    GPUImage  gpuImage;
     GPUBuffer staging;
-    const bool ok = m_ctx.createImage2D(cmd, halfPixels.data(),
-                                        static_cast<uint32_t>(width),
-                                        static_cast<uint32_t>(height), 8,
-                                        VK_FORMAT_R16G16B16A16_SFLOAT,
-                                        gpuImage, staging);
+    const uint32_t imageId = addImage(cmd, halfPixels.data(),
+                                      static_cast<uint32_t>(width),
+                                      static_cast<uint32_t>(height),
+                                      VK_FORMAT_R16G16B16A16_SFLOAT, staging);
     m_ctx.endTransient(cmd);
     m_ctx.destroyBuffer(staging);
 
-    if (!ok) {
+    if (!imageId) {
         return 0;
     }
-
-    m_images.push_back(gpuImage);
-    m_imageInfos.push_back(ImageInfo{
-        .name = path.filename().string(),
-        .width = static_cast<uint32_t>(width),
-        .height = static_cast<uint32_t>(height),
-        .mipLevels = VulkanContext::mipLevelCount(width, height),
-        .format = VK_FORMAT_R16G16B16A16_SFLOAT });
-    const uint32_t imageId = static_cast<uint32_t>(m_images.size());
+    setImageName(imageId, path.filename().string());
 
     if (!m_envSamplerId) {
         // Repeat in U so the horizontal seam wraps; clamp in V because
@@ -385,8 +374,8 @@ bool ResourceStore::createDefaultTextures()
 
     GPUBuffer whiteStaging;
     GPUBuffer errorStaging;
-    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, 4, format, whiteStaging);
-    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, 4, format, errorStaging);
+    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, format, whiteStaging);
+    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, format, errorStaging);
 
     // Both copies are recorded before the single submit, so one transient
     // command buffer covers both uploads.

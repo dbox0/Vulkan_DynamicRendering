@@ -69,9 +69,10 @@ public:
     // colour space, so only the material slot sampling an image knows whether
     // it is colour (_SRGB) or data (_UNORM).
 
-    uint32_t addImage(VkCommandBuffer commandBuffer, const unsigned char *data,
-                      uint32_t width, uint32_t height, int channels,
-                      VkFormat format, GPUBuffer &outStagingBuffer);
+    uint32_t addImage(VkCommandBuffer commandBuffer, const void *data,
+                                 uint32_t width, uint32_t height,
+                                 VkFormat format, GPUBuffer &outStagingBuffer);
+
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
     uint32_t addBuffer(const GPUBuffer &buffer);
