@@ -1139,7 +1139,6 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         res.renderItemPtr[slot] = RenderItem
         {
             .worldMatrix   = item.worldMatrix,
-            .normalMatrix  = glm::transpose(glm::inverse(glm::mat3(item.worldMatrix))),
             .materialIndex = materialIndex
         };
 

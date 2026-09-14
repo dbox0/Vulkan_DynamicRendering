@@ -73,12 +73,10 @@ static_assert(offsetof(GpuMaterial, flags)          == 68);
 struct RenderItem
 {
     glm::mat4 worldMatrix{ 1.0f };
-    glm::mat3 normalMatrix{ 1.0f };
     uint32_t  materialIndex = 0;        // 0-based; index 0 is the default material
 };
-static_assert(sizeof(RenderItem) == 104);
-static_assert(offsetof(RenderItem, normalMatrix)  == 64);
-static_assert(offsetof(RenderItem, materialIndex) == 100);
+static_assert(sizeof(RenderItem) == 68);
+static_assert(offsetof(RenderItem, materialIndex) == 64);
 
 
 // FrameData -> per frame-in-flight, host-visible, read through BDA.

@@ -18,7 +18,6 @@ struct Vertex
 struct RenderItem
 {
     mat4 worldMatrix;
-    mat3 normalMatrix;
     uint materialIndex;
 };
 
@@ -54,6 +53,13 @@ layout(location = 3) out vec2 outUV;
 layout(location = 4) out vec4 outColor;
 layout(location = 5) out flat uint outMaterialIndex;
 
+mat3 cofactor(mat3 m)
+{
+    return mat3(cross(m[1], m[2]),
+            cross(m[2], m[0]),
+            cross(m[0], m[1]));
+}
+
 void main()
 {
     Vertex          v     = VertexBuffer(pc.vertexBufferAddress).vertices[gl_VertexIndex];
@@ -64,7 +70,7 @@ void main()
     gl_Position   = frame.viewProj * worldPos;
 
     outWorldPos = worldPos.xyz;
-    outNormal   = ri.normalMatrix * v.normal;
+    outNormal = cofactor(mat3(ri.worldMatrix)) * v.normal;
     // Tangents lie IN the surface, so they transform with the model matrix,
     // not with the inverse-transpose like normals do!
     outTangent  = vec4(mat3(ri.worldMatrix) * v.tangent.xyz, v.tangent.w);
