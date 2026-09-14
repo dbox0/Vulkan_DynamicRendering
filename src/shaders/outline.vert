@@ -1,0 +1,11 @@
+#version 460
+
+// Fullscreen triangle from gl_VertexIndex alone -- no vertex buffer, no
+// varyings. The fragment shader works in gl_FragCoord, which is framebuffer
+// space and therefore immune to the renderer's flipped viewport; deriving UVs
+// here instead would come out upside down.
+void main()
+{
+    vec2 uv = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+    gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+}
