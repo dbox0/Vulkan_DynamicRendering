@@ -171,8 +171,7 @@ void Application::run()
             break;
         }
 
-        m_editor.beginFrame();
-        m_editor.build(m_scene, m_geometry, m_resources);
+
 
         // Pushed in rather than pulled out: the renderer knows nothing about
         // EditorUI, so a build without an editor still compiles and runs.
@@ -186,6 +185,8 @@ void Application::run()
 
         // NewFrame must not run on a frame that gets skipped above -- ImGui
         // asserts if NewFrame is called twice without a Render in between.
+        m_editor.beginFrame();
+        m_editor.build(m_scene, m_geometry, m_resources);
 
         // Swallow camera input while a widget has focus, or WASD types into
         // a text field and dragging a slider spins the view.
