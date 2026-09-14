@@ -20,7 +20,6 @@ struct Vertex
 struct RenderItem
 {
     mat4 worldMatrix;
-    mat3 normalMatrix;
     uint materialIndex;
 };
 
