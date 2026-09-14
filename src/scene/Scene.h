@@ -39,6 +39,4 @@ private:
     uint32_t  m_rootNodeId     = 0;
     uint32_t  m_lastRootNodeId = 0;
 
-    // Kept as a member so traversal doesn't reallocate every frame. Node IDs
-    std::vector<std::pair<uint32_t, glm::mat4>> m_traversalStack;
 };

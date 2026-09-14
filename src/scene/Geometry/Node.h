@@ -23,6 +23,9 @@ public:
     uint32_t nextSiblingId  = 0;
     uint32_t firstChildId   = 0;
 
+
+    [[nodiscard]] bool isDirty() const { return m_dirty; }
+
     glm::vec3 getTranslation() const { return m_translation;}
 
     void setTranslation(glm::vec3 vec) {
@@ -43,7 +46,7 @@ public:
         m_dirty = true;
     }
 
-    glm::mat4 getTransform() {
+    glm::mat4 &getTransform() {
         if (m_dirty) {
             glm::mat4 matTrans = glm::translate(glm::mat4(1.0f), m_translation);
             glm::mat4 matRot = glm::mat4_cast(m_rotation);

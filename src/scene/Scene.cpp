@@ -5,7 +5,6 @@
 void Scene::initialize(size_t maxNodes)
 {
     m_nodeWorld.initialize(maxNodes);
-    m_traversalStack.reserve(maxNodes);
 }
 
 void Scene::addRootNode(uint32_t nodeId)
@@ -23,33 +22,19 @@ void Scene::addRootNode(uint32_t nodeId)
 
 void Scene::collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out)
 {
+    m_nodeWorld.updateTransforms();
+
     out.clear();
-    m_traversalStack.clear();
-
-    // Seed with the root sibling chain.
-    for (uint32_t nodeId = m_rootNodeId; nodeId; ) {
-        m_traversalStack.push_back({ nodeId, glm::mat4(1.0f) });
-        nodeId = m_nodeWorld.getNode(nodeId).nextSiblingId;
-    }
-
-    while (!m_traversalStack.empty()) {
-        const auto [nodeId, parentTransform] = m_traversalStack.back();
-        m_traversalStack.pop_back();
-
-        Node &node = m_nodeWorld.getNode(nodeId);
-        const glm::mat4 matWorld = parentTransform * node.getTransform();
-
-        if (node.meshId) {
-            const Mesh &mesh = geometry.mesh(node.meshId);
-            const uint32_t subMeshCount = static_cast<uint32_t>(mesh.subMeshes.size());
-            for (uint32_t s = 0; s < subMeshCount; ++s) {
-                out.push_back(DrawItem{ &mesh.subMeshes[s], matWorld, nodeId, s });
-            }
+    const size_t count = m_nodeWorld.size();
+    for (uint32_t nodeId = 1; nodeId <= count; ++nodeId) {
+        const Node &node = m_nodeWorld.getNode(nodeId);
+        if (!node.meshId) {
+            continue;
         }
-
-        for (uint32_t childNodeId = node.firstChildId; childNodeId; ) {
-            m_traversalStack.push_back({ childNodeId, matWorld });
-            childNodeId = m_nodeWorld.getNode(childNodeId).nextSiblingId;
+        const Mesh &mesh = geometry.mesh(node.meshId);
+        const glm::mat4 &world = m_nodeWorld.worldMatrix(nodeId);
+        for (uint32_t s = 0; s < mesh.subMeshes.size(); ++s) {
+            out.push_back(DrawItem{ &mesh.subMeshes[s], world, nodeId, s });
         }
     }
 }
