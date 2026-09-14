@@ -8,6 +8,8 @@
 #include "../common/gpu_types.h"
 #include "GpuShared.h"
 #include <volk.h>
+#include <filesystem>
+#include <iostream>
 
 class VulkanContext;
 
@@ -46,7 +48,8 @@ public:
         std::string name;
         uint32_t    width  = 0;
         uint32_t    height = 0;
-        VkFormat    format = VK_FORMAT_UNDEFINED;
+        uint32_t    mipLevels = 1;
+        VkFormat    format    = VK_FORMAT_UNDEFINED;
     };
 
     struct Texture
@@ -112,6 +115,15 @@ public:
     size_t materialCount() const { return m_materials.size(); }
     uint64_t materialBufferAddress() const { return m_materialBuffer.deviceAddress; }
 
+
+    // --- environment -------------------------------------------------
+
+    uint32_t loadEnvironment(const std::filesystem::__cxx11::path &path);
+
+    uint32_t environmentTextureId() const { return m_envTextureId; }
+    uint32_t imageMipLevels(uint32_t imageId) const { return m_imageInfos[imageId - 1].mipLevels; }
+
+
     // --- bindless descriptors --------------------------------------------
     // Writes only the texture slots added since the last call.
 
@@ -161,6 +173,8 @@ private:
     uint32_t m_whiteTextureId   = 0;
     uint32_t m_errorTextureId   = 0;
     uint32_t m_defaultMaterialId = 0;
+    uint32_t m_envTextureId = 0;
+    uint32_t m_envSamplerId = 0;
 
     // How many descriptor slots have actually been written. Everything below
     // this index is potentially in use by an in-flight frame!

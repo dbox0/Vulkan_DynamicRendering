@@ -89,6 +89,9 @@ private:
     uint64_t m_nextSignalValue  = MaxFramesInFlight + 1;
     uint32_t m_maxDraws         = 0;
 
+    uint32_t m_envSlot   = 0;
+    float    m_envMaxLod = 0.0f;
+
     // Reused across frames so traversal doesn't allocate per frame.
     std::vector<DrawItem> m_drawItems;
     std::vector<SortedDraw> m_sorted;

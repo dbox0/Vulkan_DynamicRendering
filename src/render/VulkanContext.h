@@ -1,5 +1,6 @@
 #pragma once
 #define VK_NO_PROTOTYPES
+#include <cmath>
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <cstdint>
@@ -39,9 +40,14 @@ public:
 
     // --- images ----------------------------------------------------------
 
-    bool createImage2D(VkCommandBuffer commandBuffer, const unsigned char *imageData,
-                   uint32_t width, uint32_t height, int channels, VkFormat format,
-                   GPUImage &outImage, GPUBuffer &outStagingBuffer) const;
+    bool createImage2D(VkCommandBuffer commandBuffer, const void *imageData,
+                     uint32_t width, uint32_t height, uint32_t bytesPerPixel, VkFormat format,
+                     GPUImage &outImage, GPUBuffer &outStagingBuffer) const;
+
+    static uint32_t mipLevelCount(uint32_t width, uint32_t height)
+    {
+        return 1u + static_cast<uint32_t>(std::floor(std::log2(std::max(width, height))));
+    }
 
     void destroyImage(GPUImage &image) const;
 

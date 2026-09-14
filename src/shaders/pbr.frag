@@ -247,7 +247,8 @@ void main()
         // prefilter pass exists. sqrt maps roughness to lobe width better than
         // a linear ramp does.
         float lod = sqrt(roughness) * frame.envMaxLod;
-        irradiance = sampleEnv(frame.envTex, N, frame.envMaxLod) * frame.envIntensity;
+        float diffuseLod = max(frame.envMaxLod - 2.0, 0.0);
+        irradiance = sampleEnv(frame.envTex, N, diffuseLod) * frame.envIntensity;
         radiance   = sampleEnv(frame.envTex, R, lod)             * frame.envIntensity;
     } else {
         irradiance = mix(frame.groundColor, frame.skyColor, N.y * 0.5 + 0.5);

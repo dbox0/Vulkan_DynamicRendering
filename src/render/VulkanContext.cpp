@@ -409,15 +409,15 @@ void VulkanContext::mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffs
 // images
 // ============================================================================
 
-bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const unsigned char *imageData,
-                   uint32_t width, uint32_t height, int channels, VkFormat format,
+bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *imageData,
+                   uint32_t width, uint32_t height, uint32_t bytesPerPixel, VkFormat format,
                    GPUImage &outImage, GPUBuffer &outStagingBuffer) const
 {
     outImage = GPUImage{};
     outStagingBuffer = GPUBuffer{};
 
     // create mipmaps
-    uint32_t mipLevels = 1u + static_cast<uint32_t>(std::floor(std::log2(std::max(width, height))));
+    uint32_t mipLevels = mipLevelCount(width,height);
 
     VkImageCreateInfo imageInfo
     {
@@ -488,7 +488,7 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const unsigned 
     };
     vkCmdPipelineBarrier2(commandBuffer, &transferDep);
 
-    const size_t byteSize = static_cast<size_t>(width) * height * channels;
+    const size_t byteSize = static_cast<size_t>(width) * height * bytesPerPixel;
     outStagingBuffer = createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, byteSize,
                                     true, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
     if (!outStagingBuffer.vkBuffer) {

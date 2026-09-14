@@ -105,6 +105,7 @@ static_assert(sizeof(FrameData) == 148);
 static_assert(offsetof(FrameData, cameraPosition) == 64);
 static_assert(offsetof(FrameData, sunDirection)   == 80);
 static_assert(offsetof(FrameData, skyColor)       == 112);
+static_assert(offsetof(FrameData, envTex)    == 136);
 
 // Push constants. 32 bytes
 // ----------------------------------------------------------------------------

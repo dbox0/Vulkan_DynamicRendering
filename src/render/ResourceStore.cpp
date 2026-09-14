@@ -1,14 +1,40 @@
 #include "ResourceStore.h"
 
+#include <algorithm>
 #include <volk.h>
 #include <vk_mem_alloc.h>
 #include <array>
+#include <cstring>
 #include <utility>
 #include <vector>
 
+#include "stb_image.h"
 #include "VulkanContext.h"
 #include "../common/errors.h"
 #include "../common/constants.h"
+
+uint16_t floatToHalf(float value)
+{
+    // Half tops out at 65504. HDR panoramas routinely store suns well past
+    // that, and an inf here turns into NaN pixels the moment it hits the
+    // specular term, so clamp rather than let it overflow.
+    value = std::clamp(value, -65504.0f, 65504.0f);
+
+    uint32_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+
+    const uint32_t sign     = (bits >> 16) & 0x8000u;
+    const int32_t  exponent = static_cast<int32_t>((bits >> 23) & 0xFFu) - 127 + 15;
+    const uint32_t mantissa = bits & 0x007FFFFFu;
+
+    if (exponent >= 31) {
+        return static_cast<uint16_t>(sign | 0x7C00u | (mantissa ? 0x200u : 0u));
+    }
+    if (exponent <= 0) {
+        return static_cast<uint16_t>(sign);
+    }
+    return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exponent) << 10) | (mantissa >> 13));
+}
 
 bool ResourceStore::initialize()
 {
@@ -87,12 +113,16 @@ uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const unsigned c
                                  VkFormat format, GPUBuffer &outStagingBuffer)
 {
     GPUImage gpuImage;
-    if (!m_ctx.createImage2D(commandBuffer, data, width, height, channels,
+    if (!m_ctx.createImage2D(commandBuffer, data, width, height, 4,
                              format, gpuImage, outStagingBuffer)) {
         return 0;
-    }
+                             }
     m_images.push_back(gpuImage);
-    m_imageInfos.push_back(ImageInfo{ .width = width, .height = height, .format = format });
+    m_imageInfos.push_back(ImageInfo{
+        .width = width, .height = height,
+        .mipLevels = VulkanContext::mipLevelCount(width, height),
+        .format = format });
+
     return static_cast<uint32_t>(m_images.size());
 }
 
@@ -133,6 +163,78 @@ uint32_t ResourceStore::addBuffer(const GPUBuffer &buffer)
     return static_cast<uint32_t>(m_buffers.size());
 }
 
+
+// ============================================================================
+// Env
+// ============================================================================
+
+uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
+{
+    int width = 0, height = 0, channels = 0;
+    float *pixels = stbi_loadf(path.string().c_str(), &width, &height, &channels, 4);
+    if (!pixels) {
+        std::cerr << "[warn] Unable to load environment map " << path
+                  << ": " << stbi_failure_reason() << std::endl;
+        return 0;
+    }
+
+    const size_t texelCount = static_cast<size_t>(width) * height;
+    std::vector<uint16_t> halfPixels(texelCount * 4);
+    for (size_t i = 0; i < texelCount * 4; ++i) {
+        halfPixels[i] = floatToHalf(pixels[i]);
+    }
+    stbi_image_free(pixels);
+
+    VkCommandBuffer cmd = m_ctx.beginTransient();
+    if (!cmd) {
+        return 0;
+    }
+
+    GPUImage  gpuImage;
+    GPUBuffer staging;
+    const bool ok = m_ctx.createImage2D(cmd, halfPixels.data(),
+                                        static_cast<uint32_t>(width),
+                                        static_cast<uint32_t>(height), 8,
+                                        VK_FORMAT_R16G16B16A16_SFLOAT,
+                                        gpuImage, staging);
+    m_ctx.endTransient(cmd);
+    m_ctx.destroyBuffer(staging);
+
+    if (!ok) {
+        return 0;
+    }
+
+    m_images.push_back(gpuImage);
+    m_imageInfos.push_back(ImageInfo{
+        .name = path.filename().string(),
+        .width = static_cast<uint32_t>(width),
+        .height = static_cast<uint32_t>(height),
+        .mipLevels = VulkanContext::mipLevelCount(width, height),
+        .format = VK_FORMAT_R16G16B16A16_SFLOAT });
+    const uint32_t imageId = static_cast<uint32_t>(m_images.size());
+
+    if (!m_envSamplerId) {
+        // Repeat in U so the horizontal seam wraps; clamp in V because
+        // repeating would mirror the sky across the poles.
+        VkSamplerCreateInfo samplerInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = VK_FILTER_LINEAR,
+            .minFilter = VK_FILTER_LINEAR,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .compareEnable = VK_FALSE,
+            .minLod = 0.0f,
+            .maxLod = VK_LOD_CLAMP_NONE
+        };
+        m_envSamplerId = addSampler(samplerInfo);
+    }
+
+    m_envTextureId = addTexture(imageId, m_envSamplerId);
+    return m_envTextureId;
+}
 
 // ============================================================================
 // materials

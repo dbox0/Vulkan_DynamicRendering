@@ -46,6 +46,15 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Could not create the indirect draw buffers");
         return false;
     }
+
+    // Optional: no file, or a broken one, just leaves m_envSlot at 0 and the
+    // shader falls back to the hemisphere ambient. Not worth failing init over.
+    if (const uint32_t envTextureId = m_resources.loadEnvironment(ASSET_DIR "env/env_test.hdr")) {
+        const uint32_t envImageId = m_resources.texture(envTextureId).imageId;
+        m_envSlot   = envTextureId - 1;
+        m_envMaxLod = static_cast<float>(m_resources.imageMipLevels(envImageId) - 1);
+        std::cout << "Environment map loaded into descriptor slot " << m_envSlot << std::endl;
+    }
     return true;
 }
 
@@ -775,6 +784,10 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .sunDirection   = glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)),
         .sunIntensity   = 3.0f,
         .sunColor       = glm::vec3(1.0f, 0.96f, 0.9f),
+        .envTex       = m_resources.environmentTextureId()
+                            ? m_resources.environmentTextureId() - 1 : 0,
+        .envIntensity = .5f,
+        .envMaxLod    = m_envMaxLod,
     };
 
     scene.collectDrawItems(m_geometry, m_drawItems);
