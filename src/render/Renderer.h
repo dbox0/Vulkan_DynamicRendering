@@ -16,6 +16,15 @@ class ResourceStore;
 class GeometryStore;
 class Camera;
 
+struct DrawBatch
+{
+    uint32_t        first    = 0;
+    uint32_t        count    = 0;
+    VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
+    bool            blend    = false;
+};
+
+struct SortedDraw { uint32_t bucket; float depth; uint32_t index; };
 
 struct FrameResources
 {
@@ -50,7 +59,7 @@ public:
 
 private:
     bool createShaders();
-    bool createPipeline();
+    bool createPipeline(bool blendEnabled, VkPipeline &outPipeline);
     bool createSyncResources();
     bool createCommandBuffers();
     bool createFrameBuffers(uint32_t maxDrawsPerFrame);
@@ -67,7 +76,10 @@ private:
     GeometryStore &m_geometry;
 
     VkPipelineLayout m_pipelineLayout = nullptr;
-    VkPipeline       m_pipeline       = nullptr;
+    VkPipeline m_pipelineOpaque = nullptr;
+    VkPipeline m_pipelineBlend  = nullptr;
+    std::array<DrawBatch, 4> m_batches{};
+
     VkShaderModule   m_vertexShader   = nullptr;
     VkShaderModule   m_fragmentShader = nullptr;
 
@@ -79,4 +91,5 @@ private:
 
     // Reused across frames so traversal doesn't allocate per frame.
     std::vector<DrawItem> m_drawItems;
+    std::vector<SortedDraw> m_sorted;
 };

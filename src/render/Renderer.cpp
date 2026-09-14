@@ -30,7 +30,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Error creating shader modules");
         return false;
     }
-    if (!createPipeline()) {
+    if (!createPipeline(false, m_pipelineOpaque) || !createPipeline(true, m_pipelineBlend)) {
         showError("Unable to initialize the graphics pipeline");
         return false;
     }
@@ -90,10 +90,14 @@ void Renderer::shutdown()
         vkDestroySemaphore(m_ctx.device(), m_timelineSemaphore, nullptr);
         m_timelineSemaphore = nullptr;
     }
-    if (m_pipeline) {
-        vkDestroyPipeline(m_ctx.device(), m_pipeline, nullptr);
-        m_pipeline = nullptr;
+
+    for (VkPipeline *p : { &m_pipelineOpaque, &m_pipelineBlend }) {
+        if (*p) {
+            vkDestroyPipeline(m_ctx.device(), *p, nullptr);
+            *p = nullptr;
+        }
     }
+
     if (m_pipelineLayout) {
         vkDestroyPipelineLayout(m_ctx.device(), m_pipelineLayout, nullptr);
         m_pipelineLayout = nullptr;
@@ -181,29 +185,31 @@ bool Renderer::createShaders()
 // pipeline
 // ============================================================================
 
-bool Renderer::createPipeline()
+bool Renderer::createPipeline(bool blendEnabled, VkPipeline &outPipeline)
 {
-    VkPushConstantRange pushConstantRange
-    {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = sizeof(FrameConstants)
-    };
+    if (!m_pipelineLayout) {
+        VkPushConstantRange pushConstantRange
+        {
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            .offset = 0,
+            .size = sizeof(FrameConstants)
+        };
 
-    const std::array<VkDescriptorSetLayout, 1> dsLayouts{ m_resources.globalLayout() };
+        const std::array<VkDescriptorSetLayout, 1> dsLayouts{ m_resources.globalLayout() };
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = static_cast<uint32_t>(dsLayouts.size()),
-        .pSetLayouts = dsLayouts.data(),
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushConstantRange
-    };
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = static_cast<uint32_t>(dsLayouts.size()),
+            .pSetLayouts = dsLayouts.data(),
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &pushConstantRange
+        };
 
-    if (vkCreatePipelineLayout(m_ctx.device(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
-        showError("Failed to create the pipeline layout");
-        return false;
+        if (vkCreatePipelineLayout(m_ctx.device(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
+            showError("Failed to create the pipeline layout");
+            return false;
+        }
     }
 
     const char *entryPoint = "main";
@@ -237,11 +243,13 @@ bool Renderer::createPipeline()
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
     };
 
+    // Blended geometry still tests against the opaque depth, but must not
+    // write, or the draw order within the transparent bucket stops mattering.
     VkPipelineDepthStencilStateCreateInfo depthStencilInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
+        .depthWriteEnable = blendEnabled ? VK_FALSE : VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
         .stencilTestEnable = VK_FALSE
     };
@@ -256,6 +264,8 @@ bool Renderer::createPipeline()
         .pScissors = nullptr
     };
 
+    // cullMode is dynamic now -- this value is only what the pipeline is
+    // created with and is overridden by vkCmdSetCullMode before every batch.
     VkPipelineRasterizationStateCreateInfo rasterInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -273,7 +283,13 @@ bool Renderer::createPipeline()
 
     VkPipelineColorBlendAttachmentState colorBlendAttachState
     {
-        .blendEnable = VK_FALSE,
+        .blendEnable = blendEnabled ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
     };
@@ -284,9 +300,9 @@ bool Renderer::createPipeline()
         .pAttachments = &colorBlendAttachState
     };
 
-    const std::array<VkDynamicState, 2> dynamicStates
+    const std::array<VkDynamicState, 3> dynamicStates
     {
-        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE
     };
     VkPipelineDynamicStateCreateInfo dynamicStateInfo
     {
@@ -323,7 +339,7 @@ bool Renderer::createPipeline()
         .renderPass = VK_NULL_HANDLE,
     };
 
-    if (vkCreateGraphicsPipelines(m_ctx.device(), nullptr, 1, &pipelineInfo, nullptr, &m_pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_ctx.device(), nullptr, 1, &pipelineInfo, nullptr, &outPipeline) != VK_SUCCESS) {
         showError("Failed to create the graphics pipeline");
         return false;
     }
