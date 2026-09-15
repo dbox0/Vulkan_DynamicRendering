@@ -21,16 +21,28 @@ add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-        src/editor/EditorUI.cpp
-        src/editor/EditorUI.h
-        src/editor/EditorInspectorPanels.cpp
-        src/editor/Picking.cpp
-        src/editor/Picking.h
 )
 
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(imgui PUBLIC SDL3::SDL3 Vulkan::Headers)
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK VK_NO_PROTOTYPES)
+
+FetchContent_Declare(imguizmo
+        GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+        GIT_TAG        master)
+FetchContent_MakeAvailable(imguizmo)
+
+# ImGuizmo's own CMakeLists only defines an imgui target when it is the top
+# level project. Under FetchContent it is not, so it would compile with no
+# imgui include path at all unless we hand it ours. imgui_internal.h comes
+# along with it -- ImGuizmo.cpp includes that directly.
+target_link_libraries(imguizmo PUBLIC imgui)
+
+# Set BEFORE add_executable: CXX_STANDARD is copied onto a target when the
+# target is created, so the old placement below the target did nothing and
+# vulkanapp was building at the compiler default.
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(vulkanapp
         src/main.cpp
@@ -53,6 +65,13 @@ add_executable(vulkanapp
         src/scene/Scene.h
         src/editor/Picking.cpp
         src/editor/Picking.h
+        src/editor/EditorUI.cpp
+        src/editor/EditorUI.h
+        src/editor/EditorInspectorPanels.cpp
+        src/editor/EditorInteraction.cpp
+        src/editor/EditorCommands.h
+        src/assets/PrimitiveBuilder.cpp
+        src/assets/PrimitiveBuilder.h
         src/scene/Camera.cpp
         src/scene/Camera.h
         src/assets/GltfLoader.cpp
@@ -83,9 +102,6 @@ add_executable(vulkanapp
         src/render/RangeAllocator.h
 )
 
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 # For MSVC, you often need the 'latest' flag specifically
 
 
@@ -95,7 +111,8 @@ target_link_libraries(vulkanapp PRIVATE
         PkgConfig::SHADERC
         SDL3::SDL3
         glm::glm
-        imgui)
+        imgui
+        imguizmo)
 
 target_compile_definitions(vulkanapp PRIVATE
         SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/"
