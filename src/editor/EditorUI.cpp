@@ -22,118 +22,204 @@
 
 void EditorUI::applyTheme()
 {
-    ImGuiStyle &style = ImGui::GetStyle();
-    ImVec4 *colors = style.Colors;
+    ImGui::StyleColorsDark();
 
-    // --- shape ---
-    // Unity's look is flat panels with slightly rounded controls. Rounding the
-    // windows but not the panels is what keeps it from looking like a web app.
-    style.WindowRounding    = 6.0f;
-    style.ChildRounding     = 4.0f;
-    style.FrameRounding     = 3.0f;
-    style.PopupRounding     = 4.0f;
-    style.ScrollbarRounding = 6.0f;
-    style.GrabRounding      = 3.0f;
-    style.TabRounding       = 4.0f;
+    ImGuiStyle& style = ImGui::GetStyle();
 
-    style.WindowBorderSize = 0.0f;
-    style.ChildBorderSize  = 1.0f;
-    style.FrameBorderSize  = 0.0f;
-    style.PopupBorderSize  = 1.0f;
+    // ---------------------------------------------------------------------
+    // Shape
+    // ---------------------------------------------------------------------
 
-    // Generous vertical padding is most of what makes a UI feel modern
-    // rather than cramped.
-    style.WindowPadding     = ImVec2(10.0f, 10.0f);
-    style.FramePadding      = ImVec2(8.0f, 5.0f);
-    style.CellPadding       = ImVec2(6.0f, 4.0f);
-    style.ItemSpacing       = ImVec2(8.0f, 6.0f);
-    style.ItemInnerSpacing  = ImVec2(6.0f, 4.0f);
-    style.IndentSpacing     = 18.0f;
+    style.Alpha = 1.0f;
+
+    style.WindowPadding     = ImVec2(8.0f, 8.0f);
+    style.FramePadding      = ImVec2(6.0f, 4.0f);
+    style.CellPadding       = ImVec2(4.0f, 3.0f);
+    style.ItemSpacing       = ImVec2(6.0f, 5.0f);
+    style.ItemInnerSpacing  = ImVec2(4.0f, 4.0f);
+    style.IndentSpacing     = 16.0f;
+
     style.ScrollbarSize     = 12.0f;
     style.GrabMinSize       = 10.0f;
 
-    style.WindowTitleAlign  = ImVec2(0.0f, 0.5f);
-    style.WindowMenuButtonPosition = ImGuiDir_None;   // drop the collapse arrow
+    style.WindowRounding    = 3.0f;
+    style.ChildRounding     = 2.0f;
+    style.FrameRounding     = 2.0f;
+    style.PopupRounding     = 2.0f;
+    style.ScrollbarRounding = 2.0f;
+    style.GrabRounding      = 2.0f;
+    style.TabRounding       = 2.0f;
 
-    // --- palette ---
-    // Three greys: background, panel, control. Everything else is a tint of
-    // one accent. Limiting yourself to that is what stops a custom theme
-    // looking like a ransom note.
-    const ImVec4 bg        = ImVec4(0.13f, 0.13f, 0.14f, 1.00f);
-    const ImVec4 panel     = ImVec4(0.17f, 0.17f, 0.19f, 1.00f);
-    const ImVec4 control   = ImVec4(0.22f, 0.22f, 0.25f, 1.00f);
-    const ImVec4 hover     = ImVec4(0.27f, 0.27f, 0.31f, 1.00f);
-    const ImVec4 active    = ImVec4(0.31f, 0.31f, 0.36f, 1.00f);
-    const ImVec4 accent    = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-    const ImVec4 accentDim = ImVec4(0.26f, 0.59f, 0.98f, 0.45f);
-    const ImVec4 text      = ImVec4(0.88f, 0.88f, 0.90f, 1.00f);
-    const ImVec4 textDim   = ImVec4(0.50f, 0.50f, 0.54f, 1.00f);
-    const ImVec4 border    = ImVec4(0.10f, 0.10f, 0.11f, 1.00f);
+    style.WindowBorderSize  = 1.0f;
+    style.ChildBorderSize   = 1.0f;
+    style.FrameBorderSize   = 0.0f;
+    style.PopupBorderSize   = 1.0f;
 
-    colors[ImGuiCol_Text]                 = text;
-    colors[ImGuiCol_TextDisabled]         = textDim;
-    colors[ImGuiCol_WindowBg]             = bg;
-    colors[ImGuiCol_ChildBg]              = panel;
-    colors[ImGuiCol_PopupBg]              = panel;
-    colors[ImGuiCol_Border]               = border;
-    colors[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
+    style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
+    style.WindowMenuButtonPosition = ImGuiDir_None;
 
-    colors[ImGuiCol_FrameBg]              = control;
-    colors[ImGuiCol_FrameBgHovered]       = hover;
-    colors[ImGuiCol_FrameBgActive]        = active;
-
-    colors[ImGuiCol_TitleBg]              = panel;
-    colors[ImGuiCol_TitleBgActive]        = panel;
-    colors[ImGuiCol_TitleBgCollapsed]     = panel;
-    colors[ImGuiCol_MenuBarBg]            = panel;
-
-    colors[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0);
-    colors[ImGuiCol_ScrollbarGrab]        = control;
-    colors[ImGuiCol_ScrollbarGrabHovered] = hover;
-    colors[ImGuiCol_ScrollbarGrabActive]  = active;
-
-    colors[ImGuiCol_CheckMark]            = accent;
-    colors[ImGuiCol_SliderGrab]           = accent;
-    colors[ImGuiCol_SliderGrabActive]     = accent;
-
-    colors[ImGuiCol_Button]               = control;
-    colors[ImGuiCol_ButtonHovered]        = hover;
-    colors[ImGuiCol_ButtonActive]         = active;
-
-    colors[ImGuiCol_Header]               = accentDim;
-    colors[ImGuiCol_HeaderHovered]        = ImVec4(0.26f, 0.59f, 0.98f, 0.60f);
-    colors[ImGuiCol_HeaderActive]         = accent;
-
-    colors[ImGuiCol_Separator]            = border;
-    colors[ImGuiCol_SeparatorHovered]     = accentDim;
-    colors[ImGuiCol_SeparatorActive]      = accent;
-
-    colors[ImGuiCol_ResizeGrip]           = ImVec4(0, 0, 0, 0);
-    colors[ImGuiCol_ResizeGripHovered]    = accentDim;
-    colors[ImGuiCol_ResizeGripActive]     = accent;
-
-    colors[ImGuiCol_Tab]                  = panel;
-    colors[ImGuiCol_TabHovered]           = hover;
-    colors[ImGuiCol_TabSelected]          = control;
-    colors[ImGuiCol_TabDimmed]            = panel;
-    colors[ImGuiCol_TabDimmedSelected]    = control;
-
-    colors[ImGuiCol_TableHeaderBg]        = panel;
-    colors[ImGuiCol_TableBorderStrong]    = border;
-    colors[ImGuiCol_TableBorderLight]     = border;
-    colors[ImGuiCol_TableRowBg]           = ImVec4(0, 0, 0, 0);
-    colors[ImGuiCol_TableRowBgAlt]        = ImVec4(1.0f, 1.0f, 1.0f, 0.02f);
-
-    colors[ImGuiCol_NavCursor]            = accent;
-
-    // FONT -- the single biggest visual upgrade, and it needs an actual file.
-    // The built-in Proggy is bitmap and looks dated at any size. Ship a TTF
-    // next to the binary and load it here:
+    // ---------------------------------------------------------------------
+    // Palette
     //
-    //   ImGuiIO &io = ImGui::GetIO();
-    //   io.Fonts->AddFontFromFileTTF("assets/fonts/Inter-Regular.ttf", 16.0f);
+    // Almost everything is neutral.
+    // Blue is reserved for interaction.
+    // ---------------------------------------------------------------------
+
+    const ImVec4 bg          = ImVec4(0.060f, 0.060f, 0.065f, 1.0f);
+    const ImVec4 bgDark      = ImVec4(0.045f, 0.045f, 0.050f, 1.0f);
+    const ImVec4 panel       = ImVec4(0.075f, 0.075f, 0.080f, 1.0f);
+
+    const ImVec4 control     = ImVec4(0.110f, 0.110f, 0.115f, 1.0f);
+    const ImVec4 hover       = ImVec4(0.145f, 0.145f, 0.150f, 1.0f);
+    const ImVec4 active      = ImVec4(0.175f, 0.175f, 0.180f, 1.0f);
+
+    const ImVec4 border      = ImVec4(0.190f, 0.190f, 0.200f, 1.0f);
+    const ImVec4 borderLight = ImVec4(0.240f, 0.240f, 0.250f, 1.0f);
+
+    const ImVec4 text        = ImVec4(0.860f, 0.860f, 0.870f, 1.0f);
+    const ImVec4 textDim     = ImVec4(0.500f, 0.500f, 0.510f, 1.0f);
+
+    // Blue is intentionally subtle.
+    const ImVec4 blue        = ImVec4(0.260f, 0.590f, 0.980f, 1.0f);
+    const ImVec4 blueSoft    = ImVec4(0.260f, 0.590f, 0.980f, 0.35f);
+    const ImVec4 blueDim     = ImVec4(0.260f, 0.590f, 0.980f, 0.18f);
+
+    ImVec4* c = style.Colors;
+
+    // ---------------------------------------------------------------------
+    // Text
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_Text]         = text;
+    c[ImGuiCol_TextDisabled] = textDim;
+
+    // ---------------------------------------------------------------------
+    // Windows / panels
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_WindowBg]     = bg;
+    c[ImGuiCol_ChildBg]      = bgDark;
+    c[ImGuiCol_PopupBg]      = panel;
+
+    c[ImGuiCol_Border]       = border;
+    c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
+
+    // ---------------------------------------------------------------------
+    // Inputs / controls
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_FrameBg]        = control;
+    c[ImGuiCol_FrameBgHovered] = hover;
+    c[ImGuiCol_FrameBgActive]  = active;
+
+    // ---------------------------------------------------------------------
+    // Title bars
     //
-    // Inter, Roboto and Source Sans Pro are all open-licensed and look right.
+    // IMPORTANT: no blue title bars.
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_TitleBg]          = bgDark;
+    c[ImGuiCol_TitleBgActive]    = panel;
+    c[ImGuiCol_TitleBgCollapsed] = bgDark;
+
+    c[ImGuiCol_MenuBarBg] = bgDark;
+
+    // ---------------------------------------------------------------------
+    // Scrollbars
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_ScrollbarBg]     = bgDark;
+    c[ImGuiCol_ScrollbarGrab]   = control;
+    c[ImGuiCol_ScrollbarGrabHovered] = hover;
+    c[ImGuiCol_ScrollbarGrabActive]  = active;
+
+    // ---------------------------------------------------------------------
+    // Buttons
+    //
+    // Neutral until interacted with.
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_Button]        = control;
+    c[ImGuiCol_ButtonHovered] = hover;
+    c[ImGuiCol_ButtonActive]  = active;
+
+    // ---------------------------------------------------------------------
+    // Headers / tree nodes
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_Header]        = control;
+    c[ImGuiCol_HeaderHovered] = hover;
+    c[ImGuiCol_HeaderActive]  = active;
+
+    // ---------------------------------------------------------------------
+    // Checkboxes / sliders
+    //
+    // Blue only appears where it communicates state.
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_CheckMark]      = blue;
+    c[ImGuiCol_SliderGrab]     = blueSoft;
+    c[ImGuiCol_SliderGrabActive] = blue;
+
+    // ---------------------------------------------------------------------
+    // Separators
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_Separator]        = border;
+    c[ImGuiCol_SeparatorHovered] = borderLight;
+    c[ImGuiCol_SeparatorActive]  = blueSoft;
+
+    // ---------------------------------------------------------------------
+    // Resize grips
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_ResizeGrip]        = control;
+    c[ImGuiCol_ResizeGripHovered] = hover;
+    c[ImGuiCol_ResizeGripActive]  = blue;
+
+    // ---------------------------------------------------------------------
+    // Tabs
+    //
+    // Mostly gray. Blue only communicates the active tab.
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_Tab]                = bgDark;
+    c[ImGuiCol_TabHovered]         = hover;
+    c[ImGuiCol_TabSelected]        = panel;
+    c[ImGuiCol_TabSelectedOverline] = blue;
+    c[ImGuiCol_TabDimmed]          = bgDark;
+    c[ImGuiCol_TabDimmedSelected]  = panel;
+    c[ImGuiCol_TabDimmedSelectedOverline] = blueDim;
+
+    // ---------------------------------------------------------------------
+    // Tables
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_TableHeaderBg]     = control;
+    c[ImGuiCol_TableBorderStrong] = border;
+    c[ImGuiCol_TableBorderLight]  = ImVec4(0.130f, 0.130f, 0.135f, 1.0f);
+
+    c[ImGuiCol_TableRowBg]        = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_TableRowBgAlt]     = ImVec4(0.080f, 0.080f, 0.085f, 1.0f);
+
+    // ---------------------------------------------------------------------
+    // Selection / navigation
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_TextSelectedBg] = blueDim;
+    c[ImGuiCol_NavCursor]      = blue;
+
+    // ---------------------------------------------------------------------
+    // Drag & drop
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_DragDropTarget] = blue;
+
+    // ---------------------------------------------------------------------
+    // Modal dimming
+    // ---------------------------------------------------------------------
+
+    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.55f);
 }
 
 // ---------------------------------------------------------------------------
@@ -377,10 +463,13 @@ bool EditorUI::initialize(SDL_Window *window, VulkanContext &ctx,
     }
 
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    applyTheme();
+    ImGui::CreateContext();  applyTheme();
 
-    ImGuiIO &io = ImGui::GetIO();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+
+
     io.IniFilename = "editor_layout.ini";
 
     if (!ImGui_ImplSDL3_InitForVulkan(window)) {
