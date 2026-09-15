@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <fstream>
 #include <iostream>
@@ -43,6 +44,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     }
     if (!createShadowPipeline()) {
         showError("Unable to initialize the shadow pipeline");
+        return false;
+    }
+    if (!createDebugLinePipeline()) {
+        showError("Unable to initialize the debug line pipeline");
         return false;
     }
     // Order matters: createMaskPipeline reuses m_pipelineLayout, which the
@@ -109,6 +114,12 @@ void Renderer::shutdown()
         }
         m_ctx.destroyBuffer(res.renderItemBuffer);
 
+        if (res.debugLineBuffer.allocation) {
+            vmaUnmapMemory(m_ctx.allocator(), res.debugLineBuffer.allocation);
+            res.debugLinePtr = nullptr;
+        }
+        m_ctx.destroyBuffer(res.debugLineBuffer);
+
         if (res.frameDataPtr) {
             vmaUnmapMemory(m_ctx.allocator(), res.frameDataBuffer.allocation);
             res.frameDataPtr = nullptr;
@@ -122,7 +133,8 @@ void Renderer::shutdown()
     }
 
     for (VkPipeline *p : { &m_pipelineOpaque, &m_pipelineBlend,
-                           &m_pipelineMask, &m_pipelineOutline, &m_pipelineShadow }) {
+                           &m_pipelineMask, &m_pipelineOutline, &m_pipelineShadow,
+                           &m_pipelineDebugLine }) {
         if (*p) {
             vkDestroyPipeline(m_ctx.device(), *p, nullptr);
             *p = nullptr;
@@ -139,7 +151,8 @@ void Renderer::shutdown()
     for (VkShaderModule *m : { &m_vertexShader, &m_fragmentShader,
                                &m_maskVertexShader, &m_maskFragmentShader,
                                &m_outlineVertexShader, &m_outlineFragmentShader,
-                               &m_shadowVertexShader, &m_shadowFragmentShader }) {
+                               &m_shadowVertexShader, &m_shadowFragmentShader,
+                               &m_debugLineVertexShader, &m_debugLineFragmentShader }) {
         if (*m) {
             vkDestroyShaderModule(m_ctx.device(), *m, nullptr);
             *m = nullptr;
@@ -242,9 +255,13 @@ bool Renderer::createShaders()
     m_shadowVertexShader   = createShaderModule("shadow.vert", shaderc_vertex_shader);
     m_shadowFragmentShader = createShaderModule("shadow.frag", shaderc_fragment_shader);
 
+    m_debugLineVertexShader   = createShaderModule("debug_line.vert", shaderc_vertex_shader);
+    m_debugLineFragmentShader = createShaderModule("debug_line.frag", shaderc_fragment_shader);
+
     return m_maskVertexShader && m_maskFragmentShader &&
            m_outlineVertexShader && m_outlineFragmentShader &&
-           m_shadowVertexShader && m_shadowFragmentShader;
+           m_shadowVertexShader && m_shadowFragmentShader &&
+           m_debugLineVertexShader && m_debugLineFragmentShader;
 }
 
 // ============================================================================
@@ -609,7 +626,7 @@ void Renderer::recordShadowPass(FrameResources &res)
         //
         // Buckets 0 and 1 only -- opaque and alpha-masked, single and double
         // sided. Blended geometry is skipped
-        for (uint32_t bucket = 0; m_shadow.enabled && bucket < 2; ++bucket) {
+        for (uint32_t bucket = 0; m_shadowActive && bucket < 2; ++bucket) {
             const DrawBatch &batch = m_batches[bucket];
             if (batch.count == 0) {
                 continue;
@@ -1311,6 +1328,15 @@ bool Renderer::createFrameBuffers(uint32_t maxDrawsPerFrame)
             return false;
         }
         res.frameDataPtr = static_cast<FrameData *>(ptr);
+
+        // Editor overlays. Rewritten from scratch every frame, so per
+        // frame-in-flight like the rest.
+        if (!createMapped(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          MaxDebugVertices * sizeof(DebugVertex),
+                          res.debugLineBuffer, ptr, "debug line buffer")) {
+            return false;
+        }
+        res.debugLinePtr = static_cast<DebugVertex *>(ptr);
     }
     return true;
 }
@@ -1564,6 +1590,22 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
                 batch.count, sizeof(VkDrawIndexedIndirectCommand));
         }
 
+        // Over the geometry, under the outline and the UI. The address slot
+        // that held the mesh vertex buffer is repointed at the line buffer --
+        // debug_line.vert reads the same push constant block, so this needs no
+        // layout of its own. Nothing after this draw reads the vertex address.
+        if (m_debugVertexCount != 0) {
+            FrameConstants debugConsts = frameConsts;
+            debugConsts.vertexBufferAddress = res.debugLineBuffer.deviceAddress;
+
+            vkCmdPushConstants(res.commandBuffer, m_pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(FrameConstants), &debugConsts);
+
+            vkCmdBindPipeline(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineDebugLine);
+            vkCmdDraw(res.commandBuffer, m_debugVertexCount, 1, 0, 0);
+        }
+
         // Over the finished scene, under the UI.
         if (hasSelection) {
             const VkRect2D outlineScissor = selectionScissor();
@@ -1617,6 +1659,199 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
 
 // ============================================================================
+// debug lines
+// ============================================================================
+
+bool Renderer::createDebugLinePipeline()
+{
+    const char *entryPoint = "main";
+    const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages
+    {
+        VkPipelineShaderStageCreateInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = m_debugLineVertexShader,
+            .pName = entryPoint
+        },
+        VkPipelineShaderStageCreateInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = m_debugLineFragmentShader,
+            .pName = entryPoint
+        }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertInputInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+    };
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST
+    };
+    VkPipelineViewportStateCreateInfo viewportInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .scissorCount = 1
+    };
+
+    // lineWidth stays 1.0: wideLines is a device feature and not worth
+    // requiring for an overlay.
+    VkPipelineRasterizationStateCreateInfo rasterInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .lineWidth = 1.0f
+    };
+    VkPipelineMultisampleStateCreateInfo multisampleInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+    };
+
+    // Tests but does not write: the gizmo is occluded by geometry in front of
+    // it, which is the depth cue that tells where the light actually is,
+    // but it must not push anything out of the depth buffer behind it!!
+    VkPipelineDepthStencilStateCreateInfo depthStencilInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_FALSE,
+        .depthCompareOp = VK_COMPARE_OP_GREATER
+    };
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachState
+    {
+        .blendEnable = VK_FALSE,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    VkPipelineColorBlendStateCreateInfo blendInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachState
+    };
+
+    const std::array<VkDynamicState, 2> dynamicStates
+    {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicStateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .pDynamicStates = dynamicStates.data()
+    };
+
+    constexpr VkFormat colorFormat = Swapchain::ColorFormat;
+    VkPipelineRenderingCreateInfo renderInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &colorFormat,
+        .depthAttachmentFormat = Swapchain::DepthFormat
+    };
+
+    VkGraphicsPipelineCreateInfo pipelineInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &renderInfo,
+        .stageCount = static_cast<uint32_t>(shaderStages.size()),
+        .pStages = shaderStages.data(),
+        .pVertexInputState = &vertInputInfo,
+        .pInputAssemblyState = &inputAssemblyInfo,
+        .pViewportState = &viewportInfo,
+        .pRasterizationState = &rasterInfo,
+        .pMultisampleState = &multisampleInfo,
+        .pDepthStencilState = &depthStencilInfo,
+        .pColorBlendState = &blendInfo,
+        .pDynamicState = &dynamicStateInfo,
+        .layout = m_pipelineLayout,
+        .renderPass = VK_NULL_HANDLE
+    };
+
+    if (vkCreateGraphicsPipelines(m_ctx.device(), nullptr, 1, &pipelineInfo, nullptr, &m_pipelineDebugLine) != VK_SUCCESS) {
+        showError("Failed to create the debug line pipeline");
+        return false;
+    }
+    return true;
+}
+
+void Renderer::addDebugLine(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &color)
+{
+    m_debugVertices.push_back(DebugVertex{ a, color });
+    m_debugVertices.push_back(DebugVertex{ b, color });
+}
+
+void Renderer::collectLightGizmos(Scene &scene)
+{
+    const NodeWorld &nodes = scene.nodes();
+    const size_t count = nodes.size();
+
+    for (uint32_t nodeId = 1; nodeId <= count; ++nodeId) {
+        if (!nodes.isAlive(nodeId)) {
+            continue;
+        }
+        const Node &node = nodes.getNode(nodeId);
+        if (node.lightType != LightType::Directional) {
+            continue;
+        }
+
+        const glm::mat4 &world = nodes.worldMatrix(nodeId);
+        const glm::vec3 origin = glm::vec3(world[3]);
+
+        // -Z of the world matrix, the same direction the shader is lit with.
+        // Normalised because a scaled node would otherwise stretch the gizmo.
+        glm::vec3 forward = -glm::vec3(world[2]);
+        const float len = glm::length(forward);
+        forward = len > 1e-6f ? forward / len : glm::vec3(0.0f, -1.0f, 0.0f);
+
+        const glm::vec3 color = node.lightColor;
+
+        constexpr float kHandle = 0.25f;   // the clickable blob, matches pickLight
+        constexpr float kRay    = 2.0f;
+
+        // Handle: three axis-aligned segments. Cheap, reads as a point from
+        // any angle, and needs no billboarding.
+        addDebugLine(origin - glm::vec3(kHandle, 0, 0), origin + glm::vec3(kHandle, 0, 0), color);
+        addDebugLine(origin - glm::vec3(0, kHandle, 0), origin + glm::vec3(0, kHandle, 0), color);
+        addDebugLine(origin - glm::vec3(0, 0, kHandle), origin + glm::vec3(0, 0, kHandle), color);
+
+        const glm::vec3 tip = origin + forward * kRay;
+        addDebugLine(origin, tip, color);
+
+        // Arrowhead. Any two vectors perpendicular to the ray will do.
+        const glm::vec3 up = std::abs(forward.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+        const glm::vec3 right = glm::normalize(glm::cross(forward, up));
+        const glm::vec3 realUp = glm::cross(right, forward);
+
+        const glm::vec3 back = tip - forward * 0.35f;
+        addDebugLine(tip, back + right  * 0.15f, color);
+        addDebugLine(tip, back - right  * 0.15f, color);
+        addDebugLine(tip, back + realUp * 0.15f, color);
+        addDebugLine(tip, back - realUp * 0.15f, color);
+    }
+}
+
+uint32_t Renderer::writeDebugVertices(FrameResources &res)
+{
+    const auto count = static_cast<uint32_t>(
+        std::min<size_t>(m_debugVertices.size(), MaxDebugVertices));
+
+    if (count != 0) {
+        std::memcpy(res.debugLinePtr, m_debugVertices.data(), count * sizeof(DebugVertex));
+    }
+    return count;
+}
+
+// ============================================================================
 // frame
 // ============================================================================
 
@@ -1668,10 +1903,30 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
     const glm::mat4 viewProj = camera.viewProjection(aspectRatio);
 
+    // A Directional Light node in the scene drives the sun. Without one the
+    // renderer's own m_sunDirection is the fallback, so a scene that has never
+    // had a light in it is still lit.
+    glm::vec3 sunDirection = glm::normalize(m_sunDirection);
+    glm::vec3 sunColor     = glm::vec3(1.0f, 0.96f, 0.9f);
+    float     sunIntensity = 3.0f;
+    m_shadowActive = m_shadow.enabled;
+
+    if (const uint32_t lightNode = scene.firstDirectionalLight()) {
+        const Node &node = scene.nodes().getNode(lightNode);
+        const glm::vec3 forward = -glm::vec3(scene.nodes().worldMatrix(lightNode)[2]);
+
+        if (glm::length(forward) > 1e-6f) {
+            sunDirection = glm::normalize(forward);
+        }
+        sunColor       = node.lightColor;
+        sunIntensity   = node.lightIntensity;
+        m_shadowActive = m_shadow.enabled && node.lightCastsShadows;
+    }
+
     // Refitted every frame: the box follows the camera, so what it covers is
     // the near slice of the view rather than the whole world.
     const ShadowMap::Fit shadow =
-        m_shadowMap.fit(camera, aspectRatio, m_sunDirection, m_shadow.distance);
+        m_shadowMap.fit(camera, aspectRatio, sunDirection, m_shadow.distance);
 
     *res.frameDataPtr = FrameData
     {
@@ -1679,9 +1934,9 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .lightViewProj  = shadow.lightViewProj,
         .cameraPosition = camera.position,
         .exposure       = 1.0f,
-        .sunDirection   = glm::normalize(m_sunDirection),
-        .sunIntensity   = 3.0f,
-        .sunColor       = glm::vec3(1.0f, 0.96f, 0.9f),
+        .sunDirection   = sunDirection,
+        .sunIntensity   = sunIntensity,
+        .sunColor       = sunColor,
         .envTex       = m_resources.environmentTextureId()
                             ? m_resources.environmentTextureId() - 1 : 0,
         .envIntensity = .5f,
@@ -1689,8 +1944,12 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .shadowTexelSize  = 1.0f / static_cast<float>(m_shadowMap.resolution()),
         .shadowNormalBias = shadow.worldTexelSize * m_shadow.normalBias,
         .shadowDepthBias  = m_shadow.depthBias,
-        .shadowEnabled    = m_shadow.enabled ? 1u : 0u,
+        .shadowEnabled    = m_shadowActive ? 1u : 0u,
     };
+
+    m_debugVertices.clear();
+    collectLightGizmos(scene);
+    m_debugVertexCount = writeDebugVertices(res);
 
     m_drawItems = &scene.drawItems(m_geometry);
     const uint32_t drawCount = writeDrawCommands(res, viewProj);

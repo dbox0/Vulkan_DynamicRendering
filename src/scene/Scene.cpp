@@ -287,6 +287,18 @@ size_t Scene::meshUsers(uint32_t meshId) const
 
 // ---------------------------------------------------------------------------
 
+uint32_t Scene::firstDirectionalLight() const
+{
+    const size_t count = m_nodeWorld.size();
+    for (uint32_t nodeId = 1; nodeId <= count; ++nodeId) {
+        if (m_nodeWorld.isAlive(nodeId) &&
+            m_nodeWorld.getNode(nodeId).lightType == LightType::Directional) {
+            return nodeId;
+        }
+    }
+    return 0;
+}
+
 void Scene::collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out)
 {
     out.clear();

@@ -187,6 +187,13 @@ void EditorUI::drawCreateMenuItems(uint32_t parentId)
         m_commands.push_back(cmd);
     }
 
+    if (ImGui::MenuItem("Directional Light")) {
+        EditorCommand cmd;
+        cmd.kind     = EditorCommand::Kind::CreateLight;
+        cmd.parentId = parentId;
+        m_commands.push_back(cmd);
+    }
+
     ImGui::Separator();
 
     for (uint8_t i = 0; i < static_cast<uint8_t>(PrimitiveType::Count); ++i) {

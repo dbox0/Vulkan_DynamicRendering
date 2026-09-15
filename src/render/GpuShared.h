@@ -27,6 +27,17 @@ static_assert(offsetof(Vertex, uv)      == 40);
 static_assert(offsetof(Vertex, color)   == 48);
 
 
+// One end of a debug line. Written straight into a host-visible buffer and
+// read through BDA
+struct DebugVertex
+{
+    glm::vec3 position{ 0.0f };
+    glm::vec3 color{ 1.0f };
+};
+static_assert(sizeof(DebugVertex) == 24);
+static_assert(offsetof(DebugVertex, color) == 12);
+
+
 enum MaterialFlags : uint32_t
 {
     MaterialFlag_AlphaMask   = 1u << 0,

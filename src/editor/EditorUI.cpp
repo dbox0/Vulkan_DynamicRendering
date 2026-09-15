@@ -377,9 +377,49 @@ void EditorUI::drawShadowWindow()
 
             ImGui::Spacing();
             ImGui::TextDisabled("Raise Slope first if acne appears.");
+            ImGui::TextDisabled("Sun dir is the fallback -- a Directional\n"
+                                "Light node overrides it.");
         }
     }
     ImGui::End();
+}
+
+void EditorUI::drawLightSection(Node &node)
+{
+    if (node.lightType != LightType::Directional) {
+        return;
+    }
+
+    if (!ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return;
+    }
+
+    beginProperties("light_props");
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Color");
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::ColorEdit3("##lightcolor", &node.lightColor.x);
+
+    sliderRow("Intensity", node.lightIntensity, 0.0f, 20.0f, "%.2f");
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Shadows");
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Checkbox("##lightshadows", &node.lightCastsShadows);
+
+    endProperties();
+
+    // Read-only: aiming happens through the rotation above or the gizmo, and a
+    // second way to set the same thing would fight it.
+    const glm::vec3 direction = glm::normalize(node.getRotation() * glm::vec3(0.0f, 0.0f, -1.0f));
+    ImGui::TextDisabled("Direction  %.2f, %.2f, %.2f", direction.x, direction.y, direction.z);
+    ImGui::TextDisabled("Rotate the node to aim it.");
 }
 
 void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources,
@@ -1239,6 +1279,10 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
 
             endProperties();
         }
+
+        // Before the mesh early-out below: a light node has no mesh, and
+        // returning first would leave its panel empty.
+        drawLightSection(node);
 
         const uint32_t meshId = node.meshId;
         if (!geometry.meshAlive(meshId)) {

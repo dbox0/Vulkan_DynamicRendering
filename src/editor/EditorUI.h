@@ -21,6 +21,7 @@ class GeometryStore;
 class ResourceStore;
 struct Mesh;
 struct ShadowSettings;
+class Node;
 
 // Dear ImGui overlay:
 //   * "Hierarchy" window on the left  -- click a node to select it
@@ -195,6 +196,10 @@ private:
     void deleteNode(uint32_t nodeId);
 
     void drawShadowWindow();
+
+    // Colour / intensity / shadow toggle for a light node. Direction is not
+    // here: it is the node's rotation, edited with the transform or the gizmo.
+    void drawLightSection(Node &node);
 
     ShadowSettings *m_shadowSettings   = nullptr;
     glm::vec3      *m_sunDirection     = nullptr;
