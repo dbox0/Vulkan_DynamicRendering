@@ -1,5 +1,7 @@
 #include "Camera.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <iostream>
 #include <ostream>
 
@@ -98,14 +100,36 @@ glm::mat4 Camera::getRotationMatrix() const
 
 // No Y flip baked in: the renderer flips with a negative-height viewport
 // instead. ImGuizmo relies on that -- see EditorUI::drawGizmo.
+//
+// REVERSE Z: swapping near and far in a ZO projection maps near to depth 1 and  far to depth 0.
 glm::mat4 Camera::projection(float aspectRatio) const
 {
     return glm::perspectiveRH_ZO(
         glm::radians(fovDegrees),
         aspectRatio,
-        nearPlane,
-        farPlane
+        farPlane,
+        nearPlane
     );
+}
+
+// Built from a conventional (non-reversed) projection:
+// corners come out of ndc z 0 and 1
+void Camera::frustumCornersWorld(float aspectRatio, float nearDist, float farDist,
+                                 glm::vec3 (&out)[8]) const
+{
+    const glm::mat4 inverseViewProj = glm::inverse(
+        glm::perspectiveRH_ZO(glm::radians(fovDegrees), aspectRatio, nearDist, farDist)
+        * getViewMatrix());
+
+    int i = 0;
+    for (float z : { 0.0f, 1.0f }) {
+        for (float y : { -1.0f, 1.0f }) {
+            for (float x : { -1.0f, 1.0f }) {
+                const glm::vec4 corner = inverseViewProj * glm::vec4(x, y, z, 1.0f);
+                out[i++] = glm::vec3(corner) / corner.w;
+            }
+        }
+    }
 }
 
 glm::mat4 Camera::viewProjection(float aspectRatio) const

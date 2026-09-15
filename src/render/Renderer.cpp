@@ -31,8 +31,18 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Error creating shader modules");
         return false;
     }
+    // Before createPipeline: the scene pipeline layout takes the shadow map's
+    // descriptor set layout as set 1.
+    if (!m_shadowMap.create(ShadowResolution)) {
+        showError("Unable to create the shadow map");
+        return false;
+    }
     if (!createPipeline(false, m_pipelineOpaque) || !createPipeline(true, m_pipelineBlend)) {
         showError("Unable to initialize the graphics pipeline");
+        return false;
+    }
+    if (!createShadowPipeline()) {
+        showError("Unable to initialize the shadow pipeline");
         return false;
     }
     // Order matters: createMaskPipeline reuses m_pipelineLayout, which the
@@ -112,7 +122,7 @@ void Renderer::shutdown()
     }
 
     for (VkPipeline *p : { &m_pipelineOpaque, &m_pipelineBlend,
-                           &m_pipelineMask, &m_pipelineOutline }) {
+                           &m_pipelineMask, &m_pipelineOutline, &m_pipelineShadow }) {
         if (*p) {
             vkDestroyPipeline(m_ctx.device(), *p, nullptr);
             *p = nullptr;
@@ -128,7 +138,8 @@ void Renderer::shutdown()
 
     for (VkShaderModule *m : { &m_vertexShader, &m_fragmentShader,
                                &m_maskVertexShader, &m_maskFragmentShader,
-                               &m_outlineVertexShader, &m_outlineFragmentShader }) {
+                               &m_outlineVertexShader, &m_outlineFragmentShader,
+                               &m_shadowVertexShader, &m_shadowFragmentShader }) {
         if (*m) {
             vkDestroyShaderModule(m_ctx.device(), *m, nullptr);
             *m = nullptr;
@@ -149,6 +160,8 @@ void Renderer::shutdown()
         vkDestroySampler(m_ctx.device(), m_maskSampler, nullptr);
         m_maskSampler = nullptr;
     }
+
+    m_shadowMap.destroy();
 }
 
 // ============================================================================
@@ -226,8 +239,12 @@ bool Renderer::createShaders()
     m_outlineVertexShader   = createShaderModule("outline.vert", shaderc_vertex_shader);
     m_outlineFragmentShader = createShaderModule("outline.frag", shaderc_fragment_shader);
 
+    m_shadowVertexShader   = createShaderModule("shadow.vert", shaderc_vertex_shader);
+    m_shadowFragmentShader = createShaderModule("shadow.frag", shaderc_fragment_shader);
+
     return m_maskVertexShader && m_maskFragmentShader &&
-           m_outlineVertexShader && m_outlineFragmentShader;
+           m_outlineVertexShader && m_outlineFragmentShader &&
+           m_shadowVertexShader && m_shadowFragmentShader;
 }
 
 // ============================================================================
@@ -244,7 +261,12 @@ bool Renderer::createPipeline(bool blendEnabled, VkPipeline &outPipeline)
             .size = sizeof(FrameConstants)
         };
 
-        const std::array<VkDescriptorSetLayout, 1> dsLayouts{ m_resources.globalLayout() };
+        // set 0: bindless textures + materials. set 1: the shadow map.
+        const std::array<VkDescriptorSetLayout, 2> dsLayouts
+        {
+            m_resources.globalLayout(),
+            m_shadowMap.descriptorLayout()
+        };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo
         {
@@ -299,7 +321,7 @@ bool Renderer::createPipeline(bool blendEnabled, VkPipeline &outPipeline)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
         .depthWriteEnable = blendEnabled ? VK_FALSE : VK_TRUE,
-        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthCompareOp = VK_COMPARE_OP_GREATER,   // reverse Z
         .stencilTestEnable = VK_FALSE
     };
 
@@ -393,6 +415,233 @@ bool Renderer::createPipeline(bool blendEnabled, VkPipeline &outPipeline)
         return false;
     }
     return true;
+}
+
+
+// ============================================================================
+// sun shadow
+// ============================================================================
+
+bool Renderer::createShadowPipeline()
+{
+    const char *entryPoint = "main";
+    const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages
+    {
+        VkPipelineShaderStageCreateInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = m_shadowVertexShader,
+            .pName = entryPoint
+        },
+        VkPipelineShaderStageCreateInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = m_shadowFragmentShader,
+            .pName = entryPoint
+        }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertInputInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO
+    };
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    };
+    VkPipelineViewportStateCreateInfo viewportInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .scissorCount = 1
+    };
+
+    // depthClamp instead of clipping: a caster in front of the light's near
+    // plane gets flattened onto it rather than vanishing
+    //  -> what a shadow map wants. depthBias is the other half of the acne fix
+    // the normal offset in pbr.frag handles what slope bias cant
+    VkPipelineRasterizationStateCreateInfo rasterInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = VK_TRUE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable = VK_TRUE,
+        .lineWidth = 1.0f
+    };
+    VkPipelineMultisampleStateCreateInfo multisampleInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+    };
+    VkPipelineDepthStencilStateCreateInfo depthStencilInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_GREATER   // reverse Z, same as the scene
+    };
+
+    // No colour attachment at all.
+    VkPipelineColorBlendStateCreateInfo blendInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 0
+    };
+
+    const std::array<VkDynamicState, 4> dynamicStates
+    {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_DEPTH_BIAS
+    };
+    VkPipelineDynamicStateCreateInfo dynamicStateInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .pDynamicStates = dynamicStates.data()
+    };
+
+    VkPipelineRenderingCreateInfo renderInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 0,
+        .depthAttachmentFormat = ShadowMap::Format
+    };
+
+    VkGraphicsPipelineCreateInfo pipelineInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &renderInfo,
+        .stageCount = static_cast<uint32_t>(shaderStages.size()),
+        .pStages = shaderStages.data(),
+        .pVertexInputState = &vertInputInfo,
+        .pInputAssemblyState = &inputAssemblyInfo,
+        .pViewportState = &viewportInfo,
+        .pRasterizationState = &rasterInfo,
+        .pMultisampleState = &multisampleInfo,
+        .pDepthStencilState = &depthStencilInfo,
+        .pColorBlendState = &blendInfo,
+        .pDynamicState = &dynamicStateInfo,
+        .layout = m_pipelineLayout,
+        .renderPass = VK_NULL_HANDLE
+    };
+
+    if (vkCreateGraphicsPipelines(m_ctx.device(), nullptr, 1, &pipelineInfo, nullptr, &m_pipelineShadow) != VK_SUCCESS) {
+        showError("Failed to create the shadow pipeline");
+        return false;
+    }
+    return true;
+}
+
+void Renderer::recordShadowPass(FrameResources &res)
+{
+
+    VkImageMemoryBarrier2 toAttachment
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .srcAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                        VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .image = m_shadowMap.image(),
+        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
+    };
+    VkDependencyInfo toAttachmentDep
+    {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &toAttachment
+    };
+    vkCmdPipelineBarrier2(res.commandBuffer, &toAttachmentDep);
+
+    VkRenderingAttachmentInfo depthAttachInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_shadowMap.imageView(),
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue{ .depthStencil{ 0.0f, 0 } }
+    };
+    const VkExtent2D extent{ m_shadowMap.resolution(), m_shadowMap.resolution() };
+    VkRenderingInfo renderingInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea{ .offset{ 0, 0 }, .extent = extent },
+        .layerCount = 1,
+        .colorAttachmentCount = 0,
+        .pDepthAttachment = &depthAttachInfo
+    };
+
+    vkCmdBeginRendering(res.commandBuffer, &renderingInfo);
+    {
+        // Positive height, unlike the scene pass: nothing here is displayed,
+        // so the plain mapping is what pbr.frag's uv = ndc * 0.5 + 0.5 expects.
+        VkViewport viewport
+        {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width  = static_cast<float>(extent.width),
+            .height = static_cast<float>(extent.height),
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f
+        };
+        vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{ .offset{ 0, 0 }, .extent = extent };
+        vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
+
+        vkCmdBindPipeline(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineShadow);
+
+        // Negated: reverse Z means pushing a caster AWAY from the light is a
+        // smaller depth value, so the bias that fixes acne has to go down.
+        vkCmdSetDepthBias(res.commandBuffer, -m_shadow.constantBias, 0.0f, -m_shadow.slopeBias);
+
+        // Disabled clears and transitions: pbr.frag samples the map
+        // A cleared map reads as "lit everywhere".
+        //
+        // Buckets 0 and 1 only -- opaque and alpha-masked, single and double
+        // sided. Blended geometry is skipped
+        for (uint32_t bucket = 0; m_shadow.enabled && bucket < 2; ++bucket) {
+            const DrawBatch &batch = m_batches[bucket];
+            if (batch.count == 0) {
+                continue;
+            }
+            vkCmdSetCullMode(res.commandBuffer, batch.cullMode);
+            vkCmdDrawIndexedIndirect(
+                res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
+                static_cast<VkDeviceSize>(batch.first) * sizeof(VkDrawIndexedIndirectCommand),
+                batch.count, sizeof(VkDrawIndexedIndirectCommand));
+        }
+    }
+    vkCmdEndRendering(res.commandBuffer);
+
+    VkImageMemoryBarrier2 toSampled
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        .srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .image = m_shadowMap.image(),
+        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
+    };
+    VkDependencyInfo toSampledDep
+    {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers = &toSampled
+    };
+    vkCmdPipelineBarrier2(res.commandBuffer, &toSampledDep);
 }
 
 // ============================================================================
@@ -1225,7 +1474,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .clearValue{ .depthStencil{ 1.0f, 0 } }
+        .clearValue{ .depthStencil{ 0.0f, 0 } }     // reverse Z: 0 is the far plane
     };
     VkRenderingInfo renderingInfo
     {
@@ -1258,6 +1507,14 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
                        0, sizeof(FrameConstants), &frameConsts);
 
     vkCmdBindIndexBuffer(res.commandBuffer, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+    // Before everything else: the scene pass samples what it writes.
+    recordShadowPass(res);
+
+    // Bound after the shadow pass, not before
+    VkDescriptorSet shadowSet = m_shadowMap.descriptorSet();
+    vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_pipelineLayout, 1, 1, &shadowSet, 0, nullptr);
 
     // Its own rendering scope, before the scene pass, so the composite inside
     // that pass can sample a finished mask. Skipped entirely when nothing is
@@ -1411,18 +1668,28 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
     const glm::mat4 viewProj = camera.viewProjection(aspectRatio);
 
+    // Refitted every frame: the box follows the camera, so what it covers is
+    // the near slice of the view rather than the whole world.
+    const ShadowMap::Fit shadow =
+        m_shadowMap.fit(camera, aspectRatio, m_sunDirection, m_shadow.distance);
+
     *res.frameDataPtr = FrameData
     {
         .viewProj       = viewProj,
+        .lightViewProj  = shadow.lightViewProj,
         .cameraPosition = camera.position,
         .exposure       = 1.0f,
-        .sunDirection   = glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)),
+        .sunDirection   = glm::normalize(m_sunDirection),
         .sunIntensity   = 3.0f,
         .sunColor       = glm::vec3(1.0f, 0.96f, 0.9f),
         .envTex       = m_resources.environmentTextureId()
                             ? m_resources.environmentTextureId() - 1 : 0,
         .envIntensity = .5f,
         .envMaxLod    = m_envMaxLod,
+        .shadowTexelSize  = 1.0f / static_cast<float>(m_shadowMap.resolution()),
+        .shadowNormalBias = shadow.worldTexelSize * m_shadow.normalBias,
+        .shadowDepthBias  = m_shadow.depthBias,
+        .shadowEnabled    = m_shadow.enabled ? 1u : 0u,
     };
 
     m_drawItems = &scene.drawItems(m_geometry);

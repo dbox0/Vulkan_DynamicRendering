@@ -23,9 +23,9 @@ Ray screenPointToRay(const Camera &camera, float mouseX, float mouseY,
     const float ndcX = 2.0f * (mouseX / static_cast<float>(width)) - 1.0f;
     const float ndcY = 1.0f - 2.0f * (mouseY / static_cast<float>(height));
 
-    // perspectiveRH_ZO: near plane at z = 0, far at z = 1. Not reverse-Z.
-    glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
-    glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+    // Reverse Z: the near plane is at ndc z = 1, the far plane at 0.
+    glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+    glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
     nearPoint /= nearPoint.w;
     farPoint  /= farPoint.w;
 
