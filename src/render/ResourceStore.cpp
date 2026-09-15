@@ -109,7 +109,8 @@ void ResourceStore::shutdown()
 
 
 uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const void *data,
-                                 uint32_t width, uint32_t height, VkFormat format)
+                                 uint32_t width, uint32_t height, VkFormat format,
+                                 AssetOrigin origin)
 {
     GPUImage gpuImage;
     if (!m_ctx.createImage2D(commandBuffer, data, width, height, format, gpuImage)) {
@@ -121,7 +122,8 @@ uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const void *data
     m_imageInfos.push_back(ImageInfo{
         .width = width, .height = height,
         .mipLevels = gpuImage.mipLevels,
-        .format = format });
+        .format = format,
+        .origin = origin });
     return static_cast<uint32_t>(m_images.size());
 }
 
@@ -195,7 +197,8 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
     const uint32_t imageId = addImage(cmd, halfPixels.data(),
                                       static_cast<uint32_t>(width),
                                       static_cast<uint32_t>(height),
-                                      VK_FORMAT_R16G16B16A16_SFLOAT);
+                                      VK_FORMAT_R16G16B16A16_SFLOAT,
+                                      AssetOrigin::Builtin);
     m_ctx.submitUpload();
 
     if (!imageId) {
@@ -302,7 +305,7 @@ GpuMaterial ResourceStore::toGpu(const Material &m) const
     };
 }
 
-uint32_t ResourceStore::addMaterial(const Material &material)
+uint32_t ResourceStore::addMaterial(const Material &material, AssetOrigin origin)
 {
     if (m_materials.size() >= MaxMaterials) {
         showError("Exceeded the maximum material count");
@@ -316,6 +319,7 @@ uint32_t ResourceStore::addMaterial(const Material &material)
     const size_t index = m_materials.size();
     m_materials.push_back(material);
     m_materialInfos.emplace_back();
+    m_materialInfos.back().origin = origin;
     m_materialPtr[index] = toGpu(material);
 
     // No-op on coherent memory, required if VMA hands back non-coherent.
@@ -377,8 +381,8 @@ bool ResourceStore::createDefaultTextures()
         return false;
     }
 
-    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, format);
-    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, format);
+    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, format, AssetOrigin::Builtin);
+    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, format, AssetOrigin::Builtin);
 
     // Both copies are recorded before the single submit, and the submit does
     // not block: the descriptor writes below do not read the pixels, and the
@@ -435,7 +439,7 @@ bool ResourceStore::createDefaultMaterial()
     def.metallicFactor  = 0.0f;
     def.roughnessFactor = 0.5f;
 
-    m_defaultMaterialId = addMaterial(def);
+    m_defaultMaterialId = addMaterial(def, AssetOrigin::Builtin);
 
     // Must be index 0, because Renderer maps materialId 0 to GPU index 0.
     if (m_defaultMaterialId != 1) {

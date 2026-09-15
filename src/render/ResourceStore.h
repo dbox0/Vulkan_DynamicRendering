@@ -13,6 +13,20 @@
 
 class VulkanContext;
 
+// Where an asset came from. The Project panel filters on this, and it is the
+// only way to tell a material that belongs to the project from one that came
+// in attached to a model -> inspired by Unity: draws the same line between a material asset
+// and a model-embedded material, and for the same reason: you can edit the
+// first and you are fighting the importer on the second.
+
+
+enum class AssetOrigin : uint8_t
+{
+    Builtin,    // white / error / environment textures, the default material
+    Imported,   // created by GltfLoader as part of a model
+    Project     // created in the editor, or loaded from a standalone file
+};
+
 // Owns every bindless GPU resource: images, samplers, textures, materials and
 // raw buffers, plus the global descriptor set the fragment shader samples
 // through.
@@ -50,6 +64,7 @@ public:
         uint32_t    height = 0;
         uint32_t    mipLevels = 1;
         VkFormat    format    = VK_FORMAT_UNDEFINED;
+        AssetOrigin origin    = AssetOrigin::Project;
     };
 
     struct Texture
@@ -66,7 +81,8 @@ public:
     struct MaterialInfo
     {
         std::filesystem::path sourcePath;   // empty = created in-editor, never saved
-        bool dirty = false;
+        bool        dirty  = false;
+        AssetOrigin origin = AssetOrigin::Project;
     };
 
     bool initialize();          // descriptors + material buffer + defaults
@@ -83,7 +99,8 @@ public:
     // it is colour (_SRGB) or data (_UNORM).
 
     uint32_t addImage(VkCommandBuffer commandBuffer, const void *data,
-                      uint32_t width, uint32_t height, VkFormat format);
+                      uint32_t width, uint32_t height, VkFormat format,
+                      AssetOrigin origin = AssetOrigin::Project);
 
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
@@ -118,13 +135,24 @@ public:
     // Stores the authoring copy and writes the packed GpuMaterial through to
     // the mapped buffer
 
-    uint32_t addMaterial(const Material &material);
+    uint32_t addMaterial(const Material &material,
+                         AssetOrigin origin = AssetOrigin::Project);
 
     // In-place edit, for the editor's material inspector. Safe at any time
 
     bool updateMaterial(uint32_t materialId, const Material &material);
 
     const Material &material(uint32_t materialId) const { return m_materials[materialId - 1]; }
+
+    // A texture has no origin of its own: it is an image plus a sampler, and
+    // the image is the thing that came from somewhere.
+    AssetOrigin textureOrigin(uint32_t textureId) const
+    {
+        const uint32_t imageId = m_textures[textureId - 1].imageId;
+        return imageId && imageId <= m_imageInfos.size()
+                   ? m_imageInfos[imageId - 1].origin
+                   : AssetOrigin::Builtin;
+    }
     size_t materialCount() const { return m_materials.size(); }
 
     const MaterialInfo &materialInfo(uint32_t materialId) const
