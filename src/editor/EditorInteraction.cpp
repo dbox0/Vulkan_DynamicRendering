@@ -38,6 +38,12 @@ namespace
     // fine -- but the string itself has to be the payload, not a pointer to
     // it, because the source's storage is gone by the time the drop lands.
     constexpr const char *kAssetPathPayload = "EDITOR_ASSET_PATH";
+
+    // An already-resident texture. Kept separate from the path payload
+    // because the two resolve differently: a path has to be decoded in the
+    // colour space the destination slot wants, while a texture that already
+    // exists has its format baked in and gets reused as-is.
+    constexpr const char *kTexturePayload = "EDITOR_TEXTURE";
 }
 
 void EditorUI::beginAssetDrag(const std::filesystem::path &path)
@@ -55,15 +61,41 @@ void EditorUI::beginAssetDrag(const std::filesystem::path &path)
     ImGui::EndDragDropSource();
 }
 
-bool EditorUI::acceptTextureDrop(std::filesystem::path &outPath)
+void EditorUI::beginTextureDrag(const ResourceStore &resources, uint32_t textureId)
+{
+    if (!ImGui::BeginDragDropSource()) {
+        return;
+    }
+
+    ImGui::SetDragDropPayload(kTexturePayload, &textureId, sizeof(uint32_t));
+
+    if (const VkDescriptorSet set = texturePreview(resources, textureId)) {
+        ImGui::Image(reinterpret_cast<ImTextureID>(set), ImVec2(32.0f, 32.0f));
+        ImGui::SameLine();
+    }
+
+    const ResourceStore::ImageInfo &info =
+        resources.imageInfo(resources.texture(textureId).imageId);
+    ImGui::TextUnformatted(info.name.empty() ? "(unnamed image)" : info.name.c_str());
+
+    ImGui::EndDragDropSource();
+}
+
+bool EditorUI::acceptTextureDrop(std::filesystem::path &outPath, uint32_t &outTextureId)
 {
     if (!ImGui::BeginDragDropTarget()) {
         return false;
     }
 
     bool accepted = false;
-    if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kAssetPathPayload)) {
-        outPath  = std::filesystem::path(static_cast<const char *>(payload->Data));
+
+    // Texture first: if both somehow matched, the resident one is the cheaper
+    // and less surprising answer.
+    if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kTexturePayload)) {
+        outTextureId = *static_cast<const uint32_t *>(payload->Data);
+        accepted     = true;
+    } else if (const ImGuiPayload *pathPayload = ImGui::AcceptDragDropPayload(kAssetPathPayload)) {
+        outPath  = std::filesystem::path(static_cast<const char *>(pathPayload->Data));
         accepted = true;
     }
 

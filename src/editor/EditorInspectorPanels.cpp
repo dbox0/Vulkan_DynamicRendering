@@ -129,12 +129,14 @@ void EditorUI::textureSlot(const char *label, TextureSlot slot, uint32_t materia
     // drop. The command carries the SLOT, not a colour space: whether the
     // file is decoded as sRGB is decided here, by which map it lands in.
     std::filesystem::path dropped;
-    if (acceptTextureDrop(dropped)) {
+    uint32_t              droppedTexture = 0;
+    if (acceptTextureDrop(dropped, droppedTexture)) {
         EditorCommand cmd;
         cmd.kind        = EditorCommand::Kind::AssignTexture;
         cmd.materialId  = materialId;
         cmd.textureSlot = slot;
         cmd.path        = dropped;
+        cmd.textureId   = droppedTexture;
         m_commands.push_back(cmd);
     }
 
@@ -268,6 +270,80 @@ void EditorUI::drawMeshSection(uint32_t nodeId, const Mesh &mesh, const Resource
             ImGui::Text("%zu", sm.indexCount / 3);
         }
         ImGui::EndTable();
+    }
+}
+
+
+void EditorUI::drawTextureSection(const ResourceStore &resources, uint32_t textureId)
+{
+    const Texture   &texture = resources.texture(textureId);
+    const ImageInfo &info    = resources.imageInfo(texture.imageId);
+
+    const char *name = info.name.empty() ? "(unnamed image)" : info.name.c_str();
+    ImGui::TextUnformatted(name);
+    ImGui::SameLine();
+    ImGui::TextDisabled("#%u", textureId);
+
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+    if (const VkDescriptorSet set = texturePreview(resources, textureId)) {
+        // Fits the panel rather than a fixed box: this is the one place the
+        // user is looking at the texture itself rather than at a material that
+        // happens to use it.
+        const float  available = ImGui::GetContentRegionAvail().x;
+        const ImVec2 size      = fitInto(available, info.width, info.height);
+        ImGui::Image(reinterpret_cast<ImTextureID>(set), size);
+    }
+
+    ImGui::SeparatorText("Image");
+    beginProperties("tex_props");
+    {
+        propertyRow("Size");
+        ImGui::Text("%u x %u", info.width, info.height);
+
+        propertyRow("Mips");
+        ImGui::Text("%u", info.mipLevels);
+
+        propertyRow("Colour space");
+        ImGui::TextUnformatted(isSrgb(info.format) ? "sRGB" : "linear");
+
+        propertyRow("Origin");
+        switch (resources.textureOrigin(textureId)) {
+        case AssetOrigin::Builtin:  ImGui::TextUnformatted("Built-in");             break;
+        case AssetOrigin::Imported: ImGui::TextUnformatted("Imported with a model"); break;
+        case AssetOrigin::Project:  ImGui::TextUnformatted("Project asset");         break;
+        }
+
+        propertyRow("Image");
+        ImGui::Text("%u", texture.imageId);
+    }
+    endProperties();
+
+    // A linear scan over every material. materialCount() is in the hundreds at
+    // worst and this only runs for the one selected texture, so an index would
+    // be bookkeeping for nothing -- and bookkeeping that has to stay correct
+    // across every material edit.
+    ImGui::SeparatorText("Used by");
+
+    size_t users = 0;
+    for (uint32_t i = 1; i <= resources.materialCount(); ++i) {
+        const Material &mat = resources.material(i);
+        const bool uses = mat.baseColorTexture         == textureId ||
+                          mat.metallicRoughnessTexture == textureId ||
+                          mat.normalTexture            == textureId ||
+                          mat.occlusionTexture         == textureId ||
+                          mat.emissiveTexture          == textureId;
+        if (!uses) {
+            continue;
+        }
+        ++users;
+
+        const std::string label = mat.name.empty() ? "Material " + std::to_string(i) : mat.name;
+        ImGui::BulletText("%s", label.c_str());
+    }
+
+    if (users == 0) {
+        ImGui::TextDisabled("No material references this texture");
     }
 }
 

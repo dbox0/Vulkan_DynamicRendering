@@ -51,7 +51,9 @@ struct EditorCommand
         LoadMaterial,      // path
         CreateMaterial,    // path (empty -> in memory only), nodeId + subMesh optional
         CreateDirectory,   // path (Application uniquifies)
-        AssignTexture      // materialId, textureSlot, path (empty -> clear the slot)
+        AssignTexture      // materialId, textureSlot, then EITHER textureId (an
+                           // already-loaded texture) OR path (a file to load).
+                           // Neither set clears the slot.
     };
 
     // subMesh sentinel: retarget every submesh of the node's mesh.
@@ -66,6 +68,7 @@ struct EditorCommand
     uint32_t materialId = 0;
 
     TextureSlot textureSlot = TextureSlot::BaseColor;
+    uint32_t    textureId   = 0;
 
     // LoadModel, LoadMaterial and SaveMaterial use this. A path per command is a few dozen bytes on a
     // vector that holds a handful of entries for one frame -- not worth a

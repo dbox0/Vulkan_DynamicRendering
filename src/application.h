@@ -51,8 +51,10 @@ private:
         Kind                  kind = Kind::Model;
         std::filesystem::path path;
 
-        // Texture only. An empty path with a valid materialId is a clear.
+        // Texture only. Either textureId (already resident) or path (a file
+        // to load); neither set is a clear.
         uint32_t    materialId = 0;
+        uint32_t    textureId  = 0;
         TextureSlot slot       = TextureSlot::BaseColor;
     };
 

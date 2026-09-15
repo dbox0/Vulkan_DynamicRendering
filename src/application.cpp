@@ -408,6 +408,7 @@ void Application::applyEditorCommands()
             pending.kind       = PendingAsset::Kind::Texture;
             pending.path       = cmd.path;
             pending.materialId = cmd.materialId;
+            pending.textureId  = cmd.textureId;
             pending.slot       = cmd.textureSlot;
             m_pendingAssets.push_back(std::move(pending));
             break;
@@ -500,9 +501,17 @@ void Application::loadPendingAssets()
         }
 
         if (asset.kind == PendingAsset::Kind::Texture) {
-            uint32_t textureId = 0;
+            // Dragged out of the Textures tab: already resident, already in
+            // whatever colour space loaded it first. No decode, no upload, no
+            // descriptor churn -- and if that space is wrong for this slot the
+            // inspector's "expected sRGB" warning is what says so, rather than
+            // this silently re-decoding a second copy.
+            uint32_t textureId = asset.textureId;
+            if (textureId > m_resources.textureCount()) {
+                textureId = 0;
+            }
 
-            if (!asset.path.empty()) {
+            if (!textureId && !asset.path.empty()) {
                 // Outside ASSET_DIR there is no portable way to record the
                 // reference, so the material could never be saved with it.
                 // Refuse at the point of assignment rather than silently
