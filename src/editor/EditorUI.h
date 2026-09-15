@@ -11,6 +11,7 @@
 #include "EditorCommands.h"
 
 
+enum class AssetOrigin : uint8_t;
 struct SDL_Window;
 union SDL_Event;
 class VulkanContext;
@@ -79,13 +80,26 @@ public:
 
 private:
 
-    enum class SelectionMode { None, Node, Material };
+    enum class SelectionMode { None, Node, Material, Texture };
     SelectionMode m_selectionMode = SelectionMode::None;
 
     uint32_t m_selectedMaterial = 0;
+    uint32_t m_selectedTexture  = 0;
 
-    enum class ProjectTab { Assets, Materials };
+    enum class ProjectTab { Assets, Materials, Textures };
     ProjectTab m_projectTab = ProjectTab::Assets;
+
+    // Applies to the Materials and Textures tabs. Builtin assets -- the white
+    // and error textures, the engine default material -- only appear under
+    // All: they are not something the user made or imported, and they would
+    // otherwise be the first two tiles in every texture browser forever.
+    enum class OriginFilter : uint8_t { All, Project, Imported };
+    OriginFilter m_originFilter = OriginFilter::All;
+
+    // Which row or tile is highlighted in the Assets tab. A path rather than
+    // an index, because the entry list is rebuilt every frame and an index
+    // would silently point at a different file the moment a folder changes.
+    std::filesystem::path m_selectedAsset;
 
     // List vs grid for both Project tabs. Driven by m_thumbnailSize rather
     // than a separate toggle: dragging the zoom slider to its minimum IS list
@@ -112,6 +126,10 @@ private:
     // EditorInspectorPanels.cpp
     void drawMeshSection(uint32_t nodeId, const Mesh &mesh, const ResourceStore &resources);
 
+    // The inspector for a texture picked in the Textures tab: preview, format,
+    // and which materials reference it.
+    void drawTextureSection(const ResourceStore &resources, uint32_t textureId);
+
     // nodeId 0 means "this material is not attached to anything on screen"
     // (the Project panel's Materials tab) and suppresses the drop target.
     void drawMaterialSection(ResourceStore &resources, uint32_t materialId,
@@ -134,6 +152,11 @@ private:
     void drawProjectPanel(ResourceStore &resources);
     void drawAssetsTab();
     void drawMaterialsTab(ResourceStore &resources);
+    void drawTexturesTab(ResourceStore &resources);
+
+    // True when an asset with this origin should be shown under the current
+    // filter.
+    bool passesOriginFilter(AssetOrigin origin) const;
 
     // Right-click on empty space in either tab.
     void drawAssetContextMenu();
@@ -143,14 +166,20 @@ private:
     // anywhere is worse than no drag at all.
     void beginAssetDrag(const std::filesystem::path &path);
 
-    // Returns true and fills outPath when a texture file was dropped here.
-    bool acceptTextureDrop(std::filesystem::path &outPath);
+    // An already-loaded texture, dragged out of the Textures tab. Distinct
+    // from the path payload: this one needs no decode, no upload, and its
+    // colour space is already fixed by whatever loaded it first.
+    void beginTextureDrag(const ResourceStore &resources, uint32_t textureId);
+
+    // Accepts either payload. Exactly one of outPath / outTextureId is filled.
+    bool acceptTextureDrop(std::filesystem::path &outPath, uint32_t &outTextureId);
 
     // Returns true while a filter is active.
     bool searchBar(const char *id, std::string &filter);
 
     std::string m_assetFilter;
     std::string m_materialFilter;
+    std::string m_textureFilter;
     std::vector<EditorCommand> m_commands;
 
     // Held as ints so this header does not have to pull in ImGuizmo, and

@@ -612,6 +612,22 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
         if (ImGui::MenuItem("Materials", nullptr, m_projectTab == ProjectTab::Materials)) {
             m_projectTab = ProjectTab::Materials;
         }
+        if (ImGui::MenuItem("Textures", nullptr, m_projectTab == ProjectTab::Textures)) {
+            m_projectTab = ProjectTab::Textures;
+        }
+
+        // Only the asset tabs have an origin to filter on; the file browser
+        // shows the filesystem, which has no such notion.
+        if (m_projectTab != ProjectTab::Assets) {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(100.0f);
+
+            const char *labels[] = { "All", "Project", "Imported" };
+            int current = static_cast<int>(m_originFilter);
+            if (ImGui::Combo("##origin", &current, labels, IM_ARRAYSIZE(labels))) {
+                m_originFilter = static_cast<OriginFilter>(current);
+            }
+        }
 
         // Right-aligned, and it is the view switch as well as the zoom: at the
         // minimum the tiles would be smaller than their own labels, so that end
@@ -632,10 +648,20 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
         ImGui::EndMenuBar();
     }
 
-    if (m_projectTab == ProjectTab::Assets) {
-        drawAssetsTab();
-    } else {
-        drawMaterialsTab(resources);
+    switch (m_projectTab) {
+    case ProjectTab::Assets:    drawAssetsTab();            break;
+    case ProjectTab::Materials: drawMaterialsTab(resources); break;
+    case ProjectTab::Textures:  drawTexturesTab(resources);  break;
+    }
+}
+
+bool EditorUI::passesOriginFilter(AssetOrigin origin) const
+{
+    switch (m_originFilter) {
+    case OriginFilter::Project:  return origin == AssetOrigin::Project;
+    case OriginFilter::Imported: return origin == AssetOrigin::Imported;
+    case OriginFilter::All:
+    default:                     return true;
     }
 }
 
@@ -651,6 +677,7 @@ void EditorUI::drawAssetsTab()
     if (currentAbs != rootPath) {
         if (ImGui::Button("<- Up")) {
             m_currentAssetPath = m_currentAssetPath.parent_path();
+            m_selectedAsset.clear();
         }
         ImGui::Separator();
     }
@@ -701,12 +728,25 @@ void EditorUI::drawAssetsTab()
     }
 
     ProjectItemActions actions;
+    actions.isSelected = [this](const ProjectItem &item)
+    {
+        return !m_selectedAsset.empty() && m_assetEntries[item.payload] == m_selectedAsset;
+    };
+    actions.onClick = [this](const ProjectItem &item)
+    {
+        // Purely visual for now, but a click that produces no feedback at all
+        // reads as the panel being broken.
+        m_selectedAsset = m_assetEntries[item.payload];
+    };
     actions.onActivate = [this](const ProjectItem &item)
     {
         const std::filesystem::path &path = m_assetEntries[item.payload];
+        m_selectedAsset = path;
+
         std::error_code dirEc;
         if (std::filesystem::is_directory(path, dirEc)) {
             m_currentAssetPath = path;
+            m_selectedAsset.clear();
             return;
         }
 
@@ -801,6 +841,10 @@ void EditorUI::drawMaterialsTab(ResourceStore &resources)
     for (uint32_t i = 1; i <= resources.materialCount(); ++i) {
         const Material &mat = resources.material(i);
 
+        if (!passesOriginFilter(resources.materialInfo(i).origin)) {
+            continue;
+        }
+
         const std::string name = mat.name.empty() ? "Material " + std::to_string(i) : mat.name;
         if (!matchesFilter(name, m_materialFilter)) {
             continue;
@@ -847,6 +891,69 @@ void EditorUI::drawMaterialsTab(ResourceStore &resources)
     }
 
     drawMaterialsContextMenu();
+    ImGui::EndChild();
+}
+
+void EditorUI::drawTexturesTab(ResourceStore &resources)
+{
+    const bool filtering = searchBar("texsearch", m_textureFilter);
+    ImGui::Separator();
+
+    std::vector<ProjectItem> items;
+    for (uint32_t i = 1; i <= resources.textureCount(); ++i) {
+        if (!passesOriginFilter(resources.textureOrigin(i))) {
+            continue;
+        }
+
+        const ResourceStore::Texture   &texture = resources.texture(i);
+        const ResourceStore::ImageInfo &info    = resources.imageInfo(texture.imageId);
+
+        const std::string name = info.name.empty() ? "Texture " + std::to_string(i) : info.name;
+        if (!matchesFilter(name, m_textureFilter)) {
+            continue;
+        }
+
+        ProjectItem item;
+        item.payload = i;
+
+        // The filename alone, not the relative path: the path is what the
+        // tooltip and the inspector are for, and a tile is 64 pixels wide.
+        item.label = std::filesystem::path(name).filename().string();
+        item.badge = "TEX";
+
+        if (const VkDescriptorSet set = texturePreview(resources, i)) {
+            item.thumbnail = reinterpret_cast<ImTextureID>(set);
+        }
+        items.push_back(std::move(item));
+    }
+
+    ProjectItemActions actions;
+    actions.isSelected = [this](const ProjectItem &item)
+    {
+        return m_selectionMode == SelectionMode::Texture && m_selectedTexture == item.payload;
+    };
+    actions.onClick = [this](const ProjectItem &item)
+    {
+        m_selectionMode   = SelectionMode::Texture;
+        m_selectedTexture = item.payload;
+        m_selectedNode    = 0;
+    };
+    actions.onActivate = actions.onClick;
+    actions.onDragSource = [this, &resources](const ProjectItem &item)
+    {
+        beginTextureDrag(resources, item.payload);
+    };
+
+    ImGui::BeginChild("TextureList");
+    if (m_projectView == ProjectView::Grid) {
+        drawProjectItemsGrid(items, m_thumbnailSize, actions);
+    } else {
+        drawProjectItemsList(items, actions);
+    }
+
+    if (items.empty()) {
+        ImGui::TextDisabled(filtering ? "No matches" : "No textures loaded");
+    }
     ImGui::EndChild();
 }
 
@@ -915,7 +1022,17 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
         return;
     }
 
-    // 3. Inspecting a Scene Node (Original logic goes here)
+    // 3. Inspecting a Texture picked in the Textures tab
+    if (m_selectionMode == SelectionMode::Texture) {
+        if (m_selectedTexture == 0 || m_selectedTexture > resources.textureCount()) {
+            ImGui::TextDisabled("Invalid texture selected");
+            return;
+        }
+        drawTextureSection(resources, m_selectedTexture);
+        return;
+    }
+
+    // 4. Inspecting a Scene Node (Original logic goes here)
     if (m_selectionMode == SelectionMode::Node) {
         if (m_selectedNode == 0) return;
 
@@ -1145,6 +1262,7 @@ void EditorUI::selectMaterial(uint32_t materialId)
     m_selectionMode    = SelectionMode::Material;
     m_selectedMaterial = materialId;
     m_selectedNode     = 0;
+    m_selectedTexture  = 0;
 }
 
 void EditorUI::clearSelection()
@@ -1152,6 +1270,7 @@ void EditorUI::clearSelection()
     m_selectionMode = SelectionMode::None;
     m_selectedNode = 0;
     m_selectedMaterial = 0;
+    m_selectedTexture = 0;
 }
 
 
