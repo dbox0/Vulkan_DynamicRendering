@@ -5,66 +5,87 @@
 #include <glm/detail/type_quat.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
+#include <string>
 
+// TWO DIRTY FLAGS
+//   m_localDirty -- the cached local matrix disagrees with T/R/S.
+//                   Set by setTranslation/setRotation/setScale,
+//                   cleared by getTransform().
+//   m_changed    -- something changed since the last world-transform pass.
+//                   Set by every mutator, cleared by NodeWorld. 
 class Node
 {
+    glm::vec3 m_translation = glm::vec3(0, 0, 0);
+    glm::vec3 m_scale       = glm::vec3(1.0f);
+    glm::quat m_rotation    = glm::quat(1, 0, 0, 0);
+    glm::mat4 m_transform   = glm::mat4(1.0f);
 
-
-    // TODO: Replace this with a Transform Component?
-    glm::vec3 m_translation = glm::vec3(0,0,0);
-    glm::vec3 m_scale = glm::vec3(1.0f);
-    glm::quat m_rotation = glm::quat(1,0,0,0);
-    glm::mat4 m_transform = glm::mat4(1.0f);
-    bool m_dirty = true;
+    bool m_localDirty = true;
+    bool m_changed    = true;
 
 public:
-    uint32_t meshId         = 0;
-    uint32_t parentId       = 0;
-    uint32_t nextSiblingId  = 0;
-    uint32_t firstChildId   = 0;
+    // Nodes used to borrow the mesh name in the hierarchy, which left an empty
+    // node and a second instance of the same mesh indistinguishable. Editor
+    // created nodes need a name of their own regardless.
+    std::string name;
 
+    uint32_t meshId        = 0;
+    uint32_t parentId      = 0;
+    uint32_t nextSiblingId = 0;
+    uint32_t firstChildId  = 0;
 
-    [[nodiscard]] bool isDirty() const { return m_dirty; }
+    [[nodiscard]] bool hasChanged() const { return m_changed; }
+    void clearChanged() { m_changed = false; }
 
-    glm::vec3 getTranslation() const { return m_translation;}
+    glm::vec3 getTranslation() const { return m_translation; }
+    glm::quat getRotation() const    { return m_rotation; }
+    glm::vec3 getScale() const       { return m_scale; }
 
-    void setTranslation(glm::vec3 vec) {
-        this->m_translation = vec;
-        m_dirty = true;
+    void setTranslation(const glm::vec3 &vec)
+    {
+        m_translation = vec;
+        m_localDirty  = true;
+        m_changed     = true;
     }
 
-    glm::quat getRotation() const { return m_rotation;}
-
-    void setRotation(const glm::quat& rotation) {
-        this->m_rotation = rotation;
-        m_dirty = true;
-    }
-    glm::vec3 getScale() const { return m_scale;}
-
-    void setScale(const glm::vec3& scale) {
-        this->m_scale = scale;
-        m_dirty = true;
+    void setRotation(const glm::quat &rotation)
+    {
+        m_rotation   = rotation;
+        m_localDirty = true;
+        m_changed    = true;
     }
 
-    glm::mat4 &getTransform() {
-        if (m_dirty) {
-            glm::mat4 matTrans = glm::translate(glm::mat4(1.0f), m_translation);
-            glm::mat4 matRot = glm::mat4_cast(m_rotation);
-            glm::mat4 matScale = glm::scale(glm::mat4(1.0f), m_scale);
-            m_transform = matTrans * matRot * matScale;
-            m_dirty = false;
+    void setScale(const glm::vec3 &scale)
+    {
+        m_scale      = scale;
+        m_localDirty = true;
+        m_changed    = true;
+    }
+
+    glm::mat4 &getTransform()
+    {
+        if (m_localDirty) {
+            const glm::mat4 matTrans = glm::translate(glm::mat4(1.0f), m_translation);
+            const glm::mat4 matRot   = glm::mat4_cast(m_rotation);
+            const glm::mat4 matScale = glm::scale(glm::mat4(1.0f), m_scale);
+
+            m_transform  = matTrans * matRot * matScale;
+            m_localDirty = false;
         }
         return m_transform;
     }
 
-    void setTransform(glm::mat4 &transform) {
+    // const ref so the gizmo can pass a temporary. Keeps the matrix it was
+    // given rather than recomposing from the decomposition, which would only
+    // fold decompose()'s rounding error back in on every drag frame.
+    void setTransform(const glm::mat4 &transform)
+    {
         glm::vec3 skew;
         glm::vec4 perspective;
         glm::decompose(transform, m_scale, m_rotation, m_translation, skew, perspective);
 
-        m_transform = transform;
-        m_dirty = false;
+        m_transform  = transform;
+        m_localDirty = false;
+        m_changed    = true;
     }
-
 };
-

@@ -6,12 +6,16 @@
 #include <cstdint>
 #include <unordered_map>
 #include <filesystem>
+#include <vector>
+
+#include "EditorCommands.h"
 
 
 struct SDL_Window;
 union SDL_Event;
 class VulkanContext;
 class Scene;
+class Camera;
 class GeometryStore;
 class ResourceStore;
 struct Mesh;
@@ -39,8 +43,21 @@ public:
 
     // Per frame: beginFrame() -> build() -> (renderer records) -> record().
     void beginFrame();
-    void build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources);
+    void build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources,
+               const Camera &camera, uint32_t width, uint32_t height);
     void record(VkCommandBuffer cmd);
+
+    // Edits recorded during build(), drained by Application afterwards. Nothing
+    // in this class mutates the scene or the stores directly -- see
+    // EditorCommands.h for why.
+    const std::vector<EditorCommand> &commands() const { return m_commands; }
+    void clearCommands() { m_commands.clear(); }
+
+    // True while the cursor is over a gizmo handle, or a drag is in progress.
+    // ImGuizmo draws into a NoInputs window, so io.WantCaptureMouse stays false
+    // there and the viewport picker would happily deselect the node you were
+    // about to grab.
+    bool gizmoCapturesMouse() const { return m_gizmoHovered; }
 
     uint32_t selectedNode() const { return m_selectedNode; }
     void selectNode(uint32_t nodeId, uint32_t subMeshIndex = 0);
@@ -72,15 +89,51 @@ private:
     // We will initialize this in the cpp file
     std::filesystem::path m_currentAssetPath;
 
-    void drawProjectPanel(ResourceStore &resources);
-
     void drawHierarchy(Scene &scene, const GeometryStore &geometry);
     void drawHierarchyNode(Scene &scene, const GeometryStore &geometry, uint32_t nodeId);
     void drawInspector(Scene &scene, const GeometryStore &geometry, ResourceStore &resources);
 
     // EditorInspectorPanels.cpp
-    void drawMeshSection(const Mesh &mesh, const ResourceStore &resources);
-    void drawMaterialSection(ResourceStore &resources, uint32_t materialId);
+    void drawMeshSection(uint32_t nodeId, const Mesh &mesh, const ResourceStore &resources);
+
+    // nodeId 0 means "this material is not attached to anything on screen"
+    // (the Project panel's Materials tab) and suppresses the drop target.
+    void drawMaterialSection(ResourceStore &resources, uint32_t materialId,
+                             uint32_t nodeId  = 0,
+                             uint32_t subMesh = EditorCommand::kAllSubMeshes);
+
+    // EditorInteraction.cpp
+    void     beginMaterialDrag(const ResourceStore &resources, uint32_t materialId);
+    uint32_t acceptMaterialDrop();
+    void     assignMaterial(uint32_t nodeId, uint32_t subMesh, uint32_t materialId);
+
+    void drawCreateMenuItems(uint32_t parentId);
+    void drawNodeContextMenu(uint32_t nodeId);
+    void deleteNode(uint32_t nodeId);
+
+    void drawGizmo(Scene &scene, const Camera &camera, uint32_t width, uint32_t height);
+    void drawGizmoToolbar();
+    void handleShortcuts();
+
+    void drawProjectPanel(ResourceStore &resources);
+
+    // Returns true while a filter is active.
+    bool searchBar(const char *id, std::string &filter);
+
+    std::string m_assetFilter;
+    std::string m_materialFilter;
+    std::vector<EditorCommand> m_commands;
+
+    // Held as ints so this header does not have to pull in ImGuizmo, and
+    // through it imgui.h. The values are ImGuizmo::TRANSLATE and
+    // ImGuizmo::LOCAL.
+    int   m_gizmoOperation = 7;
+    int   m_gizmoMode      = 0;
+    bool  m_gizmoSnap      = false;
+    bool  m_gizmoHovered   = false;
+    float m_snapTranslate  = 0.25f;
+    float m_snapRotate     = 15.0f;
+    float m_snapScale      = 0.1f;
     void textureSlot(const char *label, uint32_t textureId, bool expectSrgb,
                      const ResourceStore &resources);
     VkDescriptorSet texturePreview(const ResourceStore &resources, uint32_t textureId);

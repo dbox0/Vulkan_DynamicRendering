@@ -18,7 +18,7 @@ private:
     glm::mat4 projectionMatrix = glm::mat4(1.0f);
     bool projectionDirty = true;
     bool rightMouseHeld = false;
-
+    bool middleMouseHeld = false;
 
 public:
     void handleInput(const SDL_Event&e, float deltaTime);
@@ -32,6 +32,9 @@ public:
 
 
     glm::mat4 viewProjection(float aspectRatio) const;
+
+    // Split out for ImGuizmo, which wants view and projection separately.
+    glm::mat4 projection(float aspectRatio) const;
     glm::mat4 getRotationMatrix() const;
     glm::mat4 getViewMatrix() const;
 

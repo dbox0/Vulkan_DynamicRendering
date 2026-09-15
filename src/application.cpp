@@ -4,7 +4,10 @@
 #include <iostream>
 
 #include "assets/GltfLoader.h"
+#include "assets/Mesh.h"
+#include "assets/PrimitiveBuilder.h"
 #include "common/errors.h"
+#include "editor/EditorCommands.h"
 #include "scene/Geometry/Node.h"
 
 Application::Application()
@@ -105,14 +108,6 @@ bool Application::loadData(const std::filesystem::path &modelPath)
 
 void Application::run()
 {
-
-
-    // Leave this like this for now
-    // TODO: REMOVE THIS TRASH
-    Node &root = m_scene.getNode(m_scene.rootNodeId());
-    root.setScale(glm::vec3(20.0f));
-    root.setTranslation(glm::vec3(0,2,0));
-
     m_running = true;
 
     const bool *keys = SDL_GetKeyboardState(nullptr);
@@ -130,6 +125,15 @@ void Application::run()
             switch (event.type) {
                 case SDL_EVENT_QUIT:
                     m_running = false;
+                    break;
+
+                // The Project panel is rooted at ASSET_DIR and cannot navigate
+                // above it, so dropping a file on the window is the only way to
+                // reach a model living anywhere else on disk.
+                case SDL_EVENT_DROP_FILE:
+                    if (event.drop.data) {
+                        m_pendingModels.emplace_back(event.drop.data);
+                    }
                     break;
 
                 case SDL_EVENT_WINDOW_RESIZED:
@@ -157,8 +161,14 @@ void Application::run()
             if (!claimed) {
                 // wantsMouse() already excluded clicks that landed on a panel,
                 // so anything arriving here is a click in the viewport.
+                // The gizmo needs a check of its own: ImGuizmo draws into a
+                // NoInputs window, so ImGui never reports capture for it and
+                // the click that grabs an axis handle would also deselect the
+                // node. One frame stale, since events are polled before
+                // build() runs -- bounded by one frame of mouse movement.
                 if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-                    event.button.button == SDL_BUTTON_LEFT) {
+                    event.button.button == SDL_BUTTON_LEFT &&
+                    !m_editor.gizmoCapturesMouse()) {
                     pickAt(event.button.x, event.button.y);
                 }
                 m_camera.handleInput(event, deltaTime);
@@ -171,9 +181,6 @@ void Application::run()
 
 
 
-        // Pushed in rather than pulled out: the renderer knows nothing about
-        // EditorUI, so a build without an editor still compiles and runs.
-        m_renderer.setSelection(m_editor.selectedNode());
         // Minimised window: no valid extent to render into, so idle instead
         // of feeding a 0x0 swapchain.
         if (m_width == 0 || m_height == 0) {
@@ -184,15 +191,177 @@ void Application::run()
         // NewFrame must not run on a frame that gets skipped above -- ImGui
         // asserts if NewFrame is called twice without a Render in between.
         m_editor.beginFrame();
-        m_editor.build(m_scene, m_geometry, m_resources);
+        m_editor.build(m_scene, m_geometry, m_resources, m_camera, m_width, m_height);
 
-        // Swallow camera input while a widget has focus, or WASD types into
-        // a text field and dragging a slider spins the view.
+        // After build(), before render(): the commands mutate containers the
+        // panels were iterating, and the draw list they produced has already
+        // copied every string it needs.
+        applyEditorCommands();
+        loadPendingModels();
 
+        // Pushed in rather than pulled out: the renderer knows nothing about
+        // EditorUI, so a build without an editor still compiles and runs.
+        //
+        // Moved below the commands -- reading the selection after them means a
+        // node created or deleted this frame gets the right outline on that
+        // frame rather than the next one.
+        m_renderer.setSelection(m_editor.selectedNode());
 
         m_renderer.render(m_scene, m_camera, m_width, m_height,
                          [this](VkCommandBuffer cmd) { m_editor.record(cmd); });
     }
+}
+
+void Application::applyEditorCommands()
+{
+    const std::vector<EditorCommand> &commands = m_editor.commands();
+    if (commands.empty()) {
+        return;
+    }
+
+    bool geometryAdded = false;
+
+    for (const EditorCommand &cmd : commands) {
+        switch (cmd.kind) {
+
+        case EditorCommand::Kind::CreateEmpty:
+        {
+            if (!m_scene.createNode(cmd.parentId, "Empty")) {
+                std::cerr << "[warn] Node budget exhausted" << std::endl;
+            }
+            break;
+        }
+
+        case EditorCommand::Kind::CreatePrimitive:
+        {
+            const uint32_t meshId = buildPrimitive(m_geometry, cmd.primitive,
+                                                   m_resources.defaultMaterialId());
+            if (!meshId) {
+                std::cerr << "[warn] Geometry budget exhausted" << std::endl;
+                break;
+            }
+            geometryAdded = true;
+
+            const uint32_t nodeId = m_scene.createNode(cmd.parentId,
+                                                       primitiveName(cmd.primitive), meshId);
+            if (!nodeId) {
+                m_geometry.removeMesh(meshId);      // no node ever claimed it
+                std::cerr << "[warn] Node budget exhausted" << std::endl;
+                break;
+            }
+            m_editor.selectNode(nodeId, 0);
+            break;
+        }
+
+        case EditorCommand::Kind::DuplicateNode:
+        {
+            if (!m_scene.isAlive(cmd.nodeId)) {
+                break;
+            }
+            // Copied by value first: createNode() writes a fresh Node into a
+            // recycled slot, and a reference into NodeWorld taken before that
+            // is a hazard even though the storage itself never reallocates.
+            const Node       &src         = m_scene.getNode(cmd.nodeId);
+            const uint32_t    parentId    = src.parentId;
+            const uint32_t    meshId      = src.meshId;
+            const std::string name        = src.name;
+            const glm::vec3   translation = src.getTranslation();
+            const glm::quat   rotation    = src.getRotation();
+            const glm::vec3   scale       = src.getScale();
+
+            // Shares the mesh handle rather than rebuilding it -- two nodes
+            // pointing at one mesh is exactly what glTF instancing produces,
+            // and Scene::destroyNode already refcounts for it.
+            const uint32_t nodeId = m_scene.createNode(parentId,
+                                                       name.empty() ? "Copy" : name + " Copy",
+                                                       meshId);
+            if (!nodeId) {
+                std::cerr << "[warn] Node budget exhausted" << std::endl;
+                break;
+            }
+            Node &copy = m_scene.getNode(nodeId);
+            copy.setTranslation(translation);
+            copy.setRotation(rotation);
+            copy.setScale(scale);
+
+            m_editor.selectNode(nodeId, 0);
+            break;
+        }
+
+        case EditorCommand::Kind::DeleteNode:
+        {
+            m_orphanedMeshes.clear();
+            m_scene.destroyNode(cmd.nodeId, m_orphanedMeshes);
+
+            // Only meshes no surviving node references. removeMesh defers the
+            // range free until the frames that could still be reading it have
+            // retired, so this is safe to call mid-frame.
+            for (const uint32_t meshId : m_orphanedMeshes) {
+                m_geometry.removeMesh(meshId);
+            }
+            break;
+        }
+
+        case EditorCommand::Kind::ReparentNode:
+        {
+            m_scene.reparentNode(cmd.nodeId, cmd.parentId);
+            break;
+        }
+
+        case EditorCommand::Kind::LoadModel:
+        {
+            m_pendingModels.push_back(cmd.path);
+            break;
+        }
+
+        case EditorCommand::Kind::AssignMaterial:
+        {
+            if (!m_scene.isAlive(cmd.nodeId)) {
+                break;
+            }
+            const uint32_t meshId = m_scene.getNode(cmd.nodeId).meshId;
+            if (!m_geometry.meshAlive(meshId)) {
+                break;
+            }
+
+            // materialId lives on the SubMesh and the renderer reads it fresh
+            // every frame into RenderItem::materialIndex -- no upload, no
+            // descriptor churn, visible next frame.
+            Mesh &mesh = m_geometry.meshMutable(meshId);
+            if (cmd.subMesh == EditorCommand::kAllSubMeshes) {
+                for (SubMesh &subMesh : mesh.subMeshes) {
+                    subMesh.materialId = cmd.materialId;
+                }
+            } else if (cmd.subMesh < mesh.subMeshes.size()) {
+                mesh.subMeshes[cmd.subMesh].materialId = cmd.materialId;
+            }
+            break;
+        }
+        }
+    }
+
+    // One submit for every primitive created this frame.
+    if (geometryAdded && !m_geometry.flushUploads()) {
+        showError("Failed to upload generated geometry");
+    }
+
+    m_editor.clearCommands();
+}
+
+void Application::loadPendingModels()
+{
+    if (m_pendingModels.empty()) {
+        return;
+    }
+
+    // Safe mid-frame. Image uploads go through the uploader's own timeline and
+    // are ordered ahead of any frame submitted afterwards on the same queue,
+    // and commitTextureDescriptors() only ever writes slots past the last
+    // committed one -- never a slot an in-flight frame could be sampling.
+    for (const std::filesystem::path &path : m_pendingModels) {
+        loadData(path);     // reports its own failures; a bad drop is not fatal
+    }
+    m_pendingModels.clear();
 }
 
 void Application::pickAt(float mouseX, float mouseY)

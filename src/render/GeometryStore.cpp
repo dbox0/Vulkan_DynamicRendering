@@ -230,6 +230,12 @@ const Mesh &GeometryStore::mesh(uint32_t meshId) const
     return m_meshes[handleSlot(meshId)].mesh;
 }
 
+Mesh &GeometryStore::meshMutable(uint32_t meshId)
+{
+    assert(meshAlive(meshId) && "meshMutable on a dead handle");
+    return m_meshes[handleSlot(meshId)].mesh;
+}
+
 bool GeometryStore::removeMesh(uint32_t meshId)
 {
     if (!meshAlive(meshId)) {

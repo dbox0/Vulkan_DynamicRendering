@@ -1,0 +1,11 @@
+Model Information:
+* title:	Gltf Test PBR Material
+* source:	https://sketchfab.com/3d-models/gltf-test-pbr-material-2fe88c82edf24a9f8b608c11a0eb6920
+* author:	hibi0422 (https://sketchfab.com/hibi0422)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Gltf Test PBR Material" (https://sketchfab.com/3d-models/gltf-test-pbr-material-2fe88c82edf24a9f8b608c11a0eb6920) by hibi0422 (https://sketchfab.com/hibi0422) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

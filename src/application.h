@@ -1,6 +1,9 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <vector>
+#include "assets/PrimitiveBuilder.h"
+#include "editor/EditorCommands.h"
 #include "render/VulkanContext.h"
 #include "render/Swapchain.h"
 #include "render/ResourceStore.h"
@@ -31,6 +34,17 @@ private:
 
     // Left-click in the viewport -> ray cast -> inspector selection.
     void pickAt(float mouseX, float mouseY);
+
+    // Applies everything EditorUI queued during build(). Runs between build()
+    // and render(), so a node created this frame is drawn this frame.
+    void applyEditorCommands();
+
+    // Models queued by a window file-drop or a Project panel double-click, so
+    // the load happens between build() and render() rather than mid-event.
+    void loadPendingModels();
+
+    std::vector<uint32_t>              m_orphanedMeshes;   // scratch for the delete path
+    std::vector<std::filesystem::path> m_pendingModels;
 
     static constexpr uint32_t VulkanVersion     = VK_API_VERSION_1_4;
     static constexpr size_t   MaxNodes          = 1024;

@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <shaderc/shaderc.hpp>
 #include <array>
+#include <functional>   // std::function, used by render()/recordCommandBuffer()
 #include <vector>
 #include <string>
 #include <cstdint>

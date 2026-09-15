@@ -10,6 +10,7 @@
 // ============================================================================
 
 #include "EditorUI.h"
+#include "EditorCommands.h"
 
 #include <volk.h>
 #include <imgui.h>
@@ -178,7 +179,7 @@ void EditorUI::textureSlot(const char *label, uint32_t textureId, bool expectSrg
 // mesh
 // ============================================================================
 
-void EditorUI::drawMeshSection(const Mesh &mesh, const ResourceStore &resources)
+void EditorUI::drawMeshSection(uint32_t nodeId, const Mesh &mesh, const ResourceStore &resources)
 {
     if (!ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
         return;
@@ -227,6 +228,14 @@ void EditorUI::drawMeshSection(const Mesh &mesh, const ResourceStore &resources)
                 m_selectedSubMesh = i;
             }
 
+            // The selectable spans all columns, so the whole row is the drop
+            // target. This is the one that matters: it is how a single submesh
+            // of a multi-material glTF mesh gets retargeted.
+            if (const uint32_t dropped = acceptMaterialDrop()) {
+                assignMaterial(nodeId, static_cast<uint32_t>(i), dropped);
+                m_selectedSubMesh = i;      // show what was just assigned
+            }
+
             ImGui::TableSetColumnIndex(1);
             ImGui::TextUnformatted(materialName(resources, sm.materialId));
 
@@ -241,9 +250,20 @@ void EditorUI::drawMeshSection(const Mesh &mesh, const ResourceStore &resources)
 // material
 // ============================================================================
 
-void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId)
+void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId,
+                                   uint32_t nodeId, uint32_t subMesh)
 {
-    if (!ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+    // Not an early return on the header any more: a collapsed header still has
+    // to accept a drop, and BeginDragDropTarget only sees the item submitted
+    // immediately before it.
+    const bool open = ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen);
+
+    if (nodeId != 0) {
+        if (const uint32_t dropped = acceptMaterialDrop()) {
+            assignMaterial(nodeId, subMesh, dropped);
+        }
+    }
+    if (!open) {
         return;
     }
 
@@ -259,6 +279,18 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     Material mat = resources.material(id);
     bool changed = false;
 
+    // A swatch rather than the label: Text submits no interactive item, so a
+    // drag source on it would need SourceAllowNullID and would then collide
+    // with every other nameless label in the panel.
+    ImGui::ColorButton("##matswatch",
+                       ImVec4(mat.baseColorFactor.r, mat.baseColorFactor.g,
+                              mat.baseColorFactor.b, 1.0f),
+                       ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
+                       ImVec2(18.0f, 18.0f));
+    beginMaterialDrag(resources, id);
+    ImGui::SameLine();
+
+    ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(mat.name.empty() ? "(unnamed)" : mat.name.c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("#%u", id);

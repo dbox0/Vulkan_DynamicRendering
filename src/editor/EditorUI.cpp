@@ -18,9 +18,12 @@
 #include "../render/ResourceStore.h"
 #include "../common/constants.h"
 #include "../scene/Scene.h"
+#include "../scene/Camera.h"
 #include "../common/errors.h"
+#include <ImGuizmo.h>
 #include <glm/gtx/euler_angles.hpp>
 
+#include <cctype>
 #include <imgui_internal.h>     // for PushMultiItemsWidths
 #include <glm/vec3.hpp>
 
@@ -315,7 +318,8 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
 // panels
 // ---------------------------------------------------------------------------
 
-void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources)
+void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources,
+                     const Camera &camera, uint32_t width, uint32_t height)
 {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -365,6 +369,8 @@ void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore 
     ImGui::End();
 
     if (ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        drawGizmoToolbar();
+        ImGui::Separator();
         drawInspector(scene, geometry, resources);
     }
     ImGui::End();
@@ -376,6 +382,62 @@ void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore 
     ImGui::End();
 
     ImGui::End(); // End EditorDockSpaceWindow
+
+    handleShortcuts();
+    drawGizmo(scene, camera, width, height);
+}
+
+namespace
+{
+    // Case-insensitive substring test. ASCII-only, which is all a filename or
+    // a material name needs. ImGuiTextFilter would do the multi-term and
+    // -exclude syntax for free, but it is case SENSITIVE -- the wrong default
+    // for a file browser, and it would drag imgui.h into EditorUI.h.
+    bool matchesFilter(std::string_view haystack, std::string_view needle)
+    {
+        if (needle.empty()) {
+            return true;
+        }
+        if (needle.size() > haystack.size()) {
+            return false;
+        }
+        const auto lower = [](char c) {
+            return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        };
+        for (size_t i = 0; i + needle.size() <= haystack.size(); ++i) {
+            size_t j = 0;
+            while (j < needle.size() && lower(haystack[i + j]) == lower(needle[j])) {
+                ++j;
+            }
+            if (j == needle.size()) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+bool EditorUI::searchBar(const char *id, std::string &filter)
+{
+    ImGui::PushID(id);
+    char buffer[128];
+    std::snprintf(buffer, sizeof(buffer), "%s", filter.c_str());
+
+    const float clearWidth = ImGui::GetFrameHeight();
+    ImGui::SetNextItemWidth(-(clearWidth + ImGui::GetStyle().ItemSpacing.x));
+    if (ImGui::InputTextWithHint("##search", "Search...", buffer, sizeof(buffer))) {
+        filter = buffer;
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(filter.empty());
+    if (ImGui::Button("x", ImVec2(clearWidth, 0.0f))) {
+        filter.clear();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::PopID();
+    return !filter.empty();
 }
 
 void EditorUI::drawProjectPanel(ResourceStore &resources)
@@ -410,32 +472,59 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
             ImGui::Separator();
         }
 
+        const bool filtering = searchBar("assetsearch", m_assetFilter);
+        ImGui::Separator();
+
         // List files and directories
         ImGui::BeginChild("AssetList");
         std::error_code ec;
+        size_t shown = 0;
         for (const auto& entry : std::filesystem::directory_iterator(m_currentAssetPath, ec)) {
             const bool isDir = entry.is_directory();
             std::string filename = entry.path().filename().string();
+            if (!matchesFilter(filename, m_assetFilter)) {
+                continue;
+            }
+            ++shown;
 
             // Basic icons
             std::string label = (isDir ? "[DIR]  " : "[FILE] ") + filename;
-
-            if (ImGui::Selectable(label.c_str())) {
-                if (isDir) {
-                    m_currentAssetPath = entry.path();
-                } else {
-                    // TODO: Handle double clicking files (load material, load texture, etc.)
+            if (ImGui::Selectable(label.c_str(), false,
+                                  ImGuiSelectableFlags_AllowDoubleClick)) {
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    if (isDir) {
+                        m_currentAssetPath = entry.path();
+                    } else {
+                        std::string ext = entry.path().extension().string();
+                        for (char &c : ext) {
+                            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        }
+                        if (ext == ".gltf" || ext == ".glb") {
+                            EditorCommand cmd;
+                            cmd.kind = EditorCommand::Kind::LoadModel;
+                            cmd.path = entry.path();
+                            m_commands.push_back(cmd);
+                        }
+                        // TODO: materials and textures
+                    }
                 }
             }
+        }
+
+        if (shown == 0) {
+            ImGui::TextDisabled(filtering ? "No matches" : "Empty folder");
         }
         ImGui::EndChild();
     }
 
     // Tab 2: Materials
    else if (m_projectTab == ProjectTab::Materials) {
-        ImGui::BeginChild("MaterialList");
+        const bool filtering = searchBar("matsearch", m_materialFilter);
+        ImGui::Separator();
 
-        // Define our grid cell sizes
+        ImGui::BeginChild("MaterialList");
+        size_t shown = 0;
+
         const float thumbnailSize = 64.0f;
         const float padding = 16.0f;
         const float cellSize = thumbnailSize + padding;
@@ -446,10 +535,19 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
 
         if (ImGui::BeginTable("MaterialGrid", columnCount)) {
             for (uint32_t i = 1; i <= resources.materialCount(); ++i) {
+                const auto& mat = resources.material(i);
+
+                const std::string name = mat.name.empty()
+                    ? "Material " + std::to_string(i)
+                    : mat.name;
+
+                if (!matchesFilter(name, m_materialFilter)) {
+                    continue;
+                }
+                ++shown;
+
                 ImGui::TableNextColumn();
                 ImGui::PushID(i);
-
-                const auto& mat = resources.material(i);
                 bool isSelected = (m_selectionMode == SelectionMode::Material && m_selectedMaterial == i);
 
                 // 1. Draw a highlight box behind the thumbnail if selected
@@ -484,6 +582,7 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
                                                  ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
                                                  ImVec2(thumbnailSize, thumbnailSize));
                 }
+                beginMaterialDrag(resources, i);
 
                 // Update selection if the thumbnail was clicked
                 if (clicked) {
@@ -492,9 +591,6 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
                 }
 
                 // 3. Draw the material name underneath
-                std::string name = mat.name.empty() ? "Material " + std::to_string(i) : mat.name;
-
-                // Push text wrap pos so long names wrap within the cell
                 ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + thumbnailSize);
                 ImGui::TextUnformatted(name.c_str());
                 ImGui::PopTextWrapPos();
@@ -503,14 +599,37 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
             }
             ImGui::EndTable();
         }
+
+        if (shown == 0) {
+            ImGui::TextDisabled(filtering ? "No matches" : "No materials loaded");
+        }
         ImGui::EndChild();
     }
 }
 
 void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
 {
+    if (ImGui::Button("Create")) {
+        ImGui::OpenPopup("hierarchy_create");
+    }
+    if (ImGui::BeginPopup("hierarchy_create")) {
+        drawCreateMenuItems(0);
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_selectionMode != SelectionMode::Node || m_selectedNode == 0);
+    if (ImGui::Button("Delete")) {
+        deleteNode(m_selectedNode);
+    }
+    ImGui::EndDisabled();
+
+    ImGui::Separator();
+
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
     if (ImGui::BeginChild("hierarchy", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
+        // next is read before the row is drawn: the row can queue a delete, and
+        // after that its sibling link is the only way out of the loop.
         for (uint32_t id = scene.rootNodeId(); id != 0; ) {
             const uint32_t next = scene.getNode(id).nextSiblingId;
             drawHierarchyNode(scene, geometry, id);
@@ -519,14 +638,16 @@ void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
 
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
             !ImGui::IsAnyItemHovered()) {
-            m_selectedNode = 0;
+            clearSelection();
+        }
+
+        if (ImGui::BeginPopupContextWindow("hierarchy_context",
+                                           ImGuiPopupFlags_MouseButtonRight |
+                                           ImGuiPopupFlags_NoOpenOverItems)) {
+            drawCreateMenuItems(0);
+            ImGui::EndPopup();
         }
     }
-    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-            !ImGui::IsAnyItemHovered()) {
-        m_selectedNode = 0;
-        m_selectionMode = SelectionMode::None; // Clear selection
-            }
     ImGui::EndChild();
     ImGui::PopStyleVar();
 }
@@ -562,6 +683,11 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
             glm::vec3 radians(0.0f);
             glm::extractEulerAngleYXZ(glm::mat4_cast(node.getRotation()), radians.y, radians.x, radians.z);
             m_eulerDegrees = glm::degrees(radians);
+        }
+
+        if (!node.name.empty()) {
+            ImGui::TextUnformatted(node.name.c_str());
+            ImGui::SameLine();
         }
 
         ImGui::Text("Node %u", m_selectedNode);
@@ -604,10 +730,11 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
         }
 
         const Mesh &mesh = geometry.mesh(meshId);
-        drawMeshSection(mesh, resources);
+        drawMeshSection(m_selectedNode, mesh, resources);
 
         if (m_selectedSubMesh < mesh.subMeshes.size()) {
-            drawMaterialSection(resources, mesh.subMeshes[m_selectedSubMesh].materialId);
+            drawMaterialSection(resources, mesh.subMeshes[m_selectedSubMesh].materialId,
+                                m_selectedNode, static_cast<uint32_t>(m_selectedSubMesh));
         }
     }
 }
@@ -630,10 +757,6 @@ bool EditorUI::initialize(SDL_Window *window, VulkanContext &ctx,
                           uint32_t minImageCount, uint32_t imageCount,
                           VkQueue graphicsQueue, uint32_t graphicsQueueFamily)
 {
-    // ImGui allocates one combined image sampler set per texture it binds:
-    // the font atlas, plus one per texture preview. Previews are cached per
-    // texture ID, so MaxTextures + headroom can never be exhausted. A few
-    // thousand descriptors is kilobytes -- not worth an eviction scheme.
     constexpr uint32_t PoolSets = MaxTextures + 16;
 
     VkDescriptorPoolSize poolSize
@@ -656,6 +779,8 @@ bool EditorUI::initialize(SDL_Window *window, VulkanContext &ctx,
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();  applyTheme();
+
+    ImGuizmo::SetImGuiContext(ImGui::GetCurrentContext());
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -740,6 +865,8 @@ void EditorUI::beginFrame() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+
+    ImGuizmo::BeginFrame();
 }
 
 void EditorUI::record(VkCommandBuffer cmd)
@@ -774,9 +901,10 @@ void EditorUI::clearSelection()
 
 void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, uint32_t nodeId)
 {
-    // Re-fetched on every use rather than held: a reference taken here would
-    // dangle the moment NodeWorld's vector reallocates, and it will once
-    // creating nodes from the editor is possible.
+    if (!scene.isAlive(nodeId)) {
+        return;
+    }
+
     Node &node = scene.getNode(nodeId);
 
     const uint32_t firstChild = node.firstChildId;
@@ -787,15 +915,14 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     if (firstChild == 0) {
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
-    if (nodeId == m_selectedNode) {
+    if (m_selectionMode == SelectionMode::Node && nodeId == m_selectedNode) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    // Nodes have no name field yet. Falling back to the mesh name is enough
-    // to navigate a loaded glTF; adding std::string Node::name is the real
-    // fix and costs nothing but memory.
-    std::string label;
-    if (geometry.meshAlive(meshId)) {
+    // Node::name exists now, so an empty node and a second instance of the
+    // same mesh are finally distinguishable. Mesh name is the fallback.
+    std::string label = node.name;
+    if (label.empty() && geometry.meshAlive(meshId)) {
         label = geometry.mesh(meshId).name;
     }
     if (label.empty()) {
@@ -806,9 +933,15 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     const bool open = ImGui::TreeNodeEx(reinterpret_cast<void *>(static_cast<uintptr_t>(nodeId)),
                                         flags, "%s", label.c_str());
 
+
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        m_selectedNode = nodeId;
+        selectNode(nodeId, 0);
     }
+
+    if (const uint32_t droppedMaterial = acceptMaterialDrop()) {
+        assignMaterial(nodeId, EditorCommand::kAllSubMeshes, droppedMaterial);
+    }
+    drawNodeContextMenu(nodeId);
 
     if (open && firstChild != 0) {
         for (uint32_t child = firstChild; child != 0; ) {

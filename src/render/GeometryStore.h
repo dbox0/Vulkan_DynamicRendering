@@ -84,6 +84,12 @@ public:
 
     bool        meshAlive(uint32_t meshId) const;
     const Mesh &mesh(uint32_t meshId) const;
+
+    // Mutable access for the editor's material assignment. Does NOT bump
+    // revision(): materialId is read per frame into the RenderItem buffer and
+    // touches neither the vertex/index ranges nor any cached SubMesh pointer,
+    // so forcing a DrawItem rebuild would be pure waste.
+    Mesh       &meshMutable(uint32_t meshId);
     size_t      meshCount() const { return m_liveMeshes; }
 
     // Changes whenever a mesh is added or removed. Anything caching submesh
