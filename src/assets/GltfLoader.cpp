@@ -10,6 +10,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "Mesh.h"
+#include "TextureCache.h"
 #include "../external/tiny_gltf_v3.h"
 #include "../external/stb_image.h"
 
@@ -78,8 +79,22 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
             continue;
         }
         const tg3_str &uri = model.images[i].uri;
-        m_resources.setImageName(imageIds[i], uri.data ? std::string(uri.data, uri.len)
-                                                       : std::string());
+        if (!uri.data) {
+            continue;
+        }
+        const std::string uriStr(uri.data, uri.len);
+        m_resources.setImageName(imageIds[i], uriStr);
+
+        // Provenance, so a material using this image can be serialized later.
+        // Empty for anything outside ASSET_DIR -- a model dragged in from
+        // elsewhere on disk stays unsaveable until it is copied into the
+        // project, which is the honest answer rather than writing an absolute
+        // path into a .mat.
+        const std::string relative = m_cache.toRelative(imageDir / uriStr);
+        if (!relative.empty()) {
+            m_cache.registerImage(imageIds[i], relative,
+                                  images[i].format == VK_FORMAT_R8G8B8A8_SRGB);
+        }
     }
 
     for (const Image &image : images) {

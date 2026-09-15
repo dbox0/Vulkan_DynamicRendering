@@ -5,6 +5,7 @@
 
 #include "assets/GltfLoader.h"
 #include "assets/Mesh.h"
+#include "assets/MaterialSerializer.h"
 #include "assets/PrimitiveBuilder.h"
 #include "common/errors.h"
 #include "editor/EditorCommands.h"
@@ -16,6 +17,7 @@ Application::Application()
     , m_resources(m_ctx)
     , m_geometry(m_ctx)
     , m_renderer(m_ctx, m_swapchain, m_resources, m_geometry)
+    , m_cache(ASSET_DIR)
 {
 }
 
@@ -85,7 +87,7 @@ bool Application::initialize()
 
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
-    GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene);
+    GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene, m_cache);
     if (!loader.load(modelPath)) {
         showError("Failed to load model: " + modelPath.string());
         return false;
@@ -132,7 +134,11 @@ void Application::run()
                 // reach a model living anywhere else on disk.
                 case SDL_EVENT_DROP_FILE:
                     if (event.drop.data) {
-                        m_pendingModels.emplace_back(event.drop.data);
+                        const std::filesystem::path dropped(event.drop.data);
+                        m_pendingAssets.push_back({
+                            dropped.extension() == ".mat" ? PendingAsset::Kind::Material
+                                                          : PendingAsset::Kind::Model,
+                            dropped });
                     }
                     break;
 
@@ -197,7 +203,7 @@ void Application::run()
         // panels were iterating, and the draw list they produced has already
         // copied every string it needs.
         applyEditorCommands();
-        loadPendingModels();
+        loadPendingAssets();
 
         // Pushed in rather than pulled out: the renderer knows nothing about
         // EditorUI, so a build without an editor still compiles and runs.
@@ -310,7 +316,41 @@ void Application::applyEditorCommands()
 
         case EditorCommand::Kind::LoadModel:
         {
-            m_pendingModels.push_back(cmd.path);
+            m_pendingAssets.push_back({ PendingAsset::Kind::Model, cmd.path });
+            break;
+        }
+
+        case EditorCommand::Kind::LoadMaterial:
+        {
+            m_pendingAssets.push_back({ PendingAsset::Kind::Material, cmd.path });
+            break;
+        }
+
+        case EditorCommand::Kind::SaveMaterial:
+        {
+            if (!cmd.materialId || cmd.materialId > m_resources.materialCount()) {
+                break;
+            }
+
+            // Explicit path wins; then wherever it was loaded from; then a
+            // default under ASSET_DIR/materials. No dialog yet, which is why
+            // MaterialInfo::sourcePath exists at all.
+            std::filesystem::path path = cmd.path;
+            if (path.empty()) {
+                path = m_resources.materialInfo(cmd.materialId).sourcePath;
+            }
+            if (path.empty()) {
+                std::string name = m_resources.material(cmd.materialId).name;
+                if (name.empty()) {
+                    name = "Material " + std::to_string(cmd.materialId);
+                }
+                path = std::filesystem::path(ASSET_DIR) / "materials" / (name + ".mat");
+            }
+
+            // Read-only, so unlike a load this needs no deferral.
+            if (saveMaterial(m_resources, m_cache, cmd.materialId, path)) {
+                m_resources.setMaterialSource(cmd.materialId, path);
+            }
             break;
         }
 
@@ -348,9 +388,9 @@ void Application::applyEditorCommands()
     m_editor.clearCommands();
 }
 
-void Application::loadPendingModels()
+void Application::loadPendingAssets()
 {
-    if (m_pendingModels.empty()) {
+    if (m_pendingAssets.empty()) {
         return;
     }
 
@@ -358,10 +398,47 @@ void Application::loadPendingModels()
     // are ordered ahead of any frame submitted afterwards on the same queue,
     // and commitTextureDescriptors() only ever writes slots past the last
     // committed one -- never a slot an in-flight frame could be sampling.
-    for (const std::filesystem::path &path : m_pendingModels) {
-        loadData(path);     // reports its own failures; a bad drop is not fatal
+    //
+    // Materials share ONE upload submission for the whole batch, the way
+    // GltfLoader::uploadImages does for the images of a single file. The
+    // command buffer is opened lazily so a frame that queued only models never
+    // opens an uploader slot at all.
+    VkCommandBuffer materialUploads = nullptr;
+    bool texturesAdded = false;
+
+    for (const PendingAsset &asset : m_pendingAssets) {
+        if (asset.kind == PendingAsset::Kind::Model) {
+            loadData(asset.path);   // reports its own failures; a bad drop is not fatal
+            continue;
+        }
+
+        if (!materialUploads) {
+            materialUploads = m_ctx.beginUpload();
+            if (!materialUploads) {
+                showError("Failed to open an upload command buffer for materials");
+                break;
+            }
+        }
+
+        const uint32_t materialId =
+            loadMaterial(m_ctx, m_resources, m_cache, materialUploads, asset.path);
+        if (materialId) {
+            m_resources.setMaterialSource(materialId, asset.path);
+            texturesAdded = true;
+        }
     }
-    m_pendingModels.clear();
+
+    if (materialUploads) {
+        m_ctx.submitUpload();
+    }
+
+    // Only new texture slots need committing, and only past the last committed
+    // one -- so this cannot disturb a frame already in flight.
+    if (texturesAdded && !m_resources.commitTextureDescriptors()) {
+        showError("Failed to commit texture descriptors after loading materials");
+    }
+
+    m_pendingAssets.clear();
 }
 
 void Application::pickAt(float mouseX, float mouseY)

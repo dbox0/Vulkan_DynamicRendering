@@ -12,6 +12,7 @@ class VulkanContext;
 class ResourceStore;
 class GeometryStore;
 class Scene;
+class TextureCache;
 struct Image;
 
 // Translates a parsed glTF document into the stores. Contains no Vulkan calls
@@ -19,9 +20,14 @@ struct Image;
 class GltfLoader
 {
 public:
+    // The cache is taken so every image this loader uploads is registered
+    // against its source file. Without that, materials imported from a .gltf
+    // resolve to images with no known path and cannot be saved as .mat -- and
+    // the same PNG referenced by two files gets uploaded twice.
     GltfLoader(VulkanContext &ctx, ResourceStore &resources,
-               GeometryStore &geometry, Scene &scene)
-        : m_ctx(ctx), m_resources(resources), m_geometry(geometry), m_scene(scene) {}
+               GeometryStore &geometry, Scene &scene, TextureCache &cache)
+        : m_ctx(ctx), m_resources(resources), m_geometry(geometry), m_scene(scene),
+          m_cache(cache) {}
 
     // Loads the file and appends its content to the stores and the scene's
     // root chain. Returns false on parse or IO failure.
@@ -52,4 +58,5 @@ private:
     ResourceStore &m_resources;
     GeometryStore &m_geometry;
     Scene         &m_scene;
+    TextureCache  &m_cache;
 };

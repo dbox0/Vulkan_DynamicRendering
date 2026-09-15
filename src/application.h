@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <vector>
 #include "assets/PrimitiveBuilder.h"
+#include "assets/TextureCache.h"
 #include "editor/EditorCommands.h"
 #include "render/VulkanContext.h"
 #include "render/Swapchain.h"
@@ -39,12 +40,20 @@ private:
     // and render(), so a node created this frame is drawn this frame.
     void applyEditorCommands();
 
-    // Models queued by a window file-drop or a Project panel double-click, so
+    // Assets queued by a window file-drop or a Project panel double-click, so
     // the load happens between build() and render() rather than mid-event.
-    void loadPendingModels();
+    void loadPendingAssets();
 
-    std::vector<uint32_t>              m_orphanedMeshes;   // scratch for the delete path
-    std::vector<std::filesystem::path> m_pendingModels;
+    struct PendingAsset
+    {
+        enum class Kind : uint8_t { Model, Material };
+
+        Kind                  kind = Kind::Model;
+        std::filesystem::path path;
+    };
+
+    std::vector<uint32_t>     m_orphanedMeshes;   // scratch for the delete path
+    std::vector<PendingAsset> m_pendingAssets;
 
     static constexpr uint32_t VulkanVersion     = VK_API_VERSION_1_4;
     static constexpr size_t   MaxNodes          = 1024;
@@ -67,6 +76,10 @@ private:
     GeometryStore m_geometry;
     Scene         m_scene;
     Camera        m_camera;
+
+    // Holds no Vulkan handles of its own -- only IDs into m_resources -- so it
+    // needs nothing in shutdown().
+    TextureCache  m_cache;
     Renderer      m_renderer;
     EditorUI m_editor;
 };

@@ -26,7 +26,9 @@ struct EditorCommand
         DuplicateNode,     // nodeId
         AssignMaterial,    // nodeId, subMesh, materialId
         ReparentNode,      // nodeId, parentId
-        LoadModel          // path
+        LoadModel,         // path
+        SaveMaterial,      // materialId, path (empty -> MaterialInfo::sourcePath)
+        LoadMaterial       // path
     };
 
     // subMesh sentinel: retarget every submesh of the node's mesh.
@@ -40,7 +42,7 @@ struct EditorCommand
     uint32_t subMesh    = kAllSubMeshes;
     uint32_t materialId = 0;
 
-    // Only LoadModel uses this. A path per command is a few dozen bytes on a
+    // LoadModel, LoadMaterial and SaveMaterial use this. A path per command is a few dozen bytes on a
     // vector that holds a handful of entries for one frame -- not worth a
     // variant to avoid.
     std::filesystem::path path;

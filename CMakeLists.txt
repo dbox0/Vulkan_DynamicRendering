@@ -14,6 +14,11 @@ FetchContent_Declare(imgui
         GIT_TAG        v1.91.9-docking)
 FetchContent_MakeAvailable(imgui)
 
+FetchContent_Declare(json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG        v3.12.0)
+FetchContent_MakeAvailable(json)
+
 add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -94,12 +99,16 @@ add_executable(vulkanapp
         src/engine/components/MeshComponent.cpp
         src/engine/components/MeshComponent.h
         src/render/GpuShared.h
-        src/render/GpuShared.h
         src/assets/Material.h
         src/assets/Mesh.h
         src/render/Uploader.h
         src/render/Uploader.cpp
         src/render/RangeAllocator.h
+        src/assets/TextureCache.h
+        src/assets/TextureCache.cpp
+        src/assets/MaterialSerializer.h
+        src/assets/MaterialSerializer.cpp
+
 )
 
 # For MSVC, you often need the 'latest' flag specifically
@@ -112,7 +121,8 @@ target_link_libraries(vulkanapp PRIVATE
         SDL3::SDL3
         glm::glm
         imgui
-        imguizmo)
+        imguizmo
+        nlohmann_json::nlohmann_json)
 
 target_compile_definitions(vulkanapp PRIVATE
         SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/"

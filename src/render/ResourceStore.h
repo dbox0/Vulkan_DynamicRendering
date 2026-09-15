@@ -58,6 +58,17 @@ public:
         uint32_t samplerId = 0;
     };
 
+    // Where a material came from and whether it has been edited since. Kept
+    // parallel to m_materials rather than folded into Material, because
+    // Material is the authoring payload toGpu() packs and saveMaterial()
+    // writes -- where it came from is a different concern, and keeping it out
+    // means a Material value stays cheap to copy (the inspector edits one).
+    struct MaterialInfo
+    {
+        std::filesystem::path sourcePath;   // empty = created in-editor, never saved
+        bool dirty = false;
+    };
+
     bool initialize();          // descriptors + material buffer + defaults
     void shutdown();
 
@@ -115,6 +126,21 @@ public:
 
     const Material &material(uint32_t materialId) const { return m_materials[materialId - 1]; }
     size_t materialCount() const { return m_materials.size(); }
+
+    const MaterialInfo &materialInfo(uint32_t materialId) const
+    {
+        return m_materialInfos[materialId - 1];
+    }
+
+    // Called after a successful save or load. Clears dirty: the file on disk
+    // now matches what is in memory.
+    void setMaterialSource(uint32_t materialId, std::filesystem::path path)
+    {
+        if (materialId && materialId <= m_materialInfos.size()) {
+            m_materialInfos[materialId - 1].sourcePath = std::move(path);
+            m_materialInfos[materialId - 1].dirty = false;
+        }
+    }
     uint64_t materialBufferAddress() const { return m_materialBuffer.deviceAddress; }
 
 
@@ -167,6 +193,7 @@ private:
     std::vector<VkSampler> m_samplers;
     std::vector<Texture>   m_textures;
     std::vector<Material>  m_materials;   // CPU mirror, for the inspector
+    std::vector<MaterialInfo> m_materialInfos;  // parallel to m_materials
     std::vector<GPUBuffer> m_buffers;
 
     uint32_t m_whiteImageId     = 0;

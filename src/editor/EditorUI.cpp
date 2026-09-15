@@ -504,8 +504,13 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
                             cmd.kind = EditorCommand::Kind::LoadModel;
                             cmd.path = entry.path();
                             m_commands.push_back(cmd);
+                        } else if (ext == ".mat") {
+                            EditorCommand cmd;
+                            cmd.kind = EditorCommand::Kind::LoadMaterial;
+                            cmd.path = entry.path();
+                            m_commands.push_back(cmd);
                         }
-                        // TODO: materials and textures
+                        // TODO: textures
                     }
                 }
             }

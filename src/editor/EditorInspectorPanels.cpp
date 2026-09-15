@@ -282,8 +282,6 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
 
 
     bool changed = false;
-    const bool isEngineDefault = (id == resources.defaultMaterialId());
-    ImGui::BeginDisabled(isEngineDefault);
 
     // A swatch rather than the label: Text submits no interactive item, so a
     // drag source on it would need SourceAllowNullID and would then collide
@@ -300,6 +298,31 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     ImGui::TextUnformatted(mat.name.empty() ? "(unnamed)" : mat.name.c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("#%u", id);
+
+    // The engine default is regenerated at startup and has no file on disk, so
+    // it gets no save button -- writing one would produce a .mat that nothing
+    // ever loads.
+    const bool isEngineDefault = (id == resources.defaultMaterialId());
+    const ResourceStore::MaterialInfo &info = resources.materialInfo(id);
+
+    if (info.dirty && !isEngineDefault) {
+        ImGui::SameLine();
+        ImGui::TextColored(DimText, "*");
+    }
+    if (!isEngineDefault) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(info.sourcePath.empty() ? "Save As" : "Save")) {
+            EditorCommand save;
+            save.kind       = EditorCommand::Kind::SaveMaterial;
+            save.materialId = id;
+            m_commands.push_back(save);
+        }
+        if (!info.sourcePath.empty() && ImGui::BeginItemTooltip()) {
+            ImGui::TextUnformatted(info.sourcePath.string().c_str());
+            ImGui::EndTooltip();
+        }
+    }
+
     if (isDefault) {
         ImGui::TextColored(DimText, "Engine default -- used by every submesh without a material");
     }
@@ -311,6 +334,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
 
     // ---- surface ------------------------------------------------------------
     ImGui::SeparatorText("Surface");
+    ImGui::BeginDisabled(isDefault);
     beginProperties("mat_surface");
     {
         propertyRow("Alpha");

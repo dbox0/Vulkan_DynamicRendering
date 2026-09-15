@@ -255,9 +255,11 @@ bool ResourceStore::createMaterialBuffer()
     }
     m_materialPtr = static_cast<GpuMaterial *>(mapped);
 
-    // Reserved so the CPU mirror never reallocates; material() hands out
-    // references and the editor holds them across a frame.
+    // Reserved so the CPU mirror never reallocates; material() and
+    // materialInfo() hand out references and the editor holds them across a
+    // frame.
     m_materials.reserve(MaxMaterials);
+    m_materialInfos.reserve(MaxMaterials);
     return true;
 }
 
@@ -313,6 +315,7 @@ uint32_t ResourceStore::addMaterial(const Material &material)
 
     const size_t index = m_materials.size();
     m_materials.push_back(material);
+    m_materialInfos.emplace_back();
     m_materialPtr[index] = toGpu(material);
 
     // No-op on coherent memory, required if VMA hands back non-coherent.
@@ -331,6 +334,7 @@ bool ResourceStore::updateMaterial(uint32_t materialId, const Material &material
 
     const size_t index = materialId - 1;
     m_materials[index] = material;
+    m_materialInfos[index].dirty = true;
     m_materialPtr[index] = toGpu(material);
 
     vmaFlushAllocation(m_ctx.allocator(), m_materialBuffer.allocation,

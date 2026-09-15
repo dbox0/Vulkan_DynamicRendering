@@ -11,7 +11,7 @@ class TextureCache;
 // .mat read/write. Free functions rather than ResourceStore methods, for the
 // same reason GltfLoader is its own class: ResourceStore knows about GPU
 // resources and nothing about the filesystem, and that is worth keeping.
-
+//
 // FORMAT (version 1)
 //   Plain JSON. Texture slots are { path, srgb, wrap }, path relative to the
 //   asset root with forward slashes. Factors are glTF-convention linear.
@@ -34,18 +34,17 @@ class TextureCache;
 //       "normal":    { "path": "textures/metal_normal.png", "srgb": false, "wrap": "clamp" }
 //     }
 //   }
-
+//
 // "version" is there from the first file written. It costs one line now and
 // saves hand-editing every .mat on disk the first time a field changes.
-
-// A slot that is absent means "no map" -- it resolves to the white default
-// a slot whose file fails to load gets the error
-// texture -> "missing" and "broken" have to look different.
+//
+// A slot that is absent means "no map" -- it resolves to the white default,
+// NOT the error texture. Only a slot whose file fails to load gets the error
+// texture, because "missing" and "broken" have to look different.
 
 // Overwrites `file`. Returns false and reports on IO failure, or when a
 // texture on the material has no known source path -- see registerImage() in
 // TextureCache for why that happens and how to stop it.
-
 bool saveMaterial(const ResourceStore &resources, const TextureCache &cache,
                   uint32_t materialId, const std::filesystem::path &file);
 
