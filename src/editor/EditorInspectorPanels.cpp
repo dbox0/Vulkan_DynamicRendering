@@ -253,6 +253,8 @@ void EditorUI::drawMeshSection(uint32_t nodeId, const Mesh &mesh, const Resource
 void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId,
                                    uint32_t nodeId, uint32_t subMesh)
 {
+
+
     // Not an early return on the header any more: a collapsed header still has
     // to accept a drop, and BeginDragDropTarget only sees the item submitted
     // immediately before it.
@@ -277,7 +279,11 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
 
     // Edit a copy; push it back once, only if something changed.
     Material mat = resources.material(id);
+
+
     bool changed = false;
+    const bool isEngineDefault = (id == resources.defaultMaterialId());
+    ImGui::BeginDisabled(isEngineDefault);
 
     // A swatch rather than the label: Text submits no interactive item, so a
     // drag source on it would need SourceAllowNullID and would then collide
@@ -352,7 +358,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
         changed |= ImGui::SliderFloat("##roughness", &mat.roughnessFactor, 0.0f, 1.0f);
     }
     endProperties();
-
+    if (!isEngineDefault) {
     // ---- normal -------------------------------------------------------------
     ImGui::SeparatorText("Normal");
     beginProperties("mat_normal");
@@ -385,7 +391,8 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
                                     0.05f, 0.0f, 1000.0f, "%.2f");
     }
     endProperties();
-
+    }
+    ImGui::EndDisabled();
     if (changed) {
         resources.updateMaterial(id, mat);
     }
