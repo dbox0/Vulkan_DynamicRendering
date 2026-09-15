@@ -61,6 +61,7 @@ public:
 
     uint32_t selectedNode() const { return m_selectedNode; }
     void selectNode(uint32_t nodeId, uint32_t subMeshIndex = 0);
+    void selectMaterial(uint32_t materialId);
     void clearSelection();
 
 
@@ -85,6 +86,21 @@ private:
 
     enum class ProjectTab { Assets, Materials };
     ProjectTab m_projectTab = ProjectTab::Assets;
+
+    // List vs grid for both Project tabs. Driven by m_thumbnailSize rather
+    // than a separate toggle: dragging the zoom slider to its minimum IS list
+    // view, which is one control instead of two.
+    //
+    // ProjectItem itself lives in EditorUI.cpp, not here. It holds an
+    // ImTextureID and an ImVec4, and this header deliberately does not include
+    // imgui.h -- same reason m_gizmoOperation is an int.
+    enum class ProjectView : uint8_t { List, Grid };
+    ProjectView m_projectView   = ProjectView::Grid;
+    float       m_thumbnailSize = 64.0f;
+
+    // Rebuilt every frame from the current directory. ProjectItem::payload is
+    // an index into this, so the two must not get out of step.
+    std::vector<std::filesystem::path> m_assetEntries;
 
     // We will initialize this in the cpp file
     std::filesystem::path m_currentAssetPath;
@@ -116,6 +132,19 @@ private:
     void handleShortcuts();
 
     void drawProjectPanel(ResourceStore &resources);
+    void drawAssetsTab();
+    void drawMaterialsTab(ResourceStore &resources);
+
+    // Right-click on empty space in either tab.
+    void drawAssetContextMenu();
+    void drawMaterialsContextMenu();
+
+    // EditorInteraction.cpp. Image files only: a drag that cannot be dropped
+    // anywhere is worse than no drag at all.
+    void beginAssetDrag(const std::filesystem::path &path);
+
+    // Returns true and fills outPath when a texture file was dropped here.
+    bool acceptTextureDrop(std::filesystem::path &outPath);
 
     // Returns true while a filter is active.
     bool searchBar(const char *id, std::string &filter);
@@ -134,8 +163,11 @@ private:
     float m_snapTranslate  = 0.25f;
     float m_snapRotate     = 15.0f;
     float m_snapScale      = 0.1f;
-    void textureSlot(const char *label, uint32_t textureId, bool expectSrgb,
-                     const ResourceStore &resources);
+    // The slot decides the expected colour space, so it is no longer a
+    // separate argument that could disagree with it. materialId is needed
+    // because the well is a drop target now.
+    void textureSlot(const char *label, TextureSlot slot, uint32_t materialId,
+                     uint32_t textureId, const ResourceStore &resources);
     VkDescriptorSet texturePreview(const ResourceStore &resources, uint32_t textureId);
 
     VkDescriptorPool m_pool = nullptr;

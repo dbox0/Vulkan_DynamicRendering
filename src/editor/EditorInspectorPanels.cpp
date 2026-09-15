@@ -109,9 +109,11 @@ VkDescriptorSet EditorUI::texturePreview(const ResourceStore &resources, uint32_
     return set;
 }
 
-void EditorUI::textureSlot(const char *label, uint32_t textureId, bool expectSrgb,
-                           const ResourceStore &resources)
+void EditorUI::textureSlot(const char *label, TextureSlot slot, uint32_t materialId,
+                           uint32_t textureId, const ResourceStore &resources)
 {
+    const bool expectSrgb = slotIsSrgb(slot);
+
     propertyRow(label, false);
     ImGui::PushID(label);
 
@@ -121,14 +123,27 @@ void EditorUI::textureSlot(const char *label, uint32_t textureId, bool expectSrg
 
     // The well is drawn for empty slots too, so every row lines up.
     drawList->AddRectFilled(origin, boxMax, ImGui::GetColorU32(ImGuiCol_FrameBg), 3.0f);
-    ImGui::Dummy(ImVec2(ThumbSize, ThumbSize));        // hover target for the tooltip
+    ImGui::Dummy(ImVec2(ThumbSize, ThumbSize));        // hover target and drop target
+
+    // Immediately after the Dummy, so the well itself is what accepts the
+    // drop. The command carries the SLOT, not a colour space: whether the
+    // file is decoded as sRGB is decided here, by which map it lands in.
+    std::filesystem::path dropped;
+    if (acceptTextureDrop(dropped)) {
+        EditorCommand cmd;
+        cmd.kind        = EditorCommand::Kind::AssignTexture;
+        cmd.materialId  = materialId;
+        cmd.textureSlot = slot;
+        cmd.path        = dropped;
+        m_commands.push_back(cmd);
+    }
 
     const bool hasTexture = textureId != 0 && textureId <= resources.textureCount();
     if (!hasTexture) {
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::TextDisabled("None");
-        ImGui::TextDisabled("factor only");
+        ImGui::TextDisabled("drop an image here");
         ImGui::EndGroup();
         ImGui::PopID();
         return;
@@ -169,6 +184,16 @@ void EditorUI::textureSlot(const char *label, uint32_t textureId, bool expectSrg
     // make it loud instead.
     if (srgb != expectSrgb) {
         ImGui::TextColored(WarnText, "expected %s", expectSrgb ? "sRGB" : "linear");
+    }
+
+    // An empty path is the clear: the slot goes back to 0, which the shader
+    // already maps to the white default rather than the error texture.
+    if (ImGui::SmallButton("Clear")) {
+        EditorCommand cmd;
+        cmd.kind        = EditorCommand::Kind::AssignTexture;
+        cmd.materialId  = materialId;
+        cmd.textureSlot = slot;
+        m_commands.push_back(cmd);
     }
     ImGui::EndGroup();
 
@@ -359,7 +384,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     ImGui::SeparatorText("Base Color");
     beginProperties("mat_base");
     {
-        textureSlot("Texture", mat.baseColorTexture, true, resources);
+        textureSlot("Texture", TextureSlot::BaseColor, id, mat.baseColorTexture, resources);
         propertyRow("Factor");
         changed |= ImGui::ColorEdit4("##basecolor", &mat.baseColorFactor.x,
                                      colorFlags | ImGuiColorEditFlags_AlphaBar);
@@ -370,7 +395,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     ImGui::SeparatorText("Metallic / Roughness");
     beginProperties("mat_mr");
     {
-        textureSlot("Texture", mat.metallicRoughnessTexture, false, resources);
+        textureSlot("Texture", TextureSlot::MetallicRoughness, id, mat.metallicRoughnessTexture, resources);
         if (mat.metallicRoughnessTexture) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(1);
@@ -387,7 +412,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     ImGui::SeparatorText("Normal");
     beginProperties("mat_normal");
     {
-        textureSlot("Texture", mat.normalTexture, false, resources);
+        textureSlot("Texture", TextureSlot::Normal, id, mat.normalTexture, resources);
         propertyRow("Scale");
         changed |= ImGui::DragFloat("##normalscale", &mat.normalScale, 0.01f, -4.0f, 4.0f, "%.2f");
     }
@@ -397,7 +422,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     ImGui::SeparatorText("Occlusion");
     beginProperties("mat_ao");
     {
-        textureSlot("Texture", mat.occlusionTexture, false, resources);
+        textureSlot("Texture", TextureSlot::Occlusion, id, mat.occlusionTexture, resources);
         propertyRow("Strength");
         changed |= ImGui::SliderFloat("##aostrength", &mat.occlusionStrength, 0.0f, 1.0f);
     }
@@ -407,7 +432,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     ImGui::SeparatorText("Emissive");
     beginProperties("mat_emissive");
     {
-        textureSlot("Texture", mat.emissiveTexture, true, resources);
+        textureSlot("Texture", TextureSlot::Emissive, id, mat.emissiveTexture, resources);
         propertyRow("Color");
         changed |= ImGui::ColorEdit3("##emissive", &mat.emissiveFactor.x, colorFlags);
         propertyRow("Strength");

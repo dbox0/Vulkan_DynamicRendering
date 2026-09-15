@@ -16,6 +16,26 @@
 //     to keep that is to not need write access, rather than to widen it.
 //   * Creating a primitive owes a flushUploads(). Batching every creation in a
 //     frame into one submit falls out of this for free.
+// Which map on a material a texture is being assigned to.
+//
+// The slot -- not the file -- decides colour space. A PNG carries no such
+// information, which is why GltfLoader has to infer it from the materials
+// referencing an image, and why a drag-and-drop assignment has to carry the
+// slot rather than just a path.
+enum class TextureSlot : uint8_t
+{
+    BaseColor,
+    MetallicRoughness,
+    Normal,
+    Occlusion,
+    Emissive
+};
+
+constexpr bool slotIsSrgb(TextureSlot slot)
+{
+    return slot == TextureSlot::BaseColor || slot == TextureSlot::Emissive;
+}
+
 struct EditorCommand
 {
     enum class Kind : uint8_t
@@ -28,7 +48,10 @@ struct EditorCommand
         ReparentNode,      // nodeId, parentId
         LoadModel,         // path
         SaveMaterial,      // materialId, path (empty -> MaterialInfo::sourcePath)
-        LoadMaterial       // path
+        LoadMaterial,      // path
+        CreateMaterial,    // path (empty -> in memory only), nodeId + subMesh optional
+        CreateDirectory,   // path (Application uniquifies)
+        AssignTexture      // materialId, textureSlot, path (empty -> clear the slot)
     };
 
     // subMesh sentinel: retarget every submesh of the node's mesh.
@@ -41,6 +64,8 @@ struct EditorCommand
     uint32_t parentId   = 0;
     uint32_t subMesh    = kAllSubMeshes;
     uint32_t materialId = 0;
+
+    TextureSlot textureSlot = TextureSlot::BaseColor;
 
     // LoadModel, LoadMaterial and SaveMaterial use this. A path per command is a few dozen bytes on a
     // vector that holds a handful of entries for one frame -- not worth a

@@ -46,10 +46,14 @@ private:
 
     struct PendingAsset
     {
-        enum class Kind : uint8_t { Model, Material };
+        enum class Kind : uint8_t { Model, Material, Texture };
 
         Kind                  kind = Kind::Model;
         std::filesystem::path path;
+
+        // Texture only. An empty path with a valid materialId is a clear.
+        uint32_t    materialId = 0;
+        TextureSlot slot       = TextureSlot::BaseColor;
     };
 
     std::vector<uint32_t>     m_orphanedMeshes;   // scratch for the delete path

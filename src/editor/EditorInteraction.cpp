@@ -32,6 +32,43 @@ namespace
 {
     // One payload type for materials, so every target accepts every source.
     constexpr const char *kMaterialPayload = "EDITOR_MATERIAL";
+
+    // A filesystem path, as bytes including the terminator. ImGui copies the
+    // payload into its own buffer, so a pointer into a temporary would be
+    // fine -- but the string itself has to be the payload, not a pointer to
+    // it, because the source's storage is gone by the time the drop lands.
+    constexpr const char *kAssetPathPayload = "EDITOR_ASSET_PATH";
+}
+
+void EditorUI::beginAssetDrag(const std::filesystem::path &path)
+{
+    if (!ImGui::BeginDragDropSource()) {
+        return;
+    }
+
+    const std::string text = path.string();
+    ImGui::SetDragDropPayload(kAssetPathPayload, text.c_str(), text.size() + 1);
+
+    // Filename rather than the full path: the preview follows the cursor and a
+    // long absolute path covers the target you are aiming at.
+    ImGui::TextUnformatted(path.filename().string().c_str());
+    ImGui::EndDragDropSource();
+}
+
+bool EditorUI::acceptTextureDrop(std::filesystem::path &outPath)
+{
+    if (!ImGui::BeginDragDropTarget()) {
+        return false;
+    }
+
+    bool accepted = false;
+    if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kAssetPathPayload)) {
+        outPath  = std::filesystem::path(static_cast<const char *>(payload->Data));
+        accepted = true;
+    }
+
+    ImGui::EndDragDropTarget();
+    return accepted;
 }
 
 // ---------------------------------------------------------------------------

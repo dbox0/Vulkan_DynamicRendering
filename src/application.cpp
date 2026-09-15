@@ -11,6 +11,33 @@
 #include "editor/EditorCommands.h"
 #include "scene/Geometry/Node.h"
 
+namespace
+{
+    // "New Material.mat" -> "New Material 1.mat" when taken. Creating a second
+    // folder should not silently do nothing, and overwriting an existing .mat
+    // because the default name collided would be worse.
+    std::filesystem::path uniquePath(const std::filesystem::path &desired)
+    {
+        std::error_code ec;
+        if (!std::filesystem::exists(desired, ec)) {
+            return desired;
+        }
+
+        const std::filesystem::path parent    = desired.parent_path();
+        const std::string           stem      = desired.stem().string();
+        const std::string           extension = desired.extension().string();
+
+        for (int suffix = 1; suffix < 1000; ++suffix) {
+            std::filesystem::path candidate =
+                parent / (stem + " " + std::to_string(suffix) + extension);
+            if (!std::filesystem::exists(candidate, ec)) {
+                return candidate;
+            }
+        }
+        return desired;
+    }
+}
+
 Application::Application()
 
     : m_swapchain(m_ctx)
@@ -326,6 +353,66 @@ void Application::applyEditorCommands()
             break;
         }
 
+        case EditorCommand::Kind::CreateMaterial:
+        {
+            // A fresh Material, not a copy of anything. The struct defaults
+            // are the glTF ones -- metallic 1, roughness 1 -- which renders
+            // as a dark mirror and reads as "broken" rather than "new". A
+            // dielectric at half roughness is what you actually want to start
+            // from, so that is what the editor hands you.
+            Material mat;
+            mat.metallicFactor  = 0.0f;
+            mat.roughnessFactor = 0.5f;
+            mat.name = cmd.path.empty() ? "New Material" : cmd.path.stem().string();
+
+            const uint32_t materialId = m_resources.addMaterial(mat);
+            if (!materialId) {
+                break;      // addMaterial already reported the budget
+            }
+
+            // Written straight to disk when it was created from the Assets
+            // tab, so the file the user just made appears in the folder they
+            // made it in. Created from the Materials tab it stays in memory
+            // and the inspector offers Save As.
+            if (!cmd.path.empty()) {
+                const std::filesystem::path path = uniquePath(cmd.path);
+                if (saveMaterial(m_resources, m_cache, materialId, path)) {
+                    m_resources.setMaterialSource(materialId, path);
+                }
+            }
+
+            m_editor.selectMaterial(materialId);
+            break;
+        }
+
+        case EditorCommand::Kind::CreateDirectory:
+        {
+            std::error_code ec;
+            std::filesystem::create_directory(uniquePath(cmd.path), ec);
+            if (ec) {
+                showError("Failed to create folder: " + ec.message());
+            }
+            break;
+        }
+
+        case EditorCommand::Kind::AssignTexture:
+        {
+            if (!cmd.materialId || cmd.materialId > m_resources.materialCount()) {
+                break;
+            }
+
+            // Deferred even when it is only a clear, so assignment order is
+            // the order the user made them in -- a drop followed by a clear in
+            // the same frame must not resolve backwards.
+            PendingAsset pending;
+            pending.kind       = PendingAsset::Kind::Texture;
+            pending.path       = cmd.path;
+            pending.materialId = cmd.materialId;
+            pending.slot       = cmd.textureSlot;
+            m_pendingAssets.push_back(std::move(pending));
+            break;
+        }
+
         case EditorCommand::Kind::SaveMaterial:
         {
             if (!cmd.materialId || cmd.materialId > m_resources.materialCount()) {
@@ -409,6 +496,48 @@ void Application::loadPendingAssets()
     for (const PendingAsset &asset : m_pendingAssets) {
         if (asset.kind == PendingAsset::Kind::Model) {
             loadData(asset.path);   // reports its own failures; a bad drop is not fatal
+            continue;
+        }
+
+        if (asset.kind == PendingAsset::Kind::Texture) {
+            uint32_t textureId = 0;
+
+            if (!asset.path.empty()) {
+                // Outside ASSET_DIR there is no portable way to record the
+                // reference, so the material could never be saved with it.
+                // Refuse at the point of assignment rather than silently
+                // producing an unsaveable material.
+                const std::string relative = m_cache.toRelative(asset.path);
+                if (relative.empty()) {
+                    showError("Textures must live under the asset folder: " + asset.path.string());
+                    continue;
+                }
+
+                if (!materialUploads) {
+                    materialUploads = m_ctx.beginUpload();
+                    if (!materialUploads) {
+                        showError("Failed to open an upload command buffer for textures");
+                        break;
+                    }
+                }
+
+                textureId = m_cache.acquireTexture(m_ctx, m_resources, materialUploads,
+                                                   relative, slotIsSrgb(asset.slot));
+                if (!textureId) {
+                    continue;   // acquireTexture reported it
+                }
+                texturesAdded = true;
+            }
+
+            Material mat = m_resources.material(asset.materialId);
+            switch (asset.slot) {
+            case TextureSlot::BaseColor:         mat.baseColorTexture         = textureId; break;
+            case TextureSlot::MetallicRoughness: mat.metallicRoughnessTexture = textureId; break;
+            case TextureSlot::Normal:            mat.normalTexture            = textureId; break;
+            case TextureSlot::Occlusion:         mat.occlusionTexture         = textureId; break;
+            case TextureSlot::Emissive:          mat.emissiveTexture          = textureId; break;
+            }
+            m_resources.updateMaterial(asset.materialId, mat);
             continue;
         }
 

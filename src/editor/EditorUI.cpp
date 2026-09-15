@@ -23,7 +23,10 @@
 #include <ImGuizmo.h>
 #include <glm/gtx/euler_angles.hpp>
 
+#include <algorithm>
 #include <cctype>
+#include <functional>
+#include <vector>
 #include <imgui_internal.h>     // for PushMultiItemsWidths
 #include <glm/vec3.hpp>
 
@@ -440,9 +443,168 @@ bool EditorUI::searchBar(const char *id, std::string &filter)
     return !filter.empty();
 }
 
+namespace
+{
+    // Exactly the shape the Project panel needs to draw one cell, in either
+    // view, for either tab. Lives here rather than in EditorUI.h because of
+    // the ImTextureID / ImVec4: the header stays imgui-free.
+    struct ProjectItem
+    {
+        std::string label;
+        ImTextureID thumbnail = 0;                      // 0 -> use colour
+        ImVec4      color{ 0.3f, 0.3f, 0.32f, 1.0f };
+        const char *badge = nullptr;                    // "DIR", "GLTF", "MAT"
+        uint32_t    payload = 0;                        // material id, or index into the entry list
+    };
+
+    // Below this the grid stops making sense -- the label is wider than the
+    // tile and everything wraps. That is where list view takes over.
+    constexpr float ListThreshold = 26.0f;
+
+    struct ProjectItemActions
+    {
+        std::function<bool(const ProjectItem &)> isSelected;
+        std::function<void(const ProjectItem &)> onClick;
+        std::function<void(const ProjectItem &)> onActivate;     // double click
+        std::function<void(const ProjectItem &)> onDragSource;   // called right after the widget
+    };
+
+    void drawProjectItemsGrid(const std::vector<ProjectItem> &items, float thumbSize,
+                              const ProjectItemActions &actions)
+    {
+        const float cellSize = thumbSize + 16.0f;
+        const float width    = ImGui::GetContentRegionAvail().x;
+        const int   columns  = std::max(1, static_cast<int>(width / cellSize));
+
+        if (!ImGui::BeginTable("ProjectGrid", columns)) {
+            return;
+        }
+
+        for (const ProjectItem &item : items) {
+            ImGui::TableNextColumn();
+            ImGui::PushID(static_cast<int>(item.payload));
+
+            const bool   selected = actions.isSelected && actions.isSelected(item);
+            const ImVec2 origin   = ImGui::GetCursorScreenPos();
+
+            if (selected) {
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(origin.x - 4.0f, origin.y - 4.0f),
+                    ImVec2(origin.x + thumbSize + 4.0f,
+                           origin.y + thumbSize + ImGui::GetTextLineHeight() * 2.0f),
+                    ImGui::GetColorU32(ImGuiCol_ButtonActive), 4.0f);
+            }
+
+            bool clicked = false;
+            if (item.thumbnail) {
+                clicked = ImGui::ImageButton("##thumb", item.thumbnail,
+                                             ImVec2(thumbSize, thumbSize));
+            } else {
+                // NoDragDrop, or ImGui's own colour payload competes with the
+                // asset payload we attach below.
+                clicked = ImGui::ColorButton("##thumb", item.color,
+                                             ImGuiColorEditFlags_NoTooltip |
+                                             ImGuiColorEditFlags_NoDragDrop,
+                                             ImVec2(thumbSize, thumbSize));
+            }
+
+            // Must follow the widget immediately: BeginDragDropSource with
+            // default flags binds to the last item submitted.
+            if (actions.onDragSource) {
+                actions.onDragSource(item);
+            }
+
+            const bool activated = ImGui::IsItemHovered() &&
+                                   ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+
+            if (item.badge && !item.thumbnail) {
+                const ImVec2 textSize = ImGui::CalcTextSize(item.badge);
+                ImGui::GetWindowDrawList()->AddText(
+                    ImVec2(origin.x + (thumbSize - textSize.x) * 0.5f,
+                           origin.y + (thumbSize - textSize.y) * 0.5f),
+                    ImGui::GetColorU32(ImGuiCol_Text), item.badge);
+            }
+
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + thumbSize);
+            ImGui::TextUnformatted(item.label.c_str());
+            ImGui::PopTextWrapPos();
+
+            if (activated && actions.onActivate) {
+                actions.onActivate(item);
+            } else if (clicked && actions.onClick) {
+                actions.onClick(item);
+            }
+
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    void drawProjectItemsList(const std::vector<ProjectItem> &items,
+                              const ProjectItemActions &actions)
+    {
+        const float rowHeight = ImGui::GetTextLineHeight();
+
+        for (const ProjectItem &item : items) {
+            ImGui::PushID(static_cast<int>(item.payload));
+
+            if (item.thumbnail) {
+                ImGui::Image(item.thumbnail, ImVec2(rowHeight, rowHeight));
+            } else {
+                ImGui::ColorButton("##swatch", item.color,
+                                   ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
+                                   ImVec2(rowHeight, rowHeight));
+            }
+            ImGui::SameLine();
+
+            std::string row;
+            if (item.badge) {
+                row += "[";
+                row += item.badge;
+                row += "] ";
+            }
+            row += item.label;
+
+            const bool selected = actions.isSelected && actions.isSelected(item);
+            const bool clicked  = ImGui::Selectable(row.c_str(), selected,
+                                                    ImGuiSelectableFlags_AllowDoubleClick);
+
+            if (actions.onDragSource) {
+                actions.onDragSource(item);
+            }
+
+            if (clicked) {
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    if (actions.onActivate) {
+                        actions.onActivate(item);
+                    }
+                } else if (actions.onClick) {
+                    actions.onClick(item);
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+
+    // Lowercased extension, so ".PNG" and ".png" classify the same.
+    std::string lowerExtension(const std::filesystem::path &path)
+    {
+        std::string ext = path.extension().string();
+        for (char &c : ext) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return ext;
+    }
+
+    bool isImageExtension(const std::string &ext)
+    {
+        return ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
+               ext == ".tga" || ext == ".bmp";
+    }
+}
+
 void EditorUI::drawProjectPanel(ResourceStore &resources)
 {
-    // Draw the Menu Bar acting as Tabs
     if (ImGui::BeginMenuBar()) {
         if (ImGui::MenuItem("Assets", nullptr, m_projectTab == ProjectTab::Assets)) {
             m_projectTab = ProjectTab::Assets;
@@ -450,166 +612,242 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
         if (ImGui::MenuItem("Materials", nullptr, m_projectTab == ProjectTab::Materials)) {
             m_projectTab = ProjectTab::Materials;
         }
+
+        // Right-aligned, and it is the view switch as well as the zoom: at the
+        // minimum the tiles would be smaller than their own labels, so that end
+        // of the slider is list view.
+        constexpr float sliderWidth = 110.0f;
+        const float     sliderX     = ImGui::GetContentRegionMax().x - sliderWidth;
+        if (sliderX > ImGui::GetCursorPosX()) {
+            ImGui::SameLine(sliderX);
+            ImGui::SetNextItemWidth(sliderWidth);
+            ImGui::SliderFloat("##zoom", &m_thumbnailSize, 16.0f, 128.0f, "");
+            if (ImGui::BeginItemTooltip()) {
+                ImGui::TextUnformatted("Thumbnail size -- drag fully left for list view");
+                ImGui::EndTooltip();
+            }
+        }
+        m_projectView = m_thumbnailSize <= ListThreshold ? ProjectView::List : ProjectView::Grid;
+
         ImGui::EndMenuBar();
     }
 
-    // Tab 1: File Browser
     if (m_projectTab == ProjectTab::Assets) {
+        drawAssetsTab();
+    } else {
+        drawMaterialsTab(resources);
+    }
+}
 
-        // Navigation bar
-        ImGui::TextDisabled("Current Path:");
-        ImGui::SameLine();
-        ImGui::TextUnformatted(m_currentAssetPath.string().c_str());
+void EditorUI::drawAssetsTab()
+{
+    ImGui::TextDisabled("Current Path:");
+    ImGui::SameLine();
+    ImGui::TextUnformatted(m_currentAssetPath.string().c_str());
 
-        // Back button (disable if we are at the root ASSET_DIR)
-        std::filesystem::path rootPath = std::filesystem::absolute(ASSET_DIR);
-        std::filesystem::path currentAbs = std::filesystem::absolute(m_currentAssetPath);
+    const std::filesystem::path rootPath   = std::filesystem::absolute(ASSET_DIR);
+    const std::filesystem::path currentAbs = std::filesystem::absolute(m_currentAssetPath);
 
-        if (currentAbs != rootPath) {
-            if (ImGui::Button("<- Up")) {
-                m_currentAssetPath = m_currentAssetPath.parent_path();
-            }
-            ImGui::Separator();
+    if (currentAbs != rootPath) {
+        if (ImGui::Button("<- Up")) {
+            m_currentAssetPath = m_currentAssetPath.parent_path();
         }
-
-        const bool filtering = searchBar("assetsearch", m_assetFilter);
         ImGui::Separator();
-
-        // List files and directories
-        ImGui::BeginChild("AssetList");
-        std::error_code ec;
-        size_t shown = 0;
-        for (const auto& entry : std::filesystem::directory_iterator(m_currentAssetPath, ec)) {
-            const bool isDir = entry.is_directory();
-            std::string filename = entry.path().filename().string();
-            if (!matchesFilter(filename, m_assetFilter)) {
-                continue;
-            }
-            ++shown;
-
-            // Basic icons
-            std::string label = (isDir ? "[DIR]  " : "[FILE] ") + filename;
-            if (ImGui::Selectable(label.c_str(), false,
-                                  ImGuiSelectableFlags_AllowDoubleClick)) {
-                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                    if (isDir) {
-                        m_currentAssetPath = entry.path();
-                    } else {
-                        std::string ext = entry.path().extension().string();
-                        for (char &c : ext) {
-                            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                        }
-                        if (ext == ".gltf" || ext == ".glb") {
-                            EditorCommand cmd;
-                            cmd.kind = EditorCommand::Kind::LoadModel;
-                            cmd.path = entry.path();
-                            m_commands.push_back(cmd);
-                        } else if (ext == ".mat") {
-                            EditorCommand cmd;
-                            cmd.kind = EditorCommand::Kind::LoadMaterial;
-                            cmd.path = entry.path();
-                            m_commands.push_back(cmd);
-                        }
-                        // TODO: textures
-                    }
-                }
-            }
-        }
-
-        if (shown == 0) {
-            ImGui::TextDisabled(filtering ? "No matches" : "Empty folder");
-        }
-        ImGui::EndChild();
     }
 
-    // Tab 2: Materials
-   else if (m_projectTab == ProjectTab::Materials) {
-        const bool filtering = searchBar("matsearch", m_materialFilter);
-        ImGui::Separator();
+    const bool filtering = searchBar("assetsearch", m_assetFilter);
+    ImGui::Separator();
 
-        ImGui::BeginChild("MaterialList");
-        size_t shown = 0;
+    // Built before anything is drawn: the grid needs the count to lay out
+    // columns, and payload indexes m_assetEntries.
+    m_assetEntries.clear();
+    std::vector<ProjectItem> items;
 
-        const float thumbnailSize = 64.0f;
-        const float padding = 16.0f;
-        const float cellSize = thumbnailSize + padding;
+    std::error_code ec;
+    for (const auto &entry : std::filesystem::directory_iterator(m_currentAssetPath, ec)) {
+        const std::string filename = entry.path().filename().string();
+        if (!matchesFilter(filename, m_assetFilter)) {
+            continue;
+        }
 
-        // Calculate how many columns we can fit in the panel's current width
-        float panelWidth = ImGui::GetContentRegionAvail().x;
-        int columnCount = std::max(1, static_cast<int>(panelWidth / cellSize));
+        ProjectItem item;
+        item.label   = filename;
+        item.payload = static_cast<uint32_t>(m_assetEntries.size());
 
-        if (ImGui::BeginTable("MaterialGrid", columnCount)) {
-            for (uint32_t i = 1; i <= resources.materialCount(); ++i) {
-                const auto& mat = resources.material(i);
-
-                const std::string name = mat.name.empty()
-                    ? "Material " + std::to_string(i)
-                    : mat.name;
-
-                if (!matchesFilter(name, m_materialFilter)) {
-                    continue;
-                }
-                ++shown;
-
-                ImGui::TableNextColumn();
-                ImGui::PushID(i);
-                bool isSelected = (m_selectionMode == SelectionMode::Material && m_selectedMaterial == i);
-
-                // 1. Draw a highlight box behind the thumbnail if selected
-                ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-                if (isSelected) {
-                    ImDrawList* drawList = ImGui::GetWindowDrawList();
-                    drawList->AddRectFilled(
-                        ImVec2(cursorPos.x - 4.0f, cursorPos.y - 4.0f),
-                        ImVec2(cursorPos.x + thumbnailSize + 4.0f, cursorPos.y + thumbnailSize + ImGui::GetTextLineHeight() * 2.0f),
-                        ImGui::GetColorU32(ImGuiCol_ButtonActive),
-                        4.0f // Rounding
-                    );
-                }
-
-                // 2. Draw the Thumbnail (Image or Color)
-                bool clicked = false;
-
-                if (mat.baseColorTexture != 0 && mat.baseColorTexture <= resources.textureCount()) {
-                    // It has a texture, grab the preview descriptor set
-                    VkDescriptorSet thumbSet = texturePreview(resources, mat.baseColorTexture);
-                    if (thumbSet) {
-                        // ImageButton provides a nice clickable frame
-                        clicked = ImGui::ImageButton("##thumb",
-                                                     reinterpret_cast<ImTextureID>(thumbSet),
-                                                     ImVec2(thumbnailSize, thumbnailSize));
-                    }
-                } else {
-                    // It's a solid color material, render a clickable color block
-                    ImVec4 color(mat.baseColorFactor.r, mat.baseColorFactor.g, mat.baseColorFactor.b, 1.0f);
-                    clicked = ImGui::ColorButton("##thumb",
-                                                 color,
-                                                 ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
-                                                 ImVec2(thumbnailSize, thumbnailSize));
-                }
-                beginMaterialDrag(resources, i);
-
-                // Update selection if the thumbnail was clicked
-                if (clicked) {
-                    m_selectedMaterial = i;
-                    m_selectionMode = SelectionMode::Material;
-                }
-
-                // 3. Draw the material name underneath
-                ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + thumbnailSize);
-                ImGui::TextUnformatted(name.c_str());
-                ImGui::PopTextWrapPos();
-
-                ImGui::PopID();
+        if (entry.is_directory()) {
+            item.badge = "DIR";
+            item.color = ImVec4(0.32f, 0.30f, 0.22f, 1.0f);
+        } else {
+            const std::string ext = lowerExtension(entry.path());
+            if (ext == ".gltf" || ext == ".glb") {
+                item.badge = "GLTF";
+                item.color = ImVec4(0.20f, 0.28f, 0.36f, 1.0f);
+            } else if (ext == ".mat") {
+                item.badge = "MAT";
+                item.color = ImVec4(0.30f, 0.22f, 0.34f, 1.0f);
+            } else if (isImageExtension(ext)) {
+                // No thumbnail: a file on disk is not a loaded texture, and
+                // decoding every image in a folder just to browse it would
+                // upload a lot of VRAM nobody asked for.
+                item.badge = "IMG";
+                item.color = ImVec4(0.22f, 0.30f, 0.24f, 1.0f);
+            } else {
+                item.badge = "FILE";
             }
-            ImGui::EndTable();
         }
 
-        if (shown == 0) {
-            ImGui::TextDisabled(filtering ? "No matches" : "No materials loaded");
-        }
-        ImGui::EndChild();
+        m_assetEntries.push_back(entry.path());
+        items.push_back(std::move(item));
     }
+
+    ProjectItemActions actions;
+    actions.onActivate = [this](const ProjectItem &item)
+    {
+        const std::filesystem::path &path = m_assetEntries[item.payload];
+        std::error_code dirEc;
+        if (std::filesystem::is_directory(path, dirEc)) {
+            m_currentAssetPath = path;
+            return;
+        }
+
+        const std::string ext = lowerExtension(path);
+        if (ext == ".gltf" || ext == ".glb") {
+            EditorCommand cmd;
+            cmd.kind = EditorCommand::Kind::LoadModel;
+            cmd.path = path;
+            m_commands.push_back(cmd);
+        } else if (ext == ".mat") {
+            EditorCommand cmd;
+            cmd.kind = EditorCommand::Kind::LoadMaterial;
+            cmd.path = path;
+            m_commands.push_back(cmd);
+        }
+    };
+    actions.onDragSource = [this](const ProjectItem &item)
+    {
+        const std::filesystem::path &path = m_assetEntries[item.payload];
+        if (isImageExtension(lowerExtension(path))) {
+            beginAssetDrag(path);
+        }
+    };
+
+    ImGui::BeginChild("AssetList");
+    if (m_projectView == ProjectView::Grid) {
+        drawProjectItemsGrid(items, m_thumbnailSize, actions);
+    } else {
+        drawProjectItemsList(items, actions);
+    }
+
+    if (items.empty()) {
+        ImGui::TextDisabled(filtering ? "No matches" : "Empty folder");
+    }
+
+    drawAssetContextMenu();
+    ImGui::EndChild();
+}
+
+void EditorUI::drawAssetContextMenu()
+{
+    // NoOpenOverItems so right-clicking a file does not get the create menu --
+    // that space is reserved for a per-item menu (rename, delete, reveal).
+    if (!ImGui::BeginPopupContextWindow("assetcontext",
+                                        ImGuiPopupFlags_MouseButtonRight |
+                                        ImGuiPopupFlags_NoOpenOverItems)) {
+        return;
+    }
+
+    if (ImGui::MenuItem("New Folder")) {
+        EditorCommand cmd;
+        cmd.kind = EditorCommand::Kind::CreateDirectory;
+        cmd.path = m_currentAssetPath / "New Folder";
+        m_commands.push_back(cmd);
+    }
+
+    if (ImGui::MenuItem("New Material")) {
+        EditorCommand cmd;
+        cmd.kind = EditorCommand::Kind::CreateMaterial;
+        cmd.path = m_currentAssetPath / "New Material.mat";
+        m_commands.push_back(cmd);
+    }
+
+    ImGui::EndPopup();
+}
+
+void EditorUI::drawMaterialsContextMenu()
+{
+    if (!ImGui::BeginPopupContextWindow("materialcontext",
+                                        ImGuiPopupFlags_MouseButtonRight |
+                                        ImGuiPopupFlags_NoOpenOverItems)) {
+        return;
+    }
+
+    // No path: created in memory, MaterialInfo::sourcePath stays empty, and
+    // the inspector offers "Save As" rather than "Save".
+    if (ImGui::MenuItem("New Material")) {
+        EditorCommand cmd;
+        cmd.kind = EditorCommand::Kind::CreateMaterial;
+        m_commands.push_back(cmd);
+    }
+
+    ImGui::EndPopup();
+}
+
+void EditorUI::drawMaterialsTab(ResourceStore &resources)
+{
+    const bool filtering = searchBar("matsearch", m_materialFilter);
+    ImGui::Separator();
+
+    std::vector<ProjectItem> items;
+    for (uint32_t i = 1; i <= resources.materialCount(); ++i) {
+        const Material &mat = resources.material(i);
+
+        const std::string name = mat.name.empty() ? "Material " + std::to_string(i) : mat.name;
+        if (!matchesFilter(name, m_materialFilter)) {
+            continue;
+        }
+
+        ProjectItem item;
+        item.payload = i;
+        item.label   = resources.materialInfo(i).dirty ? name + " *" : name;
+        item.color   = ImVec4(mat.baseColorFactor.r, mat.baseColorFactor.g,
+                              mat.baseColorFactor.b, 1.0f);
+
+        if (mat.baseColorTexture != 0 && mat.baseColorTexture <= resources.textureCount()) {
+            if (const VkDescriptorSet set = texturePreview(resources, mat.baseColorTexture)) {
+                item.thumbnail = reinterpret_cast<ImTextureID>(set);
+            }
+        }
+        items.push_back(std::move(item));
+    }
+
+    ProjectItemActions actions;
+    actions.isSelected = [this](const ProjectItem &item)
+    {
+        return m_selectionMode == SelectionMode::Material && m_selectedMaterial == item.payload;
+    };
+    actions.onClick = [this](const ProjectItem &item)
+    {
+        selectMaterial(item.payload);
+    };
+    actions.onActivate = actions.onClick;
+    actions.onDragSource = [this, &resources](const ProjectItem &item)
+    {
+        beginMaterialDrag(resources, item.payload);
+    };
+
+    ImGui::BeginChild("MaterialList");
+    if (m_projectView == ProjectView::Grid) {
+        drawProjectItemsGrid(items, m_thumbnailSize, actions);
+    } else {
+        drawProjectItemsList(items, actions);
+    }
+
+    if (items.empty()) {
+        ImGui::TextDisabled(filtering ? "No matches" : "No materials loaded");
+    }
+
+    drawMaterialsContextMenu();
+    ImGui::EndChild();
 }
 
 void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
@@ -893,6 +1131,20 @@ void EditorUI::selectNode(uint32_t nodeId, uint32_t subMeshIndex)
     // Force the inspector to show the exact submesh we clicked on
     m_subMeshOwner = nodeId;
     m_selectedSubMesh = subMeshIndex;
+}
+
+void EditorUI::selectMaterial(uint32_t materialId)
+{
+    if (materialId == 0) {
+        clearSelection();
+        return;
+    }
+
+    // Node and material selection are the same slot: the inspector shows one
+    // or the other, never both.
+    m_selectionMode    = SelectionMode::Material;
+    m_selectedMaterial = materialId;
+    m_selectedNode     = 0;
 }
 
 void EditorUI::clearSelection()
