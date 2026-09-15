@@ -481,7 +481,7 @@ std::vector<uint32_t> GltfLoader::loadMaterials(const tg3_model &model,
         material.occlusionTexture         = texId(src.occlusion_texture.index);
         material.emissiveTexture          = texId(src.emissive_texture.index);
 
-        materialIds[i] = m_resources.addMaterial(material);
+        materialIds[i] = m_resources.addMaterial(material, AssetOrigin::Imported);
     }
     return materialIds;
 }
@@ -626,7 +626,8 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
         const uint32_t imageId = m_resources.addImage(commandBuffer, image.data,
                                                       static_cast<uint32_t>(image.width),
                                                       static_cast<uint32_t>(image.height),
-                                                      image.format);
+                                                      image.format,
+                                                      AssetOrigin::Imported);
 
         imageIds[i] = imageId ? imageId : m_resources.errorImageId();
     }
