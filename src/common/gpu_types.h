@@ -26,6 +26,7 @@ struct GPUImage
     VkImage image = nullptr;
     VkImageView imageView = nullptr;
     VmaAllocation allocation = nullptr;
+    uint32_t mipLevels = 1;
 };
 
 struct GPUBuffer

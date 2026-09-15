@@ -1388,6 +1388,9 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     };
     vkWaitSemaphores(m_ctx.device(), &waitInfo, UINT64_MAX);
 
+    m_ctx.uploader().poll();
+    m_geometry.tick(m_frameIndex);
+    
     FrameResources &res = m_frameResources[frameResIndex];
     vkResetCommandPool(m_ctx.device(), res.commandPool, 0);
 

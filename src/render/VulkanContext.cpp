@@ -72,8 +72,8 @@ bool VulkanContext::initialize(SDL_Window *window, uint32_t apiVersion)
         showError("Unable to create the Vulkan Memory Allocator");
         return false;
     }
-    if (!createTransientPool()) {
-        showError("Unable to create the transient command pool");
+    if (!m_uploader.initialize(m_device, m_allocator, m_gfxQueue, m_gfxQueueFamIdx)) {
+        showError("Unable to create the upload engine");
         return false;
     }
     return true;
@@ -81,10 +81,9 @@ bool VulkanContext::initialize(SDL_Window *window, uint32_t apiVersion)
 
 void VulkanContext::shutdown()
 {
-    if (m_transientPool) {
-        vkDestroyCommandPool(m_device, m_transientPool, nullptr);
-        m_transientPool = nullptr;
-    }
+    // Drains outstanding uploads and releases their staging memory
+    m_uploader.shutdown();
+
     if (m_allocator) {
         vmaDestroyAllocator(m_allocator);
         m_allocator = nullptr;
@@ -231,6 +230,7 @@ bool VulkanContext::findPhysicalDevice()
         if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             std::cout << "Found physical device: " << props.deviceName << std::endl;
             m_physicalDevice = pDev;
+
             break;
         }
     }
@@ -389,15 +389,55 @@ bool VulkanContext::initializeVMA(uint32_t apiVersion)
     return vmaCreateAllocator(&vmaAllocInfo, &m_allocator) == VK_SUCCESS;
 }
 
-bool VulkanContext::createTransientPool()
+// ============================================================================
+// format capabilities
+// ============================================================================
+
+VkFormatFeatureFlags VulkanContext::optimalFeatures(VkFormat format)
 {
-    VkCommandPoolCreateInfo poolInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-        .queueFamilyIndex = m_gfxQueueFamIdx
-    };
-    return vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_transientPool) == VK_SUCCESS;
+    VkFormatProperties2 props{ .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
+    vkGetPhysicalDeviceFormatProperties2(m_physicalDevice, format, &props);
+    return props.formatProperties.optimalTilingFeatures;
+}
+
+bool VulkanContext::supportsLinearFilter(VkFormat format)
+{
+    return (optimalFeatures(format) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+}
+
+uint32_t VulkanContext::mipLevelsFor(VkFormat format, uint32_t width, uint32_t height)
+{
+    const uint32_t wanted = mipLevelCount(width, height);
+    if (wanted <= 1) {
+        return 1;
+    }
+
+    // Blitting a mip chain needs all three
+    // VK_FILTER_LINEAR in vkCmdBlitImage is only legal
+    // if the SOURCE format supports linear filtering, and it is not
+    // guaranteed for anything beyond the mandatory formats -- 16F and 32F
+    // colour formats are where devices differ
+
+    constexpr VkFormatFeatureFlags needed =
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+        VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+
+    const VkFormatFeatureFlags features = optimalFeatures(format);
+    if ((features & needed) == needed) {
+        return wanted;
+    }
+
+    if (std::find(m_warnedFormats.begin(), m_warnedFormats.end(), format) == m_warnedFormats.end()) {
+        m_warnedFormats.push_back(format);
+        std::cerr << "[warn] format " << static_cast<int>(format)
+                  << " cannot be linear-blitted on this device"
+                  << " (BLIT_SRC=" << ((features & VK_FORMAT_FEATURE_BLIT_SRC_BIT) != 0)
+                  << " BLIT_DST=" << ((features & VK_FORMAT_FEATURE_BLIT_DST_BIT) != 0)
+                  << " FILTER_LINEAR=" << ((features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0)
+                  << "); falling back to a single mip level" << std::endl;
+    }
+    return 1;
 }
 
 // ============================================================================
@@ -475,7 +515,7 @@ void VulkanContext::mapCopyBufferData(const GPUBuffer &buffer, size_t bufferOffs
 
 bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *imageData,
                                   uint32_t width, uint32_t height, VkFormat format,
-                                  GPUImage &outImage, GPUBuffer &outStagingBuffer) const
+                                  GPUImage &outImage)
 {
     const uint32_t bytesPerPixel = formatBytesPerPixel(format);
     if (bytesPerPixel == 0) {
@@ -483,10 +523,10 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *ima
         return false;
     }
     outImage = GPUImage{};
-    outStagingBuffer = GPUBuffer{};
 
-    // create mipmaps
-    uint32_t mipLevels = mipLevelCount(width,height);
+    // Ask for the full chain, take what the format can actually do. A format
+    // without linear blit support gets one level rather than an invalid blit.
+    const uint32_t mipLevels = mipLevelsFor(format, width, height);
 
     VkImageCreateInfo imageInfo
     {
@@ -558,25 +598,30 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *ima
     vkCmdPipelineBarrier2(commandBuffer, &transferDep);
 
     const size_t byteSize = static_cast<size_t>(width) * height * bytesPerPixel;
-    outStagingBuffer = createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, byteSize,
-                                    true, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
-    if (!outStagingBuffer.vkBuffer) {
+    GPUBuffer staging = createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, byteSize,
+                                     true, VMA_MEMORY_USAGE_AUTO_PREFER_HOST);
+    if (!staging.vkBuffer) {
         showError("Error creating image staging buffer");
         destroyImage(outImage);
         return false;
     }
-    mapCopyBufferData(outStagingBuffer, 0, imageData, byteSize);
+    mapCopyBufferData(staging, 0, imageData, byteSize);
+
+    // The uploader frees it once this command buffer has executed, so the
+    // caller neither tracks it nor waits for it.
+    m_uploader.trackBuffer(commandBuffer, staging);
 
     VkBufferImageCopy buffImageCopy
     {
         .imageSubresource{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
         .imageExtent{ .width = width, .height = height, .depth = 1 }
     };
-    vkCmdCopyBufferToImage(commandBuffer, outStagingBuffer.vkBuffer, outImage.image,
+    vkCmdCopyBufferToImage(commandBuffer, staging.vkBuffer, outImage.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffImageCopy);
 
-    // TRANSFER_DST -> SHADER_READ_ONLY for sampling.
-     int32_t mipWidth  = static_cast<int32_t>(width);
+    // Mip chain by successive halving blits. Skipped entirely when mipLevels
+    // came back as 1
+    int32_t mipWidth  = static_cast<int32_t>(width);
     int32_t mipHeight = static_cast<int32_t>(height);
 
     for (uint32_t level = 1; level < mipLevels; ++level) {
@@ -669,6 +714,7 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *ima
     };
     vkCmdPipelineBarrier2(commandBuffer, &readDep);
 
+    outImage.mipLevels = mipLevels;
     return true;
 }
 
@@ -684,55 +730,15 @@ void VulkanContext::destroyImage(GPUImage &image) const
 }
 
 // ============================================================================
-// transient command buffers
+// uploads
 // ============================================================================
 
-VkCommandBuffer VulkanContext::beginTransient() const
+VkCommandBuffer VulkanContext::beginUpload()
 {
-    VkCommandBufferAllocateInfo cmdAllocInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = m_transientPool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1
-    };
-
-    VkCommandBuffer commandBuffer = nullptr;
-    if (vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &commandBuffer) != VK_SUCCESS) {
-        showError("Unable to allocate transient command buffer");
-        return nullptr;
-    }
-
-    VkCommandBufferBeginInfo beginInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-    };
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        showError("Unable to begin transient command buffer");
-        vkFreeCommandBuffers(m_device, m_transientPool, 1, &commandBuffer);
-        return nullptr;
-    }
-    return commandBuffer;
+    return m_uploader.begin();
 }
 
-void VulkanContext::endTransient(VkCommandBuffer commandBuffer) const
+Uploader::Ticket VulkanContext::submitUpload()
 {
-    if (!commandBuffer) {
-        return;
-    }
-
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &commandBuffer
-    };
-    vkQueueSubmit(m_gfxQueue, 1, &submitInfo, nullptr);
-
-    // Full stall. Acceptable at load time; swap for a fence when you stream.
-    vkQueueWaitIdle(m_gfxQueue);
-    vkFreeCommandBuffers(m_device, m_transientPool, 1, &commandBuffer);
+    return m_uploader.submit();
 }

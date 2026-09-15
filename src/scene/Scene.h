@@ -38,6 +38,12 @@ public:
     void collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out);
 
     // Rebuilt only when something actually changed. Safe to call twice a frame.
+    //
+    // DrawItems hold pointers into
+    // Mesh::subMeshes, and a mesh that gets unloaded takes those pointers with
+    // it. Comparing GeometryStore::revision() means an unload cannot leave a
+    // dangling pointer in this cache just because I forgot to call
+    // invalidateDrawItems().
     const std::vector<DrawItem> &drawItems(const GeometryStore &geometry);
     void invalidateDrawItems() { m_drawItemsDirty = true; }
 
@@ -47,5 +53,6 @@ private:
     uint32_t  m_rootNodeId     = 0;
     uint32_t  m_lastRootNodeId = 0;
     std::vector<DrawItem> m_drawItems;
-    bool m_drawItemsDirty = true;
+    bool     m_drawItemsDirty   = true;
+    uint64_t m_geometryRevision = 0;
 };

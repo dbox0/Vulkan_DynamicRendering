@@ -11,7 +11,7 @@ pkg_check_modules(SHADERC REQUIRED IMPORTED_TARGET shaderc)
 
 FetchContent_Declare(imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        v1.92.0-docking)
+        GIT_TAG        v1.91.9-docking)
 FetchContent_MakeAvailable(imgui)
 
 add_library(imgui STATIC
@@ -78,6 +78,9 @@ add_executable(vulkanapp
         src/render/GpuShared.h
         src/assets/Material.h
         src/assets/Mesh.h
+        src/render/Uploader.h
+        src/render/Uploader.cpp
+        src/render/RangeAllocator.h
 )
 
 set(CMAKE_CXX_STANDARD 26)

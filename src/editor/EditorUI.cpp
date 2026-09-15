@@ -318,7 +318,7 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
     // Mesh + material. Submesh selection is per node: picking another node
     // goes back to its first submesh.
     const uint32_t meshId = node.meshId;
-    if (meshId == 0 || meshId > geometry.meshCount()) {
+    if (!geometry.meshAlive(meshId)) {
         return;
     }
     if (m_subMeshOwner != m_selectedNode) {
@@ -492,7 +492,7 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     // to navigate a loaded glTF; adding std::string Node::name is the real
     // fix and costs nothing but memory.
     std::string label;
-    if (meshId != 0 && meshId <= geometry.meshCount()) {
+    if (geometry.meshAlive(meshId)) {
         label = geometry.mesh(meshId).name;
     }
     if (label.empty()) {

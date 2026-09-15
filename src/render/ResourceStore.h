@@ -62,16 +62,17 @@ public:
     void shutdown();
 
     // --- images / samplers / textures ------------------------------------
-    // Records the upload into commandBuffer; the returned staging buffer must
-    // be destroyed by the caller after submit. Returns id 0 on failure.
+    // Records the upload into commandBuffer, which must come from
+    // VulkanContext::beginUpload(). Staging is owned by the uploader, so
+    // there is nothing for the caller to free and nothing to wait on.
+    // Returns id 0 on failure.
     //
     // format is the caller's decision, not this class's: glTF images carry no
     // colour space, so only the material slot sampling an image knows whether
     // it is colour (_SRGB) or data (_UNORM).
 
     uint32_t addImage(VkCommandBuffer commandBuffer, const void *data,
-                                 uint32_t width, uint32_t height,
-                                 VkFormat format, GPUBuffer &outStagingBuffer);
+                      uint32_t width, uint32_t height, VkFormat format);
 
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);

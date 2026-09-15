@@ -20,9 +20,12 @@ static void transformAabb(const glm::mat4 &m, const glm::vec3 &lo, const glm::ve
 const std::vector<DrawItem> &Scene::drawItems(const GeometryStore &geometry)
 {
     const bool moved = m_nodeWorld.updateTransforms();
-    if (moved || m_drawItemsDirty) {
+    const uint64_t revision = geometry.revision();
+
+    if (moved || m_drawItemsDirty || revision != m_geometryRevision) {
         collectDrawItems(geometry, m_drawItems);
-        m_drawItemsDirty = false;
+        m_drawItemsDirty   = false;
+        m_geometryRevision = revision;
     }
     return m_drawItems;
 }
@@ -53,7 +56,12 @@ void Scene::collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem
 
     for (uint32_t nodeId = 1; nodeId <= count; ++nodeId) {
         const Node &node = m_nodeWorld.getNode(nodeId);
-        if (!node.meshId) {
+
+        // meshAlive rather than a bare non-zero test: mesh IDs are
+        // generation-tagged handles, so a node left pointing at an unloaded
+        // mesh is detectable instead of resolving to whatever was loaded into
+        // that slot next.
+        if (!geometry.meshAlive(node.meshId)) {
             continue;
         }
 

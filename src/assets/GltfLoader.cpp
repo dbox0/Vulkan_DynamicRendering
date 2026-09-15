@@ -218,7 +218,7 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                    positionAccessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
 
             subMesh.vertexCount = positionAccessor->count;
-            subMesh.vertexStart = m_geometry.appendVertices(positionAccessor->count);
+            subMesh.vertexStart = m_geometry.allocateVertices(positionAccessor->count);
 
             if (subMesh.vertexStart == GeometryStore::kInvalidOffset) {
                 std::cerr << "[warn] Vertex budget exhausted in mesh '" << mesh.name
@@ -349,9 +349,12 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
 
                 subMesh.indexCount = accessor->count;
-                const size_t indexStart = m_geometry.appendIndices(accessor->count);
+                const size_t indexStart = m_geometry.allocateIndices(accessor->count);
 
-                if (subMesh.indexStart == GeometryStore::kInvalidOffset) {
+                // Was testing subMesh.indexStart, which is still 0 here -- an
+                // exhausted index budget sailed straight through and wrote at
+                // offset 0.
+                if (indexStart == GeometryStore::kInvalidOffset) {
                     std::cerr << "Index budget exhausted"<< std::endl;
                     subMesh = SubMesh{};
                     continue;
@@ -590,16 +593,13 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
         return imageIds;
     }
 
-    VkCommandBuffer commandBuffer = m_ctx.beginTransient();
+    VkCommandBuffer commandBuffer = m_ctx.beginUpload();
     if (!commandBuffer) {
         for (uint32_t &id : imageIds) {
             id = m_resources.errorImageId();
         }
         return imageIds;
     }
-
-    std::vector<GPUBuffer> stagingBuffers;
-    stagingBuffers.reserve(images.size());
 
     for (size_t i = 0; i < images.size(); ++i) {
         const Image &image = images[i];
@@ -608,23 +608,16 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
             continue;
         }
 
-        GPUBuffer staging;
         const uint32_t imageId = m_resources.addImage(commandBuffer, image.data,
                                                       static_cast<uint32_t>(image.width),
                                                       static_cast<uint32_t>(image.height),
-                                                      image.format, staging);
+                                                      image.format);
 
         imageIds[i] = imageId ? imageId : m_resources.errorImageId();
-        if (staging.vkBuffer) {
-            stagingBuffers.push_back(staging);
-        }
     }
- 
-    // Staging buffers stay alive until the copies have actually executed.
-    m_ctx.endTransient(commandBuffer);
 
-    for (GPUBuffer &staging : stagingBuffers) {
-        m_ctx.destroyBuffer(staging);
-    }
+    // Returns as soon as the copies are queued. Staging memory belongs to the
+    // uploader now and is released when the GPU passes this ticket.
+    m_ctx.submitUpload();
     return imageIds;
 }

@@ -1,102 +1,173 @@
 #pragma once
 #include <vulkan/vulkan.h>
+#include <deque>
 #include <vector>
 #include <cstdint>
+#include <limits>
 #include "../assets/Mesh.h"
 #include "GpuShared.h"
+#include "RangeAllocator.h"
 #include "../common/gpu_types.h"
 
 class VulkanContext;
 
+// One device-local vertex buffer and one index buffer, allocated once at the
+// full budget and suballocated with a coalescing free list. Models can be
+// loaded and unloaded in any order; freed space is reused.
 
+// The CPU-side mirrorgrows to the mark of what has been allocated,
 
-// One global vertex + index buffer -> allocated once at full budget and suballocated
-// via bump cursor.
+// OFFSETS: a CPU element index and its offset into the GPU buffer are the
+// same number.
 
-// CPU-side arrays stay resident: they are the authoring surface for
-// procedural meshes and the source for raycast/picking.
-// The budget is paid in RAM __AND__ VRAM.
+// MESH IDS are opaque handles: the low 24 bits are a 1-based
+// slot, the top 8 a generation that bumps on every removeMesh. A node holding
+// a mesh ID whose slot has since been recycled fails meshAlive(). 0 is never
+// a valid handle.
+//
+// Scene caches DrawItems holding `const SubMesh *` across
+// frames, and Renderer holds a pointer to that cache, so a Mesh must not move
+// once it has been added. Slots live in a deque
 
+// revision() bumps on every add or remove so the cache knows to rebuild.
 
-// Mesh IDS are 1 based; 0 = none
-// Vertex and Index offsets are NOT! -- offset 0 is a legitimate first submesh
+// LIFETIME: removeMesh() does not release the ranges immediately -- frames
+// already submitted may still be reading them. The ranges go on a pending
+// list and come back into circulation from tick(), after the frame that
+// removed them
 
 class GeometryStore
 {
 public:
-    static constexpr size_t kInvalidOffset = std::numeric_limits<size_t>::max();
+    static constexpr size_t kInvalidOffset = RangeAllocator::kInvalid;
 
-    struct BatchMark {
-        size_t vertexStart = 0;
-        size_t indexStart = 0;
-    };
+    // Frames a removed range has to survive before its space is reusable.
+    // Renderer::MaxFramesInFlight plus one frame of slack.
+    static constexpr uint64_t kRetireDelay = 3;
 
     explicit GeometryStore(VulkanContext &ctx) : m_ctx(ctx) {}
     GeometryStore(const GeometryStore &) = delete;
     GeometryStore &operator=(const GeometryStore &) = delete;
 
-    // Allocated device local buffers at full budget. Must be called after context
-    // is set up and before any append.
-    // Returns false on alloc failure
+    // Allocates the device-local buffers at full budget. Call after the
+    // context is up and before any allocation. Returns false on alloc failure.
     bool reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes);
     void shutdown();
 
+    // --- suballocation ---------------------------------------------------
+    // Returns the start offset, or kInvalidOffset when the budget cannot
+    // satisfy the request
 
-    // Suballocation
-    // Returns start offset or kInvalidOffset if budget is exhausted. Callers must check this at runtime
-    // (example : Model too big -> recoverable and not a programming mistake)
-    size_t appendVertices(size_t count);
-    size_t appendIndices(size_t count);
+    // The returned range is marked dirty, so whatever the caller writes into
+    // it gets picked up by the next flushUploads().
+    size_t allocateVertices(size_t count);
+    size_t allocateIndices(size_t count);
 
+    // Writable views into the CPU mirror. The pointer is invalidated by any
+    // subsequent allocate call
     Vertex   *vertexAt(size_t index) { return &m_vertices[index]; }
     uint32_t *indexAt(size_t index)  { return &m_indices[index];  }
 
-    // Read-only views for picking
     const Vertex   *vertexAt(size_t index) const { return &m_vertices[index]; }
     const uint32_t *indexAt(size_t index)  const { return &m_indices[index];  }
 
-    uint32_t addMesh(Mesh &&mesh);                          // -> 1-based mesh ID
-    const Mesh &mesh(uint32_t meshId) const { return m_meshes[meshId - 1]; }
-    size_t meshCount() const { return m_meshes.size(); }
+    // For edits to geometry that is already resident
 
+    void touchVertices(size_t firstVertex, size_t count);
+    void touchIndices(size_t firstIndex, size_t count);
 
-    // ========= Uploading data to the GPU ================= //
-    // mark() before a load, uploadSince(mark) after.
-    // Uploads exactly the verts and indices appended inbetween
+    // --- meshes ----------------------------------------------------------
+    // addMesh takes ownership of the ranges its submeshes point at;
+    // removeMesh gives them back
+    uint32_t addMesh(Mesh &&mesh);
+    bool     removeMesh(uint32_t meshId);
 
-    BatchMark mark() const { return BatchMark{m_vertOffset , m_idxOffset}; }
-    bool uploadSince(const BatchMark &since);
+    bool        meshAlive(uint32_t meshId) const;
+    const Mesh &mesh(uint32_t meshId) const;
+    size_t      meshCount() const { return m_liveMeshes; }
 
-    bool uploadVertexRange(size_t firstVertex, size_t count);
-    bool uploadIndexRange(size_t firstIndex, size_t count);
+    // Changes whenever a mesh is added or removed. Anything caching submesh
+    // pointers compares this
 
+    uint64_t    revision() const { return m_revision; }
+
+    // --- uploads ---------------------------------------------------------
+    // Uploads every dirty range in a single submit and returns without
+    // waiting for it. Safe to draw from immediately: the copy is ordered
+    // ahead of any frame submitted afterwards on the same queue.
+    bool flushUploads();
+
+    // Releases ranges freed by removeMesh once their frame has retired.
+    // Call once per frame, after the renderer's frame wait
+    void tick(uint64_t frameIndex);
+
+    uint64_t lastUploadTicket() const { return m_lastUploadTicket; }
 
     uint64_t vertexBufferAddress() const { return m_vertexBuffer.deviceAddress; }
     VkBuffer indexBuffer()         const { return m_indexBuffer.vkBuffer; }
 
-
-    size_t vertexCapacity() const{ return m_vertices.size(); }
-    size_t indexCapacity()  const{ return m_indices.size(); }
-    size_t vertexUsed()     const{ return m_vertOffset;}
-    size_t indexUsed()      const{ return m_idxOffset;}
+    // --- stats for the editor ------------------------------------------
+    size_t vertexCapacity() const { return m_vertexAlloc.capacity(); }
+    size_t indexCapacity()  const { return m_indexAlloc.capacity(); }
+    size_t vertexUsed()     const { return m_vertexAlloc.used(); }
+    size_t indexUsed()      const { return m_indexAlloc.used(); }
+    size_t vertexResident() const { return m_vertices.size(); }   // CPU mirror size
+    size_t indexResident()  const { return m_indices.size(); }
+    size_t largestFreeVertexBlock() const { return m_vertexAlloc.largestFreeBlock(); }
+    size_t largestFreeIndexBlock()  const { return m_indexAlloc.largestFreeBlock(); }
 
 private:
+    struct DirtyRange { size_t offset = 0; size_t count = 0; };
+
+    struct MeshSlot
+    {
+        Mesh    mesh;
+        uint8_t generation = 0;
+        bool    alive      = false;
+    };
+
+    struct PendingFree
+    {
+        size_t   offset       = 0;
+        size_t   count        = 0;
+        uint64_t removedFrame = 0;
+        bool     isIndex      = false;
+    };
+
+    static uint32_t makeHandle(size_t slot, uint8_t generation);
+    static size_t   handleSlot(uint32_t meshId)       { return (meshId & 0x00FFFFFFu) - 1; }
+    static uint8_t  handleGeneration(uint32_t meshId) { return static_cast<uint8_t>(meshId >> 24); }
+
+    void growVertices(size_t need);
+    void growIndices(size_t need);
+    static void mergeRanges(std::vector<DirtyRange> &ranges);
+    bool uploadRanges(VkCommandBuffer cmd, const std::vector<DirtyRange> &ranges,
+                      const void *cpuBase, size_t elementSize,
+                      const GPUBuffer &dst, const char *what);
+
+    // Vertices are already written by the time addMesh is called, so the AABB
+    // is swept here instead of burdening every loader with it.
+    void computeBounds(SubMesh &subMesh) const;
+
     VulkanContext &m_ctx;
 
     std::vector<Vertex>   m_vertices;
     std::vector<uint32_t> m_indices;
-    size_t m_vertOffset = 0;
-    size_t m_idxOffset  = 0;
-    std::vector<Mesh> m_meshes;
+    RangeAllocator        m_vertexAlloc;
+    RangeAllocator        m_indexAlloc;
+
+    std::deque<MeshSlot> m_meshes;       // deque: references must stay valid
+    std::vector<size_t>  m_freeSlots;
+    size_t               m_liveMeshes = 0;
+    uint64_t             m_revision   = 0;
+
+    std::vector<DirtyRange>  m_dirtyVertices;
+    std::vector<DirtyRange>  m_dirtyIndices;
+    std::vector<PendingFree> m_pendingFrees;
+
+    uint64_t m_frameIndex        = 0;
+    uint64_t m_lastUploadTicket  = 0;
 
     GPUBuffer m_vertexBuffer;
     GPUBuffer m_indexBuffer;
-
-    bool copyToDevice(const void *src, const GPUBuffer &dst,
-                  size_t dstOffsetBytes, size_t bytes, const char *what);
-
-    // Vertices are already written by the time addMesh() is called, so the
-    // AABB can be swept here instead of burdening every loader with it.
-    void computeBounds(SubMesh &subMesh) const;
-
 };

@@ -82,20 +82,18 @@ bool Application::initialize()
 
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
-    const GeometryStore::BatchMark mark = m_geometry.mark();
-
     GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene);
     if (!loader.load(modelPath)) {
         showError("Failed to load model: " + modelPath.string());
         return false;
     }
 
-    if (!m_geometry.uploadSince(mark)) {
+    if (!m_geometry.flushUploads()) {
         showError("Failed to upload geometry to device memory");
         return false;
     }
 
-    if (!m_resources.commitTextureDescriptors()){
+    if (!m_resources.commitTextureDescriptors()) {
         showError("Failed to upload the material buffer");
         return false;
     }

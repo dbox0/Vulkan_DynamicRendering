@@ -109,18 +109,18 @@ void ResourceStore::shutdown()
 
 
 uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const void *data,
-                                 uint32_t width, uint32_t height,
-                                 VkFormat format, GPUBuffer &outStagingBuffer)
+                                 uint32_t width, uint32_t height, VkFormat format)
 {
     GPUImage gpuImage;
-    if (!m_ctx.createImage2D(commandBuffer, data, width, height, format,
-                             gpuImage, outStagingBuffer)) {
+    if (!m_ctx.createImage2D(commandBuffer, data, width, height, format, gpuImage)) {
         return 0;
-                             }
+    }
     m_images.push_back(gpuImage);
+
+
     m_imageInfos.push_back(ImageInfo{
         .width = width, .height = height,
-        .mipLevels = VulkanContext::mipLevelCount(width, height),
+        .mipLevels = gpuImage.mipLevels,
         .format = format });
     return static_cast<uint32_t>(m_images.size());
 }
@@ -184,18 +184,19 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
     }
     stbi_image_free(pixels);
 
-    VkCommandBuffer cmd = m_ctx.beginTransient();
+    VkCommandBuffer cmd = m_ctx.beginUpload();
     if (!cmd) {
         return 0;
     }
 
-    GPUBuffer staging;
+    // 16F is exactly the format most likely to come back without
+    // SAMPLED_IMAGE_FILTER_LINEAR, in which case this lands as a single
+    // level and environmentMaxLod() follows it down.
     const uint32_t imageId = addImage(cmd, halfPixels.data(),
                                       static_cast<uint32_t>(width),
                                       static_cast<uint32_t>(height),
-                                      VK_FORMAT_R16G16B16A16_SFLOAT, staging);
-    m_ctx.endTransient(cmd);
-    m_ctx.destroyBuffer(staging);
+                                      VK_FORMAT_R16G16B16A16_SFLOAT);
+    m_ctx.submitUpload();
 
     if (!imageId) {
         return 0;
@@ -367,21 +368,19 @@ bool ResourceStore::createDefaultTextures()
     // files, so there is no colour space to undo.
     constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
-    VkCommandBuffer cmd = m_ctx.beginTransient();
+    VkCommandBuffer cmd = m_ctx.beginUpload();
     if (!cmd) {
         return false;
     }
 
-    GPUBuffer whiteStaging;
-    GPUBuffer errorStaging;
-    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, format, whiteStaging);
-    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, format, errorStaging);
+    m_whiteImageId = addImage(cmd, whitePixel,   1, 1, format);
+    m_errorImageId = addImage(cmd, magentaPixel, 1, 1, format);
 
-    // Both copies are recorded before the single submit, so one transient
-    // command buffer covers both uploads.
-    m_ctx.endTransient(cmd);
-    m_ctx.destroyBuffer(whiteStaging);
-    m_ctx.destroyBuffer(errorStaging);
+    // Both copies are recorded before the single submit, and the submit does
+    // not block: the descriptor writes below do not read the pixels, and the
+    // first frame that samples them is submitted after this on the same
+    // queue, so the copies are already ordered ahead of it.
+    m_ctx.submitUpload();
 
     if (!m_whiteImageId || !m_errorImageId) {
         showError("Unable to create the default images");
