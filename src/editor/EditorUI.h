@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <filesystem>
+
 
 struct SDL_Window;
 union SDL_Event;
@@ -41,14 +43,10 @@ public:
     void record(VkCommandBuffer cmd);
 
     uint32_t selectedNode() const { return m_selectedNode; }
-    void selectNode(uint32_t nodeId) { m_selectedNode = nodeId; }
+    void selectNode(uint32_t nodeId, uint32_t subMeshIndex = 0);
+    void clearSelection();
 
-    void selectNode(uint32_t nodeId, uint32_t subMesh)
-    {
-        m_selectedNode    = nodeId;
-        m_subMeshOwner    = nodeId;
-        m_selectedSubMesh = subMesh;
-    }
+
 
     // Drop a cached preview. Call this if a texture's image/sampler is ever
     // swapped (ResourceStore::replaceTextureDescriptor), behind the same
@@ -62,6 +60,20 @@ public:
     static void endProperties();
 
 private:
+
+    enum class SelectionMode { None, Node, Material };
+    SelectionMode m_selectionMode = SelectionMode::None;
+
+    uint32_t m_selectedMaterial = 0;
+
+    enum class ProjectTab { Assets, Materials };
+    ProjectTab m_projectTab = ProjectTab::Assets;
+
+    // We will initialize this in the cpp file
+    std::filesystem::path m_currentAssetPath;
+
+    void drawProjectPanel(ResourceStore &resources);
+
     void drawHierarchy(Scene &scene, const GeometryStore &geometry);
     void drawHierarchyNode(Scene &scene, const GeometryStore &geometry, uint32_t nodeId);
     void drawInspector(Scene &scene, const GeometryStore &geometry, ResourceStore &resources);

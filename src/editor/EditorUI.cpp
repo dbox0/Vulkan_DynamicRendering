@@ -1,3 +1,7 @@
+#ifndef ASSET_DIR
+#define ASSET_DIR "./"
+#endif
+
 #include "EditorUI.h"
 
 #include <volk.h>
@@ -313,23 +317,194 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
 
 void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources)
 {
-    // Two windows now: with mesh + material data the inspector is far too
-    // tall to share a panel with a fixed-height hierarchy.
-    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
 
-    ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 520), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+    ImGuiWindowFlags dockspaceFlags = ImGuiWindowFlags_NoTitleBar |
+                                      ImGuiWindowFlags_NoCollapse |
+                                      ImGuiWindowFlags_NoResize |
+                                      ImGuiWindowFlags_NoMove |
+                                      ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                      ImGuiWindowFlags_NoNavFocus |
+                                      ImGuiWindowFlags_NoBackground;
+
+    ImGui::Begin("EditorDockSpaceWindow", nullptr, dockspaceFlags);
+    ImGui::PopStyleVar(3);
+
+    ImGuiID dockspaceId = ImGui::GetID("EditorDockSpace");
+
+    // If there is no layout loaded from INI, build the default Unity-style layout
+    if (ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
+        ImGui::DockBuilderRemoveNode(dockspaceId);
+        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
+
+        ImGuiID dockMain = dockspaceId;
+        ImGuiID dockBottom = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Down, 0.30f, nullptr, &dockMain);
+        ImGuiID dockLeft   = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Left, 0.20f, nullptr, &dockMain);
+        ImGuiID dockRight  = ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Right, 0.25f, nullptr, &dockMain);
+
+        ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
+        ImGui::DockBuilderDockWindow("Inspector", dockRight);
+        ImGui::DockBuilderDockWindow("Project", dockBottom);
+        ImGui::DockBuilderFinish(dockspaceId);
+    }
+
+    ImGui::DockSpace(dockspaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+    // Draw Panels
     if (ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse)) {
         drawHierarchy(scene, geometry);
     }
     ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(display.x - 372.0f, 12.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(360, display.y - 24.0f), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse)) {
         drawInspector(scene, geometry, resources);
     }
     ImGui::End();
+
+    // Requires MenuBar flag for our Tabs
+    if (ImGui::Begin("Project", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar)) {
+        drawProjectPanel(resources);
+    }
+    ImGui::End();
+
+    ImGui::End(); // End EditorDockSpaceWindow
+}
+
+void EditorUI::drawProjectPanel(ResourceStore &resources)
+{
+    // Draw the Menu Bar acting as Tabs
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::MenuItem("Assets", nullptr, m_projectTab == ProjectTab::Assets)) {
+            m_projectTab = ProjectTab::Assets;
+        }
+        if (ImGui::MenuItem("Materials", nullptr, m_projectTab == ProjectTab::Materials)) {
+            m_projectTab = ProjectTab::Materials;
+        }
+        ImGui::EndMenuBar();
+    }
+
+    // Tab 1: File Browser
+    if (m_projectTab == ProjectTab::Assets) {
+
+        // Navigation bar
+        ImGui::TextDisabled("Current Path:");
+        ImGui::SameLine();
+        ImGui::TextUnformatted(m_currentAssetPath.string().c_str());
+
+        // Back button (disable if we are at the root ASSET_DIR)
+        std::filesystem::path rootPath = std::filesystem::absolute(ASSET_DIR);
+        std::filesystem::path currentAbs = std::filesystem::absolute(m_currentAssetPath);
+
+        if (currentAbs != rootPath) {
+            if (ImGui::Button("<- Up")) {
+                m_currentAssetPath = m_currentAssetPath.parent_path();
+            }
+            ImGui::Separator();
+        }
+
+        // List files and directories
+        ImGui::BeginChild("AssetList");
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(m_currentAssetPath, ec)) {
+            const bool isDir = entry.is_directory();
+            std::string filename = entry.path().filename().string();
+
+            // Basic icons
+            std::string label = (isDir ? "[DIR]  " : "[FILE] ") + filename;
+
+            if (ImGui::Selectable(label.c_str())) {
+                if (isDir) {
+                    m_currentAssetPath = entry.path();
+                } else {
+                    // TODO: Handle double clicking files (load material, load texture, etc.)
+                }
+            }
+        }
+        ImGui::EndChild();
+    }
+
+    // Tab 2: Materials
+   else if (m_projectTab == ProjectTab::Materials) {
+        ImGui::BeginChild("MaterialList");
+
+        // Define our grid cell sizes
+        const float thumbnailSize = 64.0f;
+        const float padding = 16.0f;
+        const float cellSize = thumbnailSize + padding;
+
+        // Calculate how many columns we can fit in the panel's current width
+        float panelWidth = ImGui::GetContentRegionAvail().x;
+        int columnCount = std::max(1, static_cast<int>(panelWidth / cellSize));
+
+        if (ImGui::BeginTable("MaterialGrid", columnCount)) {
+            for (uint32_t i = 1; i <= resources.materialCount(); ++i) {
+                ImGui::TableNextColumn();
+                ImGui::PushID(i);
+
+                const auto& mat = resources.material(i);
+                bool isSelected = (m_selectionMode == SelectionMode::Material && m_selectedMaterial == i);
+
+                // 1. Draw a highlight box behind the thumbnail if selected
+                ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+                if (isSelected) {
+                    ImDrawList* drawList = ImGui::GetWindowDrawList();
+                    drawList->AddRectFilled(
+                        ImVec2(cursorPos.x - 4.0f, cursorPos.y - 4.0f),
+                        ImVec2(cursorPos.x + thumbnailSize + 4.0f, cursorPos.y + thumbnailSize + ImGui::GetTextLineHeight() * 2.0f),
+                        ImGui::GetColorU32(ImGuiCol_ButtonActive),
+                        4.0f // Rounding
+                    );
+                }
+
+                // 2. Draw the Thumbnail (Image or Color)
+                bool clicked = false;
+
+                if (mat.baseColorTexture != 0 && mat.baseColorTexture <= resources.textureCount()) {
+                    // It has a texture, grab the preview descriptor set
+                    VkDescriptorSet thumbSet = texturePreview(resources, mat.baseColorTexture);
+                    if (thumbSet) {
+                        // ImageButton provides a nice clickable frame
+                        clicked = ImGui::ImageButton("##thumb",
+                                                     reinterpret_cast<ImTextureID>(thumbSet),
+                                                     ImVec2(thumbnailSize, thumbnailSize));
+                    }
+                } else {
+                    // It's a solid color material, render a clickable color block
+                    ImVec4 color(mat.baseColorFactor.r, mat.baseColorFactor.g, mat.baseColorFactor.b, 1.0f);
+                    clicked = ImGui::ColorButton("##thumb",
+                                                 color,
+                                                 ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop,
+                                                 ImVec2(thumbnailSize, thumbnailSize));
+                }
+
+                // Update selection if the thumbnail was clicked
+                if (clicked) {
+                    m_selectedMaterial = i;
+                    m_selectionMode = SelectionMode::Material;
+                }
+
+                // 3. Draw the material name underneath
+                std::string name = mat.name.empty() ? "Material " + std::to_string(i) : mat.name;
+
+                // Push text wrap pos so long names wrap within the cell
+                ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + thumbnailSize);
+                ImGui::TextUnformatted(name.c_str());
+                ImGui::PopTextWrapPos();
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
+    }
 }
 
 void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
@@ -347,76 +522,93 @@ void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
             m_selectedNode = 0;
         }
     }
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            !ImGui::IsAnyItemHovered()) {
+        m_selectedNode = 0;
+        m_selectionMode = SelectionMode::None; // Clear selection
+            }
     ImGui::EndChild();
     ImGui::PopStyleVar();
 }
 
 void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, ResourceStore &resources)
 {
-    if (m_selectedNode == 0) {
+    // 1. Nothing selected
+    if (m_selectionMode == SelectionMode::None) {
         ImGui::Dummy(ImVec2(0.0f, 8.0f));
-        ImGui::TextDisabled("Select a node in the hierarchy");
+        ImGui::TextDisabled("Select a node or asset to inspect");
         return;
     }
 
-    Node &node = scene.getNode(m_selectedNode);
-
-    if (m_eulerOwner != m_selectedNode) {
-        m_eulerOwner = m_selectedNode;
-        glm::vec3 radians(0.0f);
-        glm::extractEulerAngleYXZ(glm::mat4_cast(node.getRotation()),
-                                  radians.y, radians.x, radians.z);
-        m_eulerDegrees = glm::degrees(radians);
-    }
-
-    ImGui::Text("Node %u", m_selectedNode);
-    if (node.meshId != 0) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("| mesh %u", node.meshId);
-    }
-
-    ImGui::Dummy(ImVec2(0.0f, 2.0f));
-
-    // DefaultOpen because a collapsed Transform is nobody's idea of useful.
-    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        beginProperties("transform_props");
-
-        glm::vec3 translation = node.getTranslation();
-        if (vec3Control("Position", translation, 0.0f, 0.05f)) {
-            node.setTranslation(translation);
+    // 2. Inspecting a Material Asset directly
+    if (m_selectionMode == SelectionMode::Material) {
+        if (m_selectedMaterial == 0 || m_selectedMaterial > resources.materialCount()) {
+            ImGui::TextDisabled("Invalid material selected");
+            return;
         }
-
-        if (vec3Control("Rotation", m_eulerDegrees, 0.0f, 0.5f)) {
-            const glm::vec3 r = glm::radians(m_eulerDegrees);
-            node.setRotation(glm::quat_cast(glm::eulerAngleYXZ(r.y, r.x, r.z)));
-        }
-
-        // Reset value 1.0 for scale -- resetting an axis to 0 collapses the
-        // model and looks like a crash.
-        glm::vec3 scale = node.getScale();
-        if (vec3Control("Scale", scale, 1.0f, 0.01f)) {
-            node.setScale(scale);
-        }
-
-        endProperties();
-    }
-
-    // Mesh + material. Submesh selection is per node: picking another node
-    // goes back to its first submesh.
-    const uint32_t meshId = node.meshId;
-    if (!geometry.meshAlive(meshId)) {
+        // This existing function already does all the heavy lifting for texture previews!
+        drawMaterialSection(resources, m_selectedMaterial);
         return;
     }
-    if (m_subMeshOwner != m_selectedNode) {
-        m_subMeshOwner    = m_selectedNode;
-        m_selectedSubMesh = 0;
-    }
 
-    const Mesh &mesh = geometry.mesh(meshId);
-    drawMeshSection(mesh, resources);
+    // 3. Inspecting a Scene Node (Original logic goes here)
+    if (m_selectionMode == SelectionMode::Node) {
+        if (m_selectedNode == 0) return;
 
-    if (m_selectedSubMesh < mesh.subMeshes.size()) {
-        drawMaterialSection(resources, mesh.subMeshes[m_selectedSubMesh].materialId);
+        Node &node = scene.getNode(m_selectedNode);
+
+        if (m_eulerOwner != m_selectedNode) {
+            m_eulerOwner = m_selectedNode;
+            glm::vec3 radians(0.0f);
+            glm::extractEulerAngleYXZ(glm::mat4_cast(node.getRotation()), radians.y, radians.x, radians.z);
+            m_eulerDegrees = glm::degrees(radians);
+        }
+
+        ImGui::Text("Node %u", m_selectedNode);
+        if (node.meshId != 0) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("| mesh %u", node.meshId);
+        }
+
+        ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+        if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+            beginProperties("transform_props");
+
+            glm::vec3 translation = node.getTranslation();
+            if (vec3Control("Position", translation, 0.0f, 0.05f)) {
+                node.setTranslation(translation);
+            }
+
+            if (vec3Control("Rotation", m_eulerDegrees, 0.0f, 0.5f)) {
+                const glm::vec3 r = glm::radians(m_eulerDegrees);
+                node.setRotation(glm::quat_cast(glm::eulerAngleYXZ(r.y, r.x, r.z)));
+            }
+
+            glm::vec3 scale = node.getScale();
+            if (vec3Control("Scale", scale, 1.0f, 0.01f)) {
+                node.setScale(scale);
+            }
+
+            endProperties();
+        }
+
+        const uint32_t meshId = node.meshId;
+        if (!geometry.meshAlive(meshId)) {
+            return;
+        }
+
+        if (m_subMeshOwner != m_selectedNode) {
+            m_subMeshOwner    = m_selectedNode;
+            m_selectedSubMesh = 0;
+        }
+
+        const Mesh &mesh = geometry.mesh(meshId);
+        drawMeshSection(mesh, resources);
+
+        if (m_selectedSubMesh < mesh.subMeshes.size()) {
+            drawMaterialSection(resources, mesh.subMeshes[m_selectedSubMesh].materialId);
+        }
     }
 }
 
@@ -510,6 +702,7 @@ bool EditorUI::initialize(SDL_Window *window, VulkanContext &ctx,
     }
 
     m_initialized = true;
+    m_currentAssetPath = ASSET_DIR;
     return true;
 }
 
@@ -555,6 +748,27 @@ void EditorUI::record(VkCommandBuffer cmd)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
+void EditorUI::selectNode(uint32_t nodeId, uint32_t subMeshIndex)
+{
+    if (nodeId == 0) {
+        clearSelection();
+        return;
+    }
+
+    m_selectionMode = SelectionMode::Node;
+    m_selectedNode = nodeId;
+
+    // Force the inspector to show the exact submesh we clicked on
+    m_subMeshOwner = nodeId;
+    m_selectedSubMesh = subMeshIndex;
+}
+
+void EditorUI::clearSelection()
+{
+    m_selectionMode = SelectionMode::None;
+    m_selectedNode = 0;
+    m_selectedMaterial = 0;
+}
 
 
 
