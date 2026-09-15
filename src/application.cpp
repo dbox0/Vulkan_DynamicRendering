@@ -142,6 +142,16 @@ void Application::run()
     const bool *keys = SDL_GetKeyboardState(nullptr);
     uint64_t prevTime = SDL_GetTicks();
 
+    // I dont like this and I dont think this will stay here.
+    // This is only here for the Editor UI: Inits Mats already in res/mat..
+    // for a build without imgui this has to go
+
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(ASSET_DIR + std::string("materials/"))) {
+        if (entry.is_regular_file() && entry.path().extension() == ".mat") {
+            m_pendingAssets.push_back({ PendingAsset::Kind::Material, entry.path() });
+        }
+    }
+
     while (m_running) {
 
         const uint64_t currentTime = SDL_GetTicks();
@@ -382,6 +392,49 @@ void Application::applyEditorCommands()
             }
 
             m_editor.selectMaterial(materialId);
+            break;
+        }
+
+        case EditorCommand::Kind::RenameAsset:
+        {
+            if (cmd.path.empty() || cmd.name.empty()) {
+                break;
+            }
+
+            std::filesystem::path target = cmd.path.parent_path() / cmd.name;
+
+            // The field is seeded with the stem, so a name typed without an
+            // extension keeps the one it had. Typing a different extension on
+            // purpose still works.
+            if (!target.has_extension() && cmd.path.has_extension()) {
+                target.replace_extension(cmd.path.extension());
+            }
+            if (target == cmd.path) {
+                break;
+            }
+            target = uniquePath(target);
+
+            std::error_code ec;
+            std::filesystem::rename(cmd.path, target, ec);
+            if (ec) {
+                showError("Failed to rename " + cmd.path.filename().string() + ": " + ec.message());
+                break;
+            }
+
+            // Any material loaded from that file is now pointing at a path
+            // that no longer exists, and its next Save would recreate the old
+            // name. clearDirty is false: the path moved, the contents did not,
+            // so an unsaved edit is still unsaved.
+            for (uint32_t i = 1; i <= m_resources.materialCount(); ++i) {
+                if (m_resources.materialInfo(i).sourcePath == cmd.path) {
+                    m_resources.setMaterialSource(i, target, false);
+                }
+            }
+
+            // NOTE: renaming an IMAGE is not handled here. TextureCache keys on
+            // the path, so every .mat referencing the old name silently falls
+            // back to the error texture on next load. That is the cost of
+            // path-as-identity, and the fix is stable IDs, not a special case.
             break;
         }
 
