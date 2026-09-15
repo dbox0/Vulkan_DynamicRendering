@@ -10,6 +10,7 @@
 #include "common/errors.h"
 #include "editor/EditorCommands.h"
 #include "scene/Geometry/Node.h"
+#include <glm/gtx/quaternion.hpp>
 
 namespace
 {
@@ -109,6 +110,11 @@ bool Application::initialize()
         showError("Failed to initialize the editor UI");
         return false;
                              }
+
+    // The editor edits the renderer's shadow state in place; nothing is copied
+    // back, so there is no lag on a slider drag.
+    m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
+
     return true;
 }
 
@@ -272,6 +278,26 @@ void Application::applyEditorCommands()
             if (!m_scene.createNode(cmd.parentId, "Empty")) {
                 std::cerr << "[warn] Node budget exhausted" << std::endl;
             }
+            break;
+        }
+
+        case EditorCommand::Kind::CreateLight:
+        {
+            const uint32_t nodeId = m_scene.createNode(cmd.parentId, "Directional Light");
+            if (!nodeId) {
+                std::cerr << "[warn] Node budget exhausted" << std::endl;
+                break;
+            }
+
+            Node &node = m_scene.getNode(nodeId);
+            node.lightType = LightType::Directional;
+
+            // Placed above the origin and aimed down at an angle
+            node.setTranslation(glm::vec3(0.0f, 4.0f, 0.0f));
+            node.setRotation(glm::quatLookAt(
+                glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)), glm::vec3(0.0f, 1.0f, 0.0f)));
+
+            m_editor.selectNode(nodeId, 0);
             break;
         }
 
@@ -638,7 +664,16 @@ void Application::pickAt(float mouseX, float mouseY)
     // built from the window size, and SDL reports mouse positions in the same
     // space
     const Ray ray = screenPointToRay(m_camera, mouseX, mouseY, m_width, m_height);
-    const PickResult hit = pickNode(m_scene, m_geometry, ray);
+
+    PickResult hit = pickNode(m_scene, m_geometry, ray);
+
+    // Lights win ties. Their handle is small and usually sits in front of
+    // whatever it is lighting, so "nearest wins" on its own would make a light
+    // standing on the ground plane nearly unclickable.
+    const PickResult light = pickLight(m_scene, ray);
+    if (light && light.distance <= hit.distance) {
+        hit = light;
+    }
 
     // A miss selects node 0, which is how the inspector already spells
     // "nothing selected" -- clicking empty space deselects.

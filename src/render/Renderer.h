@@ -10,6 +10,7 @@
 #include "../common/gpu_types.h"
 #include "../scene/Scene.h"
 #include "GpuShared.h"
+#include "ShadowMap.h"
 
 class VulkanContext;
 class Swapchain;
@@ -38,6 +39,9 @@ struct FrameResources
     FrameData *frameDataPtr = nullptr;
     VkDrawIndexedIndirectCommand *indirectDrawPtr = nullptr;
     RenderItem                   *renderItemPtr   = nullptr;
+
+    GPUBuffer    debugLineBuffer;
+    DebugVertex *debugLinePtr = nullptr;
 };
 
 struct RenderView
@@ -59,10 +63,15 @@ class Renderer
 {
 public:
     static constexpr uint32_t MaxFramesInFlight = 2;
+    static constexpr uint32_t ShadowResolution   = 4096;
+
+    // Two vertices per line. Overlays only, so a few thousand is generous.
+    static constexpr uint32_t MaxDebugVertices   = 8192;
 
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
              ResourceStore &resources, GeometryStore &geometry)
-        : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry) {}
+        : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry),
+          m_shadowMap(ctx) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -81,10 +90,16 @@ public:
     // Colour and pixel width, live-editable from the inspector.
     OutlineConstants &outlineSettings() { return m_outline; }
 
+    // Bias and range knobs for the sun shadow, same idea.
+    ShadowSettings &shadowSettings() { return m_shadow; }
+    glm::vec3      &sunDirection()   { return m_sunDirection; }
+
 private:
     bool createShaders();
     bool createPipeline(bool blendEnabled, VkPipeline &outPipeline);
     bool createMaskPipeline();
+    bool createShadowPipeline();
+    bool createDebugLinePipeline();
     bool createOutlinePipeline();
     bool createOutlineDescriptors();
 
@@ -103,6 +118,20 @@ private:
     void accumulateSelectionBounds(const glm::mat4 &viewProj, const glm::mat4 &worldMatrix,
                                    const SubMesh &subMesh);
 
+
+    // Depth-only pass from the sun's point of view, into the shadow map.
+    // Opaque and alpha-masked buckets only
+    void recordShadowPass(FrameResources &res);
+
+    // --- debug lines ------------------------------------------------------
+    void addDebugLine(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &color);
+
+    // Line gizmo for every directional light in the scene: a handle at the
+    // node and an arrow down its -Z
+    void collectLightGizmos(Scene &scene);
+
+    // Copies m_debugVertices into this frame's buffer, clamped.
+    uint32_t writeDebugVertices(FrameResources &res);
 
     bool createSyncResources();
     bool createCommandBuffers();
@@ -146,6 +175,18 @@ private:
     VkDescriptorSet       m_outlineSet         = nullptr;
     VkSampler             m_maskSampler        = nullptr;
 
+    // --- sun shadow -------------------------------------------------------
+    // Shares m_pipelineLayout with the scene pass: same push constants
+    // RenderItem buffer, bindless set for the alpha-mask lookup.
+    ShadowMap      m_shadowMap;
+    VkPipeline     m_pipelineShadow       = nullptr;
+    VkShaderModule m_shadowVertexShader   = nullptr;
+    VkShaderModule m_shadowFragmentShader = nullptr;
+    ShadowSettings m_shadow{};
+    // m_shadow.enabled AND the active light's castsShadows, resolved per frame.
+    bool           m_shadowActive = true;
+    glm::vec3      m_sunDirection{ glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)) };
+
     uint32_t         m_selectedNode = 0;
     OutlineConstants m_outline{};
 
@@ -163,6 +204,13 @@ private:
 
     uint32_t m_envSlot   = 0;
     float    m_envMaxLod = 0.0f;
+
+    // --- debug lines ------------------------------------------------------
+    VkPipeline     m_pipelineDebugLine       = nullptr;
+    VkShaderModule m_debugLineVertexShader   = nullptr;
+    VkShaderModule m_debugLineFragmentShader = nullptr;
+    std::vector<DebugVertex> m_debugVertices;
+    uint32_t                 m_debugVertexCount = 0;
 
     // Reused across frames so traversal doesn't allocate per frame.
     const std::vector<DrawItem> *m_drawItems = nullptr;

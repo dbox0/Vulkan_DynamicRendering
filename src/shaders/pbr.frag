@@ -33,6 +33,7 @@ layout(buffer_reference, scalar) readonly buffer MaterialBuffer { Material mater
 layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
 {
     mat4  viewProj;
+    mat4  lightViewProj;
     vec3  cameraPosition;
     float exposure;
     vec3  sunDirection;
@@ -44,6 +45,10 @@ layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
     uint  envTex;        // 0 = no environment, fall back to the hemisphere
     float envIntensity;
     float envMaxLod;     // mipLevels - 1 of the environment image
+    float shadowTexelSize;
+    float shadowNormalBias;
+    float shadowDepthBias;
+    uint  shadowEnabled;
 };
 
 layout(push_constant, scalar) uniform FrameConstants
@@ -57,6 +62,10 @@ layout(push_constant, scalar) uniform FrameConstants
 // ---------------------------------------------------------------------------
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];
+
+// Comparison sampler: every tap is a depth test, and LINEAR filters the
+// results, so one lookup is already a 2x2 PCF.
+layout(set = 1, binding = 0) uniform sampler2DShadow shadowMap;
 
 layout(location = 0) in vec3 inWorldPos;
 layout(location = 1) in vec3 inNormal;
@@ -139,6 +148,39 @@ vec3 PBRNeutralToneMapping(vec3 color)
 
     float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
     return mix(color, vec3(newPeak), g);
+}
+
+// 1 = lit, 0 = fully shadowed.
+float sunShadow(FrameDataBuffer frame, vec3 worldPos, vec3 N, float NdotL)
+{
+    if (frame.shadowEnabled == 0u) {
+        return 1.0;
+    }
+
+    float slope  = clamp(1.0 - NdotL, 0.0, 1.0);
+    vec3  origin = worldPos + N * frame.shadowNormalBias * (1.0 + slope * 2.0);
+
+    vec4 lightPos = frame.lightViewProj * vec4(origin, 1.0);
+    vec3 proj     = lightPos.xyz / lightPos.w;        // ortho, so w is 1
+
+    vec2  uv  = proj.xy * 0.5 + 0.5;
+    float ref = proj.z + frame.shadowDepthBias;       // reverse Z: bigger == closer to the sun
+
+    // Past the light's far plane the reference goes negative and would fail
+    // against the cleared map, blacking out everything beyond the shadow
+    // distance. We call that lit.
+    if (ref <= 0.0) {
+        return 1.0;
+    }
+
+    // Sideways the border colour answers "lit" for us, so no uv bounds check.
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            sum += texture(shadowMap, vec3(uv + vec2(x, y) * frame.shadowTexelSize * 0.5, ref));
+        }
+    }
+    return sum * (1.0 / 9.0);
 }
 
 float geometricSpecularAA(vec3 N, float alpha)
@@ -233,7 +275,8 @@ void main()
     vec3 F        = F_Schlick(F0, VdotH);
     vec3 specular = F * D_GGX(NdotH, alpha) * V_SmithGGXCorrelated(NdotV, NdotL, alpha);
     vec3 diffuse  = (1.0 - F) * cDiff / PI;
-    vec3 direct   = (diffuse + specular) * frame.sunColor * frame.sunIntensity * NdotL;
+    float shadow  = NdotL > 0.0 ? sunShadow(frame, inWorldPos, N, NdotL) : 1.0;
+    vec3 direct   = (diffuse + specular) * frame.sunColor * frame.sunIntensity * NdotL * shadow;
 
     // Reflective environment
 

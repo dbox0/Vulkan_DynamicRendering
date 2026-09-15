@@ -87,6 +87,8 @@ add_executable(vulkanapp
         src/render/Renderer.h
         src/render/Swapchain.cpp
         src/render/Swapchain.h
+        src/render/ShadowMap.cpp
+        src/render/ShadowMap.h
         src/render/ResourceStore.cpp
         src/render/ResourceStore.h
         src/render/GeometryStore.cpp

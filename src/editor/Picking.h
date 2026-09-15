@@ -51,7 +51,14 @@ Ray screenPointToRay(const Camera &camera, float mouseX, float mouseY,
 PickResult pickNode(Scene &scene, const GeometryStore &geometry,
                     const Ray &ray);
 
+// Lights have no geometry, so they are picked as a sphere around their origin
+// - > same handle the viewport draws.
+// Radius is in world units
+
+PickResult pickLight(const Scene &scene, const Ray &ray, float radius = 0.35f);
+
 // Exposed because gizmos and camera-focus will need them too.
+bool raySphere(const Ray &ray, const glm::vec3 &center, float radius, float &tNear);
 bool rayAabb(const Ray &ray, const glm::vec3 &boundsMin, const glm::vec3 &boundsMax,
              float &tNear);
 bool rayTriangle(const Ray &ray, const glm::vec3 &v0, const glm::vec3 &v1,

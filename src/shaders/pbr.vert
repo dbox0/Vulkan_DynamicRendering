@@ -26,6 +26,7 @@ layout(buffer_reference, scalar) readonly buffer RenderItemBuffer { RenderItem i
 layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
 {
     mat4  viewProj;
+    mat4  lightViewProj;
     vec3  cameraPosition;
     float exposure;
     vec3  sunDirection;

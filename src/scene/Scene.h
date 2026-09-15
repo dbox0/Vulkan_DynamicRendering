@@ -66,6 +66,11 @@ public:
     // to decide whether a mesh has become garbage.
     size_t meshUsers(uint32_t meshId) const;
 
+    // First alive node carrying a directional light, 0 for none. First rather
+    // than "the" one: nothing stops a user making two, and silently using the
+    // first makes sense
+    uint32_t firstDirectionalLight() const;
+
     void collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out);
 
     // Rebuilt only when something actually changed. Safe to call twice a frame.

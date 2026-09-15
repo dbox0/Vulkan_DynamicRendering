@@ -42,6 +42,7 @@ struct EditorCommand
     {
         CreatePrimitive,   // primitive, parentId
         CreateEmpty,       // parentId
+        CreateLight,       // parentId -- directional, the only kind so far
         DeleteNode,        // nodeId
         DuplicateNode,     // nodeId
         AssignMaterial,    // nodeId, subMesh, materialId

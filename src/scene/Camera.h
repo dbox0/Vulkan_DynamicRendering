@@ -34,7 +34,17 @@ public:
     glm::mat4 viewProjection(float aspectRatio) const;
 
     // Split out for ImGuizmo, which wants view and projection separately.
+    // REVERSE Z: near maps to 1, far to 0.
     glm::mat4 projection(float aspectRatio) const;
+
+    // The 8 world-space corners of the slice of this camera's frustum between
+    // nearDist and farDist. Shadow fitting is the only caller.
+    void frustumCornersWorld(float aspectRatio, float nearDist, float farDist,
+                             glm::vec3 (&out)[8]) const;
+
+    float fov()       const { return fovDegrees; }
+    float nearClip()  const { return nearPlane; }
+    float farClip()   const { return farPlane; }
     glm::mat4 getRotationMatrix() const;
     glm::mat4 getViewMatrix() const;
 

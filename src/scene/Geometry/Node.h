@@ -6,6 +6,17 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 #include <string>
+#include <cstdint>
+
+// A node carries a light instead of a light being its own object type: the
+// transform, the hierarchy, the gizmo, the picker and the inspector all already
+// work on nodes
+
+enum class LightType : uint8_t
+{
+    None,
+    Directional
+};
 
 // TWO DIRTY FLAGS
 //   m_localDirty -- the cached local matrix disagrees with T/R/S.
@@ -31,6 +42,15 @@ public:
 
     uint32_t meshId        = 0;
     uint32_t parentId      = 0;
+
+    // Direction is NOT stored: it is -Z of the world matrix, glTF's convention
+    // for lights. Rotating the node with the gizmo aims the light, and a
+    // parented light follows its parent
+    LightType lightType          = LightType::None;
+    glm::vec3 lightColor         = glm::vec3(1.0f, 0.96f, 0.9f);
+    float     lightIntensity     = 3.0f;
+    bool      lightCastsShadows  = true;
+
     uint32_t nextSiblingId = 0;
     uint32_t firstChildId  = 0;
 

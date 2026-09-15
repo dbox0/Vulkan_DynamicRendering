@@ -280,7 +280,8 @@ bool VulkanContext::createDevice()
         !supported12.descriptorBindingPartiallyBound ||
         !supported12.descriptorBindingSampledImageUpdateAfterBind ||
         !supported.features.multiDrawIndirect ||
-        !supported.features.drawIndirectFirstInstance)
+        !supported.features.drawIndirectFirstInstance ||
+        !supported.features.depthClamp)
     {
         showError("Physical device does not meet the feature requirements");
         return false;
@@ -330,6 +331,10 @@ bool VulkanContext::createDevice()
         {
             .multiDrawIndirect = VK_TRUE,
             .drawIndirectFirstInstance = VK_TRUE,
+            // Shadow casters nearer the light than its near plane get clamped
+            // onto it instead of clipped away. Without this they punch holes
+            // in their own shadows.
+            .depthClamp = VK_TRUE,
             .shaderInt64 = VK_TRUE,
         }
     };

@@ -23,15 +23,64 @@ Ray screenPointToRay(const Camera &camera, float mouseX, float mouseY,
     const float ndcX = 2.0f * (mouseX / static_cast<float>(width)) - 1.0f;
     const float ndcY = 1.0f - 2.0f * (mouseY / static_cast<float>(height));
 
-    // perspectiveRH_ZO: near plane at z = 0, far at z = 1. Not reverse-Z.
-    glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
-    glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+    // Reverse Z: the near plane is at ndc z = 1, the far plane at 0.
+    glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+    glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
     nearPoint /= nearPoint.w;
     farPoint  /= farPoint.w;
 
     ray.origin    = glm::vec3(nearPoint);
     ray.direction = glm::normalize(glm::vec3(farPoint - nearPoint));
     return ray;
+}
+
+bool raySphere(const Ray &ray, const glm::vec3 &center, float radius, float &tNear)
+{
+    const glm::vec3 toCenter = ray.origin - center;
+    const float b = glm::dot(toCenter, ray.direction);
+    const float c = glm::dot(toCenter, toCenter) - radius * radius;
+
+    const float discriminant = b * b - c;
+    if (discriminant < 0.0f) {
+        return false;
+    }
+
+    const float root = std::sqrt(discriminant);
+    float t = -b - root;
+    if (t < 0.0f) {
+        t = -b + root;      // origin inside the sphere
+    }
+    if (t < 0.0f) {
+        return false;
+    }
+    tNear = t;
+    return true;
+}
+
+PickResult pickLight(const Scene &scene, const Ray &ray, float radius)
+{
+    PickResult best;
+
+    const NodeWorld &nodes = scene.nodes();
+    const size_t count = nodes.size();
+
+    for (uint32_t nodeId = 1; nodeId <= count; ++nodeId) {
+        if (!nodes.isAlive(nodeId) ||
+            nodes.getNode(nodeId).lightType == LightType::None) {
+            continue;
+        }
+
+        const glm::vec3 position = glm::vec3(nodes.worldMatrix(nodeId)[3]);
+
+        float t = 0.0f;
+        if (raySphere(ray, position, radius, t) && t < best.distance) {
+            best.nodeId   = nodeId;
+            best.subMesh  = 0;
+            best.distance = t;
+            best.position = ray.origin + ray.direction * t;
+        }
+    }
+    return best;
 }
 
 // Slab test. Written so a zero direction component produces +/-inf rather than a branch:

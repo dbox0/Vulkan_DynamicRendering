@@ -7,7 +7,7 @@ class GeometryStore;
 //
 // CONVENTIONS, matching the glTF the loader
 //   * right handed, Y up, counter-clockwise winding seen from outside
-//   * unit sized and centred on the origin
+//   * unit sized and centred on the origin -- except Plane, which is 10x10
 //   * UV origin top-left, V down (glTF)
 //   * tangent.w == -1 throughout: bitangent = cross(normal, tangent) * w,
 //     and V running down the texture puts the bitangent opposite cross().

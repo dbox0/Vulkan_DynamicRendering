@@ -27,6 +27,17 @@ static_assert(offsetof(Vertex, uv)      == 40);
 static_assert(offsetof(Vertex, color)   == 48);
 
 
+// One end of a debug line. Written straight into a host-visible buffer and
+// read through BDA
+struct DebugVertex
+{
+    glm::vec3 position{ 0.0f };
+    glm::vec3 color{ 1.0f };
+};
+static_assert(sizeof(DebugVertex) == 24);
+static_assert(offsetof(DebugVertex, color) == 12);
+
+
 enum MaterialFlags : uint32_t
 {
     MaterialFlag_AlphaMask   = 1u << 0,
@@ -85,6 +96,10 @@ static_assert(offsetof(RenderItem, materialIndex) == 64);
 struct FrameData
 {
     glm::mat4 viewProj{ 1.0f };
+
+    // World -> shadow map clip. Reverse Z like the camera, ortho, so w is 1.
+    glm::mat4 lightViewProj{ 1.0f };
+
     glm::vec3 cameraPosition{ 0.0f };
     float     exposure = 1.0f;
     glm::vec3 sunDirection{ 0.0f, -1.0f, -1.0f }; // direction light TRAVELS, normalised on the CPU
@@ -97,13 +112,20 @@ struct FrameData
     uint  envTex;        // 0 = no environment, fall back to the hemisphere
     float envIntensity;
     float envMaxLod;     // mipLevels - 1 of the environment image
+
+    float shadowTexelSize  = 0.0f;   // 1 / resolution, for PCF tap offsets
+    float shadowNormalBias = 0.0f;   // world units, already scaled by texel size
+    float shadowDepthBias  = 0.0f;   // light-space depth, added to the compare
+    uint  shadowEnabled    = 0;
 };
 
-static_assert(sizeof(FrameData) == 148);
-static_assert(offsetof(FrameData, cameraPosition) == 64);
-static_assert(offsetof(FrameData, sunDirection)   == 80);
-static_assert(offsetof(FrameData, skyColor)       == 112);
-static_assert(offsetof(FrameData, envTex)    == 136);
+static_assert(sizeof(FrameData) == 228);
+static_assert(offsetof(FrameData, lightViewProj)  == 64);
+static_assert(offsetof(FrameData, cameraPosition) == 128);
+static_assert(offsetof(FrameData, sunDirection)   == 144);
+static_assert(offsetof(FrameData, skyColor)       == 176);
+static_assert(offsetof(FrameData, envTex)         == 200);
+static_assert(offsetof(FrameData, shadowTexelSize) == 212);
 
 // Push constants. 32 bytes
 // ----------------------------------------------------------------------------
