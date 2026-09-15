@@ -211,6 +211,5 @@ ShadowMap::Fit ShadowMap::fit(const Camera &camera, float aspect,
         snapX - radius, snapX + radius,
         snapY - radius, snapY + radius,
         radius * 4.0f, 0.0f);
-    printf("shadow radius %.2f  texel %.4f\n", radius, worldTexel);
     return Fit{ lightProj * lightView, worldTexel };
 }
