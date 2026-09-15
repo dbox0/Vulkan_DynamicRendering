@@ -160,13 +160,17 @@ public:
         return m_materialInfos[materialId - 1];
     }
 
-    // Called after a successful save or load. Clears dirty: the file on disk
-    // now matches what is in memory.
-    void setMaterialSource(uint32_t materialId, std::filesystem::path path)
+    // Called after a successful save or load, where the file on disk now
+    // matches memory -> clearDirty. A rename passes false: the path
+    // changed, the contents did not, and an unsaved edit is still unsaved.
+    void setMaterialSource(uint32_t materialId, std::filesystem::path path,
+                           bool clearDirty = true)
     {
         if (materialId && materialId <= m_materialInfos.size()) {
             m_materialInfos[materialId - 1].sourcePath = std::move(path);
-            m_materialInfos[materialId - 1].dirty = false;
+            if (clearDirty) {
+                m_materialInfos[materialId - 1].dirty = false;
+            }
         }
     }
     uint64_t materialBufferAddress() const { return m_materialBuffer.deviceAddress; }

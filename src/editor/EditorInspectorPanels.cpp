@@ -395,15 +395,27 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     beginMaterialDrag(resources, id);
     ImGui::SameLine();
 
+    // The engine default is regenerated at startup and has no file on disk, so
+    // it gets neither a name field nor a save button -- renaming something the
+    // next launch rebuilds is a lie, and writing it out would produce a .mat
+    // that nothing ever loads.
+    const bool isEngineDefault = (id == resources.defaultMaterialId());
+
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(mat.name.empty() ? "(unnamed)" : mat.name.c_str());
+    ImGui::BeginDisabled(isEngineDefault);
+    {
+        char nameBuffer[128];
+        std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", mat.name.c_str());
+        ImGui::SetNextItemWidth(180.0f);
+        if (ImGui::InputTextWithHint("##matname", "Name", nameBuffer, sizeof(nameBuffer))) {
+            mat.name = nameBuffer;
+            changed  = true;      // pushed through updateMaterial with the rest
+        }
+    }
+    ImGui::EndDisabled();
+
     ImGui::SameLine();
     ImGui::TextDisabled("#%u", id);
-
-    // The engine default is regenerated at startup and has no file on disk, so
-    // it gets no save button -- writing one would produce a .mat that nothing
-    // ever loads.
-    const bool isEngineDefault = (id == resources.defaultMaterialId());
     const ResourceStore::MaterialInfo &info = resources.materialInfo(id);
 
     if (info.dirty && !isEngineDefault) {
@@ -412,11 +424,19 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     if (!isEngineDefault) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(info.sourcePath.empty() ? "Save As" : "Save")) {
-            EditorCommand save;
-            save.kind       = EditorCommand::Kind::SaveMaterial;
-            save.materialId = id;
-            m_commands.push_back(save);
+        if (ImGui::SmallButton(info.sourcePath.empty() ? "Save As..." : "Save")) {
+            if (info.sourcePath.empty()) {
+                // Nothing to overwrite, so it needs a name and a folder before
+                // anything can be written. The modal is drawn from build().
+                m_saveAsRequested = true;
+                m_saveAsMaterial  = id;
+                std::snprintf(m_saveAsBuffer, sizeof(m_saveAsBuffer), "%s", mat.name.c_str());
+            } else {
+                EditorCommand save;
+                save.kind       = EditorCommand::Kind::SaveMaterial;
+                save.materialId = id;
+                m_commands.push_back(save);
+            }
         }
         if (!info.sourcePath.empty() && ImGui::BeginItemTooltip()) {
             ImGui::TextUnformatted(info.sourcePath.string().c_str());

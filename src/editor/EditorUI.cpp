@@ -80,7 +80,7 @@ void EditorUI::applyTheme()
     const ImVec4 panel       = ImVec4(0.075f, 0.075f, 0.080f, 1.0f);
 
     const ImVec4 control     = ImVec4(0.110f, 0.110f, 0.115f, 1.0f);
-    const ImVec4 hover       = ImVec4(0.145f, 0.145f, 0.150f, 1.0f);
+    const ImVec4 hover       = ImVec4(0.145f, 0.145f, 0.250f, 1.0f);
     const ImVec4 active      = ImVec4(0.175f, 0.175f, 0.180f, 1.0f);
 
     const ImVec4 border      = ImVec4(0.190f, 0.190f, 0.200f, 1.0f);
@@ -386,7 +386,8 @@ void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore 
 
     ImGui::End(); // End EditorDockSpaceWindow
 
-    handleShortcuts();
+    handleShortcuts(scene, resources);
+    drawSaveMaterialPopup(resources);
     drawGizmo(scene, camera, width, height);
 }
 
@@ -455,6 +456,7 @@ namespace
         ImVec4      color{ 0.3f, 0.3f, 0.32f, 1.0f };
         const char *badge = nullptr;                    // "DIR", "GLTF", "MAT"
         uint32_t    payload = 0;                        // material id, or index into the entry list
+        bool        renaming = false;                   // draw the label as an edit field
     };
 
     // Below this the grid stops making sense -- the label is wider than the
@@ -467,6 +469,11 @@ namespace
         std::function<void(const ProjectItem &)> onClick;
         std::function<void(const ProjectItem &)> onActivate;     // double click
         std::function<void(const ProjectItem &)> onDragSource;   // called right after the widget
+        std::function<void(const ProjectItem &)> onContextMenu;  // right-click on the item itself
+
+        // Draws the rename field in place of the label for an item whose
+        // renaming flag is set. Returns true once, on commit.
+        std::function<bool(const ProjectItem &)> drawRename;
     };
 
     void drawProjectItemsGrid(const std::vector<ProjectItem> &items, float thumbSize,
@@ -517,6 +524,10 @@ namespace
             const bool activated = ImGui::IsItemHovered() &&
                                    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
 
+            if (actions.onContextMenu) {
+                actions.onContextMenu(item);
+            }
+
             if (item.badge && !item.thumbnail) {
                 const ImVec2 textSize = ImGui::CalcTextSize(item.badge);
                 ImGui::GetWindowDrawList()->AddText(
@@ -525,9 +536,15 @@ namespace
                     ImGui::GetColorU32(ImGuiCol_Text), item.badge);
             }
 
-            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + thumbSize);
-            ImGui::TextUnformatted(item.label.c_str());
-            ImGui::PopTextWrapPos();
+            if (item.renaming && actions.drawRename) {
+                ImGui::PushItemWidth(thumbSize);
+                actions.drawRename(item);
+                ImGui::PopItemWidth();
+            } else {
+                ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + thumbSize);
+                ImGui::TextUnformatted(item.label.c_str());
+                ImGui::PopTextWrapPos();
+            }
 
             if (activated && actions.onActivate) {
                 actions.onActivate(item);
@@ -557,6 +574,12 @@ namespace
             }
             ImGui::SameLine();
 
+            if (item.renaming && actions.drawRename) {
+                actions.drawRename(item);
+                ImGui::PopID();
+                continue;
+            }
+
             std::string row;
             if (item.badge) {
                 row += "[";
@@ -571,6 +594,9 @@ namespace
 
             if (actions.onDragSource) {
                 actions.onDragSource(item);
+            }
+            if (actions.onContextMenu) {
+                actions.onContextMenu(item);
             }
 
             if (clicked) {
@@ -698,8 +724,9 @@ void EditorUI::drawAssetsTab()
         }
 
         ProjectItem item;
-        item.label   = filename;
-        item.payload = static_cast<uint32_t>(m_assetEntries.size());
+        item.label    = filename;
+        item.payload  = static_cast<uint32_t>(m_assetEntries.size());
+        item.renaming = isRenamingAsset(entry.path());
 
         if (entry.is_directory()) {
             item.badge = "DIR";
@@ -769,6 +796,29 @@ void EditorUI::drawAssetsTab()
         if (isImageExtension(lowerExtension(path))) {
             beginAssetDrag(path);
         }
+    };
+    actions.onContextMenu = [this](const ProjectItem &item)
+    {
+        if (!ImGui::BeginPopupContextItem()) {
+            return;
+        }
+        if (ImGui::MenuItem("Rename", "F2")) {
+            beginRenameAsset(m_assetEntries[item.payload]);
+        }
+        ImGui::EndPopup();
+    };
+    actions.drawRename = [this](const ProjectItem &item)
+    {
+        if (!renameField("##assetrename")) {
+            return false;
+        }
+        EditorCommand cmd;
+        cmd.kind = EditorCommand::Kind::RenameAsset;
+        cmd.path = m_assetEntries[item.payload];
+        cmd.name = m_renameBuffer;
+        m_commands.push_back(cmd);
+        cancelRename();
+        return true;
     };
 
     ImGui::BeginChild("AssetList");
@@ -851,8 +901,9 @@ void EditorUI::drawMaterialsTab(ResourceStore &resources)
         }
 
         ProjectItem item;
-        item.payload = i;
-        item.label   = resources.materialInfo(i).dirty ? name + " *" : name;
+        item.payload  = i;
+        item.renaming = isRenaming(RenameTarget::Material, i);
+        item.label    = resources.materialInfo(i).dirty ? name + " *" : name;
         item.color   = ImVec4(mat.baseColorFactor.r, mat.baseColorFactor.g,
                               mat.baseColorFactor.b, 1.0f);
 
@@ -877,6 +928,37 @@ void EditorUI::drawMaterialsTab(ResourceStore &resources)
     actions.onDragSource = [this, &resources](const ProjectItem &item)
     {
         beginMaterialDrag(resources, item.payload);
+    };
+    actions.onContextMenu = [this, &resources](const ProjectItem &item)
+    {
+        if (!ImGui::BeginPopupContextItem()) {
+            return;
+        }
+        if (ImGui::MenuItem("Rename", "F2")) {
+            beginRename(RenameTarget::Material, item.payload,
+                        resources.material(item.payload).name);
+        }
+        if (ImGui::MenuItem("Save As...")) {
+            m_saveAsRequested = true;
+            m_saveAsMaterial  = item.payload;
+            std::snprintf(m_saveAsBuffer, sizeof(m_saveAsBuffer), "%s",
+                          resources.material(item.payload).name.c_str());
+        }
+        ImGui::EndPopup();
+    };
+    actions.drawRename = [this, &resources](const ProjectItem &item)
+    {
+        if (!renameField("##matrename")) {
+            return false;
+        }
+        // Straight through updateMaterial, like every other edit in the
+        // inspector -- which also marks it dirty, so the asterisk appears the
+        // moment the name changes.
+        Material renamed = resources.material(item.payload);
+        renamed.name = m_renameBuffer;
+        resources.updateMaterial(item.payload, renamed);
+        cancelRename();
+        return true;
     };
 
     ImGui::BeginChild("MaterialList");
@@ -1045,9 +1127,14 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
             m_eulerDegrees = glm::degrees(radians);
         }
 
-        if (!node.name.empty()) {
-            ImGui::TextUnformatted(node.name.c_str());
-            ImGui::SameLine();
+        // Always editable rather than behind a rename mode: this is the one
+        // place the user is already looking at the node's identity, and a
+        // field here is what makes the name discoverable at all.
+        char nameBuffer[128];
+        std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", node.name.c_str());
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::InputTextWithHint("##nodename", "Name", nameBuffer, sizeof(nameBuffer))) {
+            node.name = nameBuffer;
         }
 
         ImGui::Text("Node %u", m_selectedNode);
@@ -1306,18 +1393,35 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     }
     label += " (" + std::to_string(nodeId) + ")";
 
-    const bool open = ImGui::TreeNodeEx(reinterpret_cast<void *>(static_cast<uintptr_t>(nodeId)),
-                                        flags, "%s", label.c_str());
+    void *treeId = reinterpret_cast<void *>(static_cast<uintptr_t>(nodeId));
+    const bool renaming = isRenaming(RenameTarget::Node, nodeId);
 
+    // While renaming, the row still draws as a tree node -- with an empty
+    // label -- so the arrow, the indent and the child recursion below are all
+    // unchanged. Only the text is swapped for the field.
+    const bool open = renaming
+        ? ImGui::TreeNodeEx(treeId, flags, "%s", "")
+        : ImGui::TreeNodeEx(treeId, flags, "%s", label.c_str());
 
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        selectNode(nodeId, 0);
+    if (renaming) {
+        ImGui::SameLine();
+        if (renameField("##noderename")) {
+            // Direct, like the transform edits in the inspector: a name change
+            // restructures nothing, so there is nothing for the command queue
+            // to protect the iteration from.
+            node.name = m_renameBuffer;
+            cancelRename();
+        }
+    } else {
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            selectNode(nodeId, 0);
+        }
+
+        if (const uint32_t droppedMaterial = acceptMaterialDrop()) {
+            assignMaterial(nodeId, EditorCommand::kAllSubMeshes, droppedMaterial);
+        }
+        drawNodeContextMenu(nodeId, node.name);
     }
-
-    if (const uint32_t droppedMaterial = acceptMaterialDrop()) {
-        assignMaterial(nodeId, EditorCommand::kAllSubMeshes, droppedMaterial);
-    }
-    drawNodeContextMenu(nodeId);
 
     if (open && firstChild != 0) {
         for (uint32_t child = firstChild; child != 0; ) {

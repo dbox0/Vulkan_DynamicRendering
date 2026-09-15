@@ -51,6 +51,7 @@ struct EditorCommand
         LoadMaterial,      // path
         CreateMaterial,    // path (empty -> in memory only), nodeId + subMesh optional
         CreateDirectory,   // path (Application uniquifies)
+        RenameAsset,       // path + name (a file or folder on disk)
         AssignTexture      // materialId, textureSlot, then EITHER textureId (an
                            // already-loaded texture) OR path (a file to load).
                            // Neither set clears the slot.
@@ -70,7 +71,12 @@ struct EditorCommand
     TextureSlot textureSlot = TextureSlot::BaseColor;
     uint32_t    textureId   = 0;
 
-    // LoadModel, LoadMaterial and SaveMaterial use this. A path per command is a few dozen bytes on a
+    // RenameAsset: the new name, without a directory. Extension optional --
+    // Application keeps the original one when it is left off, so renaming
+    // "rock.mat" to "stone" does not produce an extensionless file.
+    std::string name;
+
+    // LoadModel, LoadMaterial, SaveMaterial and RenameAsset use this. A path per command is a few dozen bytes on a
     // vector that holds a handful of entries for one frame -- not worth a
     // variant to avoid.
     std::filesystem::path path;

@@ -219,7 +219,124 @@ void EditorUI::deleteNode(uint32_t nodeId)
     }
 }
 
-void EditorUI::drawNodeContextMenu(uint32_t nodeId)
+
+// ---------------------------------------------------------------------------
+// renaming
+// ---------------------------------------------------------------------------
+
+void EditorUI::beginRename(RenameTarget target, uint32_t id, const std::string &current)
+{
+    m_renameTarget = target;
+    m_renameId     = id;
+    m_renamePath.clear();
+    std::snprintf(m_renameBuffer, sizeof(m_renameBuffer), "%s", current.c_str());
+    m_renameFocusPending = true;
+}
+
+void EditorUI::beginRenameAsset(const std::filesystem::path &path)
+{
+    m_renameTarget = RenameTarget::Asset;
+    m_renameId     = 0;
+    m_renamePath   = path;
+
+    // Stem, not filename: nobody wants to retype ".mat", and typing over the
+    // extension by accident is the classic way to make a file disappear from
+    // its own browser.
+    std::snprintf(m_renameBuffer, sizeof(m_renameBuffer), "%s",
+                  path.stem().string().c_str());
+    m_renameFocusPending = true;
+}
+
+void EditorUI::cancelRename()
+{
+    m_renameTarget = RenameTarget::None;
+    m_renameId     = 0;
+    m_renamePath.clear();
+    m_renameFocusPending = false;
+}
+
+bool EditorUI::renameField(const char *id)
+{
+    if (m_renameFocusPending) {
+        ImGui::SetKeyboardFocusHere();
+        m_renameFocusPending = false;
+    }
+
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    const bool entered = ImGui::InputText(id, m_renameBuffer, sizeof(m_renameBuffer),
+                                          ImGuiInputTextFlags_EnterReturnsTrue |
+                                          ImGuiInputTextFlags_AutoSelectAll);
+
+    // Enter commits. So does clicking away
+    // Escape: cancel
+
+    if (entered || ImGui::IsItemDeactivatedAfterEdit()) {
+        return true;
+    }
+    if (ImGui::IsItemDeactivated()) {
+        cancelRename();
+    }
+    return false;
+}
+
+void EditorUI::drawSaveMaterialPopup(const ResourceStore &resources)
+{
+    constexpr const char *popupId = "Save Material As";
+
+    if (m_saveAsRequested) {
+        ImGui::OpenPopup(popupId);
+        m_saveAsRequested = false;
+    }
+
+    if (!ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    if (m_saveAsMaterial == 0 || m_saveAsMaterial > resources.materialCount()) {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+
+    // The folder is wherever the Assets tab is pointing, shown rather than
+    // chosen.
+    // A real directory picker is a lot of UI for a decision the user
+    // has usually already made by browsing there.
+
+    ImGui::TextDisabled("Folder");
+    ImGui::TextUnformatted(m_currentAssetPath.string().c_str());
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+    ImGui::TextDisabled("Name");
+    ImGui::SetNextItemWidth(280.0f);
+    const bool entered = ImGui::InputText("##saveasname", m_saveAsBuffer, sizeof(m_saveAsBuffer),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+
+    const bool named = m_saveAsBuffer[0] != '\0';
+
+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+    ImGui::BeginDisabled(!named);
+    const bool confirmed = ImGui::Button("Save", ImVec2(90.0f, 0.0f)) || (entered && named);
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(90.0f, 0.0f))) {
+        ImGui::CloseCurrentPopup();
+    }
+
+    if (confirmed) {
+        EditorCommand cmd;
+        cmd.kind       = EditorCommand::Kind::SaveMaterial;
+        cmd.materialId = m_saveAsMaterial;
+        cmd.path       = m_currentAssetPath / (std::string(m_saveAsBuffer) + ".mat");
+        m_commands.push_back(cmd);
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+}
+
+void EditorUI::drawNodeContextMenu(uint32_t nodeId, const std::string &name)
 {
     if (!ImGui::BeginPopupContextItem()) {
         return;
@@ -228,6 +345,10 @@ void EditorUI::drawNodeContextMenu(uint32_t nodeId)
     if (ImGui::BeginMenu("Create Child")) {
         drawCreateMenuItems(nodeId);
         ImGui::EndMenu();
+    }
+
+    if (ImGui::MenuItem("Rename", "F2")) {
+        beginRename(RenameTarget::Node, nodeId, name);
     }
 
     if (ImGui::MenuItem("Duplicate")) {
@@ -305,7 +426,7 @@ void EditorUI::drawGizmoToolbar()
     }
 }
 
-void EditorUI::handleShortcuts()
+void EditorUI::handleShortcuts(Scene &scene, const ResourceStore &resources)
 {
     // Skipped while a text field or a slider owns the keyboard, or typing a
     // node name retargets the gizmo on every keystroke.
@@ -326,6 +447,19 @@ void EditorUI::handleShortcuts()
     if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) &&
         m_selectionMode == SelectionMode::Node && m_selectedNode != 0) {
         deleteNode(m_selectedNode);
+    }
+
+    // F2 renames whatever is selected. The early return above means this never
+    // fires while a rename field already has the keyboard.
+    if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
+        if (m_selectionMode == SelectionMode::Node && m_selectedNode != 0 &&
+            scene.isAlive(m_selectedNode)) {
+            beginRename(RenameTarget::Node, m_selectedNode, scene.getNode(m_selectedNode).name);
+        } else if (m_selectionMode == SelectionMode::Material &&
+                   m_selectedMaterial != 0 && m_selectedMaterial <= resources.materialCount()) {
+            beginRename(RenameTarget::Material, m_selectedMaterial,
+                        resources.material(m_selectedMaterial).name);
+        }
     }
 }
 

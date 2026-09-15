@@ -96,6 +96,44 @@ private:
     enum class OriginFilter : uint8_t { All, Project, Imported };
     OriginFilter m_originFilter = OriginFilter::All;
 
+    // ---- renaming --------------------------------------------------------
+    // One rename at a time
+    enum class RenameTarget : uint8_t { None, Node, Material, Asset };
+
+    RenameTarget          m_renameTarget = RenameTarget::None;
+    uint32_t              m_renameId     = 0;   // node or material ID
+    std::filesystem::path m_renamePath;         // the asset being renamed
+    char                  m_renameBuffer[128]{};
+    bool                  m_renameFocusPending = false;
+
+    void beginRename(RenameTarget target, uint32_t id, const std::string &current);
+    void beginRenameAsset(const std::filesystem::path &path);
+    void cancelRename();
+
+    bool isRenaming(RenameTarget target, uint32_t id) const
+    {
+        return m_renameTarget == target && m_renameId == id;
+    }
+    bool isRenamingAsset(const std::filesystem::path &path) const
+    {
+        return m_renameTarget == RenameTarget::Asset && m_renamePath == path;
+    }
+
+    // The in-place edit field. Takes focus on its first frame, commits on
+    // Enter or on clicking away, cancels on Escape. Returns true exactly once,
+    // on commit, with the new text in m_renameBuffer.
+    bool renameField(const char *id);
+
+    // ---- save as ---------------------------------------------------------
+    bool     m_saveAsRequested = false;
+    uint32_t m_saveAsMaterial  = 0;
+    char     m_saveAsBuffer[128]{};
+
+    // Drawn from build(), not from the inspector: a modal has to be submitted
+    // every frame it is open, and the inspector stops drawing the material the
+    // moment the selection changes underneath it.
+    void drawSaveMaterialPopup(const ResourceStore &resources);
+
     // Which row or tile is highlighted in the Assets tab. A path rather than
     // an index, because the entry list is rebuilt every frame and an index
     // would silently point at a different file the moment a folder changes.
@@ -142,12 +180,13 @@ private:
     void     assignMaterial(uint32_t nodeId, uint32_t subMesh, uint32_t materialId);
 
     void drawCreateMenuItems(uint32_t parentId);
-    void drawNodeContextMenu(uint32_t nodeId);
+
+    void drawNodeContextMenu(uint32_t nodeId, const std::string &name);
     void deleteNode(uint32_t nodeId);
 
     void drawGizmo(Scene &scene, const Camera &camera, uint32_t width, uint32_t height);
     void drawGizmoToolbar();
-    void handleShortcuts();
+    void handleShortcuts(Scene &scene, const ResourceStore &resources);
 
     void drawProjectPanel(ResourceStore &resources);
     void drawAssetsTab();
