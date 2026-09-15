@@ -16,6 +16,7 @@
 #include "../render/VulkanContext.h"
 #include "../render/GeometryStore.h"
 #include "../render/ResourceStore.h"
+#include "../render/ShadowMap.h"      // ShadowSettings
 #include "../common/constants.h"
 #include "../scene/Scene.h"
 #include "../scene/Camera.h"
@@ -321,9 +322,80 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
 // panels
 // ---------------------------------------------------------------------------
 
+// Property row helper for the little settings windows
+namespace
+{
+    bool sliderRow(const char *label, float &value, float min, float max,
+                   const char *format = "%.3f")
+    {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::PushID(label);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        const bool changed = ImGui::SliderFloat("##v", &value, min, max, format);
+        ImGui::PopID();
+        return changed;
+    }
+}
+
+void EditorUI::drawShadowWindow()
+{
+    if (!m_showShadowWindow) {
+        return;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Shadows", &m_showShadowWindow)) {
+        if (!m_shadowSettings) {
+            ImGui::TextUnformatted("No renderer bound.");
+        } else {
+            ShadowSettings &s = *m_shadowSettings;
+
+            ImGui::Checkbox("Enabled", &s.enabled);
+            ImGui::Separator();
+
+            beginProperties("shadow_fit");
+            sliderRow("Distance", s.distance, 2.0f, 200.0f, "%.1f");
+            if (m_sunDirection) {
+                // Renormalised by the renderer every frame, so dragging a
+                // component to zero is safe.
+                vec3Control("Sun dir", *m_sunDirection, 0.0f, 0.01f);
+            }
+            endProperties();
+
+            ImGui::SeparatorText("Bias");
+            beginProperties("shadow_bias");
+            sliderRow("Normal",   s.normalBias,   0.0f, 4.0f, "%.2f texels");
+            sliderRow("Depth",    s.depthBias,    0.0f, 0.01f, "%.5f");
+            sliderRow("Constant", s.constantBias, 0.0f, 8.0f, "%.2f");
+            sliderRow("Slope",    s.slopeBias,    0.0f, 8.0f, "%.2f");
+            endProperties();
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("Raise Slope first if acne appears.");
+        }
+    }
+    ImGui::End();
+}
+
 void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources,
                      const Camera &camera, uint32_t width, uint32_t height)
 {
+    // Submitted before anything reads WorkPos: the main menu bar is what
+    // shrinks the viewport's work area, and the dockspace below sizes itself
+    // from it.
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("Window")) {
+            ImGui::MenuItem("Shadows", nullptr, &m_showShadowWindow);
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -385,6 +457,8 @@ void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore 
     ImGui::End();
 
     ImGui::End(); // End EditorDockSpaceWindow
+
+    drawShadowWindow();
 
     handleShortcuts(scene, resources);
     drawSaveMaterialPopup(resources);

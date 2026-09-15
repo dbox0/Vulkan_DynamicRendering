@@ -20,6 +20,7 @@ class Camera;
 class GeometryStore;
 class ResourceStore;
 struct Mesh;
+struct ShadowSettings;
 
 // Dear ImGui overlay:
 //   * "Hierarchy" window on the left  -- click a node to select it
@@ -59,6 +60,15 @@ public:
     // there and the viewport picker would happily deselect the node you were
     // about to grab.
     bool gizmoCapturesMouse() const { return m_gizmoHovered; }
+
+    // Hands the editor a pointer to the renderer's live shadow state so the
+    // Shadows window can edit it in place. Call once after both exist;
+
+    void bindShadowSettings(ShadowSettings &settings, glm::vec3 &sunDirection)
+    {
+        m_shadowSettings = &settings;
+        m_sunDirection   = &sunDirection;
+    }
 
     uint32_t selectedNode() const { return m_selectedNode; }
     void selectNode(uint32_t nodeId, uint32_t subMeshIndex = 0);
@@ -183,6 +193,12 @@ private:
 
     void drawNodeContextMenu(uint32_t nodeId, const std::string &name);
     void deleteNode(uint32_t nodeId);
+
+    void drawShadowWindow();
+
+    ShadowSettings *m_shadowSettings   = nullptr;
+    glm::vec3      *m_sunDirection     = nullptr;
+    bool            m_showShadowWindow = false;
 
     void drawGizmo(Scene &scene, const Camera &camera, uint32_t width, uint32_t height);
     void drawGizmoToolbar();

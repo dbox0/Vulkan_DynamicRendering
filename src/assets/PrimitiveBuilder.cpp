@@ -67,6 +67,10 @@ namespace
         return out;
     }
 
+    // Not Unit Sized
+
+    constexpr float kPlaneSize = 10.0f;
+
     MeshData buildPlane()
     {
         MeshData out;
@@ -76,10 +80,12 @@ namespace
         const glm::vec3 u{ 1, 0, 0 };
         const glm::vec3 v{ 0, 0, -1 };     // cross(u, v) == +Y
 
-        out.vertices.push_back(makeVertex((-u - v) * 0.5f, n, u, { 0.0f, 1.0f }));
-        out.vertices.push_back(makeVertex(( u - v) * 0.5f, n, u, { 1.0f, 1.0f }));
-        out.vertices.push_back(makeVertex(( u + v) * 0.5f, n, u, { 1.0f, 0.0f }));
-        out.vertices.push_back(makeVertex((-u + v) * 0.5f, n, u, { 0.0f, 0.0f }));
+        const float e = kPlaneSize * 0.5f;
+
+        out.vertices.push_back(makeVertex((-u - v) * e, n, u, { 0.0f, 1.0f }));
+        out.vertices.push_back(makeVertex(( u - v) * e, n, u, { 1.0f, 1.0f }));
+        out.vertices.push_back(makeVertex(( u + v) * e, n, u, { 1.0f, 0.0f }));
+        out.vertices.push_back(makeVertex((-u + v) * e, n, u, { 0.0f, 0.0f }));
 
         const uint32_t quad[6] = { 0, 1, 2, 0, 2, 3 };
         for (const uint32_t i : quad) {

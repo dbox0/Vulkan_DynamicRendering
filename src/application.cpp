@@ -109,6 +109,11 @@ bool Application::initialize()
         showError("Failed to initialize the editor UI");
         return false;
                              }
+
+    // The editor edits the renderer's shadow state in place; nothing is copied
+    // back, so there is no lag on a slider drag.
+    m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
+
     return true;
 }
 
