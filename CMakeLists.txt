@@ -129,6 +129,10 @@ add_executable(vulkanapp
         src/editor/EditorSelection.h
         src/editor/UndoHistory.h
         src/editor/UndoHistory.cpp
+        src/editor/MutationDetector.h
+        src/editor/MutationDetector.cpp
+        src/scene/SceneSerializer.h
+        src/scene/SceneSerializer.cpp
         src/editor/SceneUndoWorld.h
         src/editor/SceneUndoWorld.cpp
         src/editor/EditorWorld.h
@@ -171,6 +175,7 @@ add_executable(engine_tests
         tests/reflection_tests.cpp
         tests/edit_recorder_tests.cpp
         tests/undo_tests.cpp
+        tests/serializer_tests.cpp
         src/common/Guid.cpp
         src/reflect/Reflection.cpp
         src/reflect/BinaryArchive.cpp

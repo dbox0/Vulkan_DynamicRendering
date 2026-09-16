@@ -16,6 +16,7 @@
 #include "assets/AssetTypes.h"
 #include "editor/EditorWorld.h"
 #include "editor/UndoHistory.h"
+#include "scene/SceneSerializer.h"
 #include "reflect/BinaryArchive.h"
 #include "reflect/Reflection.h"
 #include <glm/gtx/quaternion.hpp>
@@ -159,6 +160,7 @@ bool Application::initialize()
     // back, so there is no lag on a slider drag.
     m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
     m_editor.bindHistory(m_history);
+    m_detector.initialize(m_scene, m_resources, m_geometry, m_history);
 
     return true;
 }
@@ -290,8 +292,11 @@ void Application::run()
 
 void Application::applyEditorCommands()
 {
+    m_detector.beginFrame();
+
     const std::vector<EditorCommand> &commands = m_editor.commands();
     if (commands.empty()) {
+        m_detector.endFrame();
         return;
     }
 
@@ -553,6 +558,71 @@ void Application::applyEditorCommands()
             // back to the error texture on next load
             break;
         }
+                case EditorCommand::Kind::SaveScene:
+        {
+            // Default path next to ASSET_DIR; proper dialog comes later.
+            const std::filesystem::path path = cmd.path.empty()
+                ? std::filesystem::path(ASSET_DIR) / "scene.scene"
+                : cmd.path;
+            if (saveScene(m_scene, m_geometry, m_resources, m_cache, path)) {
+                m_history.markSaved();
+                std::cout << "[scene] Saved to " << path << std::endl;
+            }
+            break;
+        }
+
+        case EditorCommand::Kind::LoadScene:
+        {
+            const std::filesystem::path path = cmd.path.empty()
+                ? std::filesystem::path(ASSET_DIR) / "scene.scene"
+                : cmd.path;
+            if (!std::filesystem::exists(path)) {
+                showError("No scene file found at " + path.string());
+                break;
+            }
+            // Open a GPU upload buffer now; the scene loader uses it for
+            // mesh assets. Load clears the scene first, so open the buffer
+            // before the clear -- any in-flight frames have already retired.
+            auto uploadCmd = m_ctx.beginUpload();
+            if (!uploadCmd) {
+                showError("Scene load: could not open upload command buffer");
+                break;
+            }
+
+            // Clear everything: scene, history, mesh candidates.
+            m_history.clear();
+            m_world.resetOrphanedMeshes();
+            m_editor.clearSelection();
+            {
+                // Destroy all current nodes cleanly (frees mesh refcounts).
+                std::vector<uint32_t> orphans;
+                for (const uint32_t root : m_scene.rootNodes()) {
+                    m_scene.destroyNode(root, orphans);
+                }
+                for (const uint32_t meshId : orphans) {
+                    m_geometry.removeMesh(meshId);
+                }
+            }
+
+            const SceneLoadResult loaded = loadScene(
+                m_scene, m_geometry, m_resources, m_ctx, m_cache, uploadCmd, path);
+            m_ctx.submitUpload();
+
+            if (!m_resources.commitTextureDescriptors()) {
+                showError("Scene load: failed to commit texture descriptors");
+            }
+            if (!m_geometry.flushUploads()) {
+                showError("Scene load: failed to upload mesh geometry");
+            }
+
+            for (const std::string &w : loaded.warnings) {
+                std::cerr << "[scene warn] " << w << std::endl;
+            }
+            if (loaded.ok) {
+                std::cout << "[scene] Loaded " << path << std::endl;
+            }
+            break;
+        }
 
         case EditorCommand::Kind::CreateDirectory:
         {
@@ -642,6 +712,7 @@ void Application::applyEditorCommands()
         showError("Failed to upload generated geometry");
     }
 
+    m_detector.endFrame();
     m_editor.clearCommands();
 }
 

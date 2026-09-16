@@ -484,24 +484,43 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
 
 void EditorUI::drawEditMenu()
 {
-    if (!ImGui::BeginMenu("Edit")) {
-        return;
+    if (ImGui::BeginMenu("File")) {          // was: if (!ImGui::BeginMenu ...
+        if (ImGui::MenuItem("Save Scene...", "Ctrl+S")) { submitSaveScene(); }
+        if (ImGui::MenuItem("Load Scene...", "Ctrl+O")) { submitLoadScene(); }
+        ImGui::Separator();
+        ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Edit")) {
+        const bool canUndo = m_history && m_history->canUndo();
+        const bool canRedo = m_history && m_history->canRedo();
 
-    const bool canUndo = m_history && m_history->canUndo();
-    const bool canRedo = m_history && m_history->canRedo();
+        // "###" keeps the item ID stable while the label names the step.
+        const std::string undoLabel = canUndo ? "Undo " + m_history->undoName() + "###undo" : "Undo###undo";
+        const std::string redoLabel = canRedo ? "Redo " + m_history->redoName() + "###redo" : "Redo###redo";
 
-    // "###" keeps the item ID stable while the label names the step.
-    const std::string undoLabel = canUndo ? "Undo " + m_history->undoName() + "###undo" : "Undo###undo";
-    const std::string redoLabel = canRedo ? "Redo " + m_history->redoName() + "###redo" : "Redo###redo";
-
-    if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, canUndo)) {
-        submitUndo();
+        if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, canUndo)) {
+            submitUndo();
+        }
+        if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, canRedo)) {
+            submitRedo();
+        }
+        ImGui::EndMenu();
     }
-    if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, canRedo)) {
-        submitRedo();
-    }
-    ImGui::EndMenu();
+}
+
+void EditorUI::submitSaveScene()
+{
+    EditorCommand cmd;
+    cmd.kind = EditorCommand::Kind::SaveScene;
+    // path is empty: Application picks a default
+    submit(std::move(cmd));
+}
+
+void EditorUI::submitLoadScene()
+{
+    EditorCommand cmd;
+    cmd.kind = EditorCommand::Kind::LoadScene;
+    submit(std::move(cmd));
 }
 
 void EditorUI::submitUndo()

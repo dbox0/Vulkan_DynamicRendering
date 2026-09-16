@@ -12,6 +12,7 @@
 void runReflectionTests();
 void runEditRecorderTests();
 void runUndoTests();
+void runSerializerTests();
 void runValidateTest();
 
 int main()
@@ -23,6 +24,7 @@ int main()
     runReflectionTests();
     runEditRecorderTests();
     runUndoTests();
+    runSerializerTests();
     runValidateTest();
 
     std::printf("\n%d checks, %d failed\n", test::checks, test::failures);

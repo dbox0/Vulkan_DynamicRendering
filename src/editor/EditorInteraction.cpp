@@ -399,6 +399,12 @@ void EditorUI::handleShortcuts(const Scene &scene, const ResourceStore &resource
     }
 
     if (heldId() == 0) {
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
+            submitSaveScene();
+        }
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_O)) {
+            submitLoadScene();
+        }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
             submitUndo();
         }

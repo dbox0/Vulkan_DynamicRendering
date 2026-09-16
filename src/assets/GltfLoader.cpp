@@ -36,6 +36,11 @@ struct Image
 
 bool GltfLoader::load(const std::filesystem::path &filepath)
 {
+    // Recorded into every Mesh this file produces so the scene serializer
+    // can write "load this file, take mesh N" as the asset reference.
+    // Use the full path here; TextureCache::toRelative() strips ASSET_DIR.
+    m_sourcePath = filepath.lexically_normal().string();
+
     if (!std::filesystem::exists(filepath)) {
         std::cerr << "[error] File does not exist: " << filepath << std::endl;
         return false;
@@ -398,6 +403,8 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
             }
         }
 
+        mesh.sourcePath      = m_sourcePath;
+        mesh.sourceMeshIndex = static_cast<int32_t>(i);
         meshIds[i] = m_geometry.addMesh(std::move(mesh));
     }
     return meshIds;

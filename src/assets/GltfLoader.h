@@ -54,6 +54,7 @@ private:
                         uint32_t parentId, uint32_t prevSiblingId,
                         const std::vector<uint32_t> &meshIds);
 
+    std::string   m_sourcePath;   // ASSET_DIR-relative, set in load()
     VulkanContext &m_ctx;
     ResourceStore &m_resources;
     GeometryStore &m_geometry;

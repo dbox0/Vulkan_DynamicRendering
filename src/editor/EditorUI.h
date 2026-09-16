@@ -87,7 +87,7 @@ public:
     EditorSelection selection() const;
     void setSelection(const EditorSelection &selection);
 
-    /
+
     void bindHistory(const UndoHistory &history) { m_history = &history; }
     void selectNode(Guid node, uint32_t subMeshIndex = 0);
     void selectMaterial(uint32_t materialId);

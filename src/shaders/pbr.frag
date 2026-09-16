@@ -280,15 +280,11 @@ void main()
 
     // Reflective environment
 
-    vec3 R = reflect(-V, N);
+    vec3 R = reflect(V, N);
     vec3 irradiance;
     vec3 radiance;
 
     if (frame.envTex != 0u) {
-        // Crude prefilter: the mip chain blurs isotropically rather than by a
-        // GGX lobe, so rough metals are approximate. Good enough until a real
-        // prefilter pass exists. sqrt maps roughness to lobe width better than
-        // a linear ramp does.
         float lod = sqrt(roughness) * frame.envMaxLod;
         float diffuseLod = max(frame.envMaxLod - 2.0, 0.0);
         irradiance = sampleEnv(frame.envTex, N, diffuseLod) * frame.envIntensity;

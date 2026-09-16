@@ -81,7 +81,10 @@ struct EditorCommand
         EndEdit,           // editId
 
         Undo,
-        Redo
+        Redo,
+
+        SaveScene,    // path
+        LoadScene     // path
     };
 
     // subMesh sentinel: retarget every submesh of the node's mesh.

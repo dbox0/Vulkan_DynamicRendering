@@ -15,6 +15,14 @@ struct Mesh
 {
     std::string name;
     std::vector<SubMesh> subMeshes;
+
+    // Asset reference: where this mesh came from, for scene serialization.
+    // Path is relative to ASSET_DIR with forward slashes. The index is which
+    // of the glTF file's meshes this is (0-based), so a file with several
+    // meshes can round-trip without storing vertex data in the scene file.
+    // Empty when the mesh was created procedurally (primitives).
+    std::string sourcePath;   // e.g. "models/character.gltf"
+    int32_t     sourceMeshIndex = -1;
 };
 
 struct SubMesh

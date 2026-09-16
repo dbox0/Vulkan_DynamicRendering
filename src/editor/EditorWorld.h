@@ -34,6 +34,9 @@ public:
 
     [[nodiscard]] size_t pendingMeshCount() const { return m_meshesToRelease.size(); }
 
+    // Call when loading a new scene discards everything the queue held.
+    void resetOrphanedMeshes() { m_meshesToRelease.clear(); m_seenRevision = ~uint64_t{0}; }
+
 protected:
     [[nodiscard]] bool existsOther(const EditTarget &target) const override;
     [[nodiscard]] bool captureOther(const EditTarget &target, reflect::Blob &out) const override;

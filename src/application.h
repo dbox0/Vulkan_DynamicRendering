@@ -15,6 +15,8 @@
 #include "editor/EditorUI.h"
 #include "editor/EditRecorder.h"
 #include "editor/EditorWorld.h"
+#include "editor/MutationDetector.h"
+#include "scene/SceneSerializer.h"
 #include "editor/UndoHistory.h"
 #include "editor/Picking.h"
 
@@ -102,5 +104,6 @@ private:
     // Last, so they are destroyed first: both hold references to the stores
     // above
     EditorWorld   m_world{ m_scene, m_resources, m_geometry };
-    UndoHistory   m_history{ m_world };
+    UndoHistory       m_history{ m_world };
+    MutationDetector  m_detector;
 };
