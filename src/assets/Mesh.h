@@ -6,6 +6,11 @@
 
 struct SubMesh;
 
+struct MeshMaterials
+{
+    std::vector<uint32_t> materials;
+};
+
 struct Mesh
 {
     std::string name;

@@ -13,6 +13,9 @@
 #include "scene/Scene.h"
 #include "scene/Camera.h"
 #include "editor/EditorUI.h"
+#include "editor/EditRecorder.h"
+#include "editor/EditorWorld.h"
+#include "editor/UndoHistory.h"
 #include "editor/Picking.h"
 
 struct SDL_Window;
@@ -44,6 +47,9 @@ private:
     // the load happens between build() and render() rather than mid-event.
     void loadPendingAssets();
 
+    // Selection and error reporting after an undo or redo.
+    void applyHistoryStep(const UndoHistory::Outcome &outcome, const char *verb);
+
     struct PendingAsset
     {
         enum class Kind : uint8_t { Model, Material, Texture };
@@ -58,7 +64,11 @@ private:
         TextureSlot slot       = TextureSlot::BaseColor;
     };
 
-    std::vector<uint32_t>     m_orphanedMeshes;   // scratch for the delete path
+    // Validates the editor's command stream across frames (edit runs are
+    // well formed, nothing interleaves them) -- the transaction boundaries
+    // below are read straight from it.
+    EditStreamChecker         m_editChecker;
+    std::vector<Guid>         m_structurallyChanged;   // scratch, see applyEditorCommands
     std::vector<PendingAsset> m_pendingAssets;
 
     static constexpr uint32_t VulkanVersion     = VK_API_VERSION_1_4;
@@ -88,4 +98,9 @@ private:
     TextureCache  m_cache;
     Renderer      m_renderer;
     EditorUI m_editor;
+
+    // Last, so they are destroyed first: both hold references to the stores
+    // above
+    EditorWorld   m_world{ m_scene, m_resources, m_geometry };
+    UndoHistory   m_history{ m_world };
 };

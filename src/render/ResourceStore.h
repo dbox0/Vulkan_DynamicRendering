@@ -173,6 +173,14 @@ public:
             }
         }
     }
+    // Undo decides cleanliness by contentso it needs to set the flag both ways. Called by EditorWorld.cpp
+    void setMaterialDirty(uint32_t materialId, bool dirty)
+    {
+        if (materialId && materialId <= m_materialInfos.size()) {
+            m_materialInfos[materialId - 1].dirty = dirty;
+        }
+    }
+
     uint64_t materialBufferAddress() const { return m_materialBuffer.deviceAddress; }
 
 

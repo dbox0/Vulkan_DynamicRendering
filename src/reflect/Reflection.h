@@ -26,27 +26,23 @@
 // reads that description instead of knowing the type. Adding a component is
 // a registration call and nothing else.
 //
-// WHAT IS CLOSED AND WHAT IS OPEN
-//   Types (components, node data) are open: register as many as you like.
+//   Types (components, node data) are open.
 //   Value kinds (ValueKind below) are closed: every archive has a case per
-//   kind. A field of an unsupported C++ type is a compile error, never a
-//   silent skip. Adding a kind is rare and means one case per archive.
+//   kind. A field of an unsupported C++ type is a compile error
 //
-// NAMES ARE THE FORMAT
+//   NAMES ARE THE FORMAT
 //   The type name ("Light") and field names ("castsShadows") are what files
 //   store. They are deliberately separate from the C++ identifiers, so a C++
 //   rename is free and a serialized rename is an explicit migrate() step.
 //
-// DERIVED STATE IS NEVER A FIELD
-//   Cached matrices, dirty flags, GPU handles, slot IDs: leave them out and
-//   rebuild them in afterRead(). An archive writing into an object is exactly
-//   what undo does, so afterRead() is the one place that has to be right.
+//   Dervied state is not a field
+//   Cached matrices, dirty flags, GPU handles, slot IDsare left out and rebuilt via afterRead().
+//   A runtime handle that undo must restore is  the one exception,
+//   and it is flagged RuntimeHandle so no file sees it
 //
-// REGISTRATION
-//   Call registerX() functions once at startup, before anything serializes,
-//   then validate(). Explicit calls, not static initializers: self-registering
-//   statics get dropped by the linker when they live in a static library.
-// ============================================================================
+//   REGISTRATION
+//   Call registerX() functions once at startup, before anything serializes
+//   then validate().
 
 namespace reflect
 {
@@ -79,8 +75,7 @@ namespace reflect
     struct EnumInfo;
     struct ValueType;
 
-    // Type-erased std::vector<T>. Only vector, deliberately: one container
-    // means one file shape and one undo shape.
+    // Type-erased std::vector<T>. Only vector
     struct ArrayOps
     {
         size_t      (*size)(const void *array)                      = nullptr;
@@ -104,11 +99,14 @@ namespace reflect
     namespace FieldFlags
     {
         inline constexpr uint32_t None            = 0;
-        // Skipped by every archive: not in undo, not in files. For values the
-        // inspector may show but that are derived or runtime-only.
+        // Skipped by every archive: not in undo, not in files. For values the inspector may show but
+        // that are derived or runtime-only.
+
         inline constexpr uint32_t Transient       = 1u << 0;
         inline constexpr uint32_t HideInInspector = 1u << 1;
         inline constexpr uint32_t ReadOnly        = 1u << 2;
+        // In-memory snapshots only.
+        inline constexpr uint32_t RuntimeHandle   = 1u << 3;
     }
 
     // Presentation hints for the inspector. Archives ignore them.
@@ -138,7 +136,13 @@ namespace reflect
             // access() only computes an address; it never writes.
             return access(const_cast<void *>(object));
         }
-        [[nodiscard]] bool isSerialized() const { return (flags & FieldFlags::Transient) == 0; }
+        // In undo snapshots (BinaryArchive)?
+        [[nodiscard]] bool inSnapshots() const { return (flags & FieldFlags::Transient) == 0; }
+        // In files (JsonArchive)?
+        [[nodiscard]] bool inFiles() const
+        {
+            return (flags & (FieldFlags::Transient | FieldFlags::RuntimeHandle)) == 0;
+        }
     };
 
     struct TypeInfo
@@ -196,27 +200,22 @@ namespace reflect
 
     // ------------------------------------------------------------------------
     // Registry queries
-    // ------------------------------------------------------------------------
 
     [[nodiscard]] const TypeInfo *findType(std::string_view name);
     [[nodiscard]] const EnumInfo *findEnum(std::string_view name);
 
-    // Sorted by name, so anything iterating it (tests, a component picker)
-    // behaves the same every run.
+    // Sorted by name : tests/component work deterministically
     [[nodiscard]] std::vector<const TypeInfo *> allTypes();
     [[nodiscard]] std::vector<const EnumInfo *> allEnums();
 
     // Checks every registered type for fields whose struct or enum type was
-    // never registered, and enums with no entries. Call once after all
-    // registration; an empty result means the tables are complete.
+    // never registered, and enums with no entries. Called once after all
+    // registration;
+    // empty result means the tables are complete.
     [[nodiscard]] std::vector<std::string> validate();
 
     // "castsShadows" -> "Casts Shadows"
     [[nodiscard]] std::string prettifyName(std::string_view name);
-
-    // ========================================================================
-    // Compile-time plumbing
-    // ========================================================================
 
     namespace detail
     {
@@ -271,7 +270,7 @@ namespace reflect
 
         // glm types that are not in the vocabulary (dvec3, ivec2, mat4, ...)
         // are classes, and would otherwise fall through to "struct" and only
-        // fail at validate(). Catch them at compile time instead.
+        // fail at validate()
         template <class T> struct IsGlm : std::false_type {};
         template <glm::length_t L, class T, glm::qualifier Q>
         struct IsGlm<glm::vec<L, T, Q>> : std::true_type {};
@@ -360,7 +359,6 @@ namespace reflect
 
     // ========================================================================
     // Registration
-    // ========================================================================
 
     template <class T>
     class TypeBuilder
@@ -371,9 +369,8 @@ namespace reflect
         // Usage:  .field<&Light::color>("color")
         //
         // The member pointer is a template argument rather than a function
-        // argument so the accessor below can be a plain function pointer: no
-        // std::function, no offsetof, and it works for private members when
-        // the registering function is a friend.
+        // argument so the accessor below can be a plain function pointer
+
         template <auto Member>
         TypeBuilder &field(std::string_view name, uint32_t flags = FieldFlags::None)
         {
@@ -416,8 +413,6 @@ namespace reflect
             return *this;
         }
 
-        // Any callable invocable with T&: a free function, a member function
-        // pointer, or a captureless lambda.  .afterRead<&Node::onRestored>()
         template <auto Callback>
         TypeBuilder &afterRead()
         {

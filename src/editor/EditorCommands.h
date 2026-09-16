@@ -1,27 +1,47 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <string>
+
+#include "EditTarget.h"
 #include "../assets/PrimitiveBuilder.h"
+#include "../common/Guid.h"
+#include "../reflect/BinaryArchive.h"
 
 // Editor intents, recorded during build() and drained by Application after it
 // returns.
 //
-// WHY A QUEUE RATHER THAN DIRECT CALLS.
 //   * build() walks the hierarchy and the submesh table while the panels are
 //     drawing. Creating a mesh, unloading one, or deleting a node mutates the
-//     exact containers being iterated -- deleting the node whose tree row is
-//     open is the obvious one, but "assign material" reaches into a Mesh the
-//     inspector is holding a reference to.
-//   * build() takes GeometryStore by const reference on purpose, and the way
-//     to keep that is to not need write access, rather than to widen it.
+//     exact containers being iterated.
+//   * build() takes GeometryStore by const reference
 //   * Creating a primitive owes a flushUploads(). Batching every creation in a
 //     frame into one submit falls out of this for free.
+//   * It is the single path by which the editor changes anything. Undo can
+//     only record what passes through here,
+//
+// NODES ARE NAMED BY GUID.
+//   Commands are applied in order, and an earlier one can recycle a slot: a
+//   DeleteNode followed by a CreateEmpty in the same frame hands the dead
+//   node's slot to the new one, and a later command naming that slot would
+//   hit the wrong node. Application resolves each Guid when it gets to it.
+//
+// PROPERTY EDITS: BeginEdit, Modify..., EndEdit
+//   A panel edits a COPY of an object and submits the copy's snapshot as a
+//   Modify. Modifies are grouped into edits, one per user gesture that
+//   becomes one undo step. EditRecorder does the grouping
+//
+//   Invariant: a BeginEdit ... EndEdit run never has another command inside
+//   it. An edit may stay open across frames (a drag), but any other command
+//   closes it first.
+
 // Which map on a material a texture is being assigned to.
 //
-// The slot -- not the file -- decides colour space. A PNG carries no such
+// The slot decides colour space. A PNG carries no such
 // information, which is why GltfLoader has to infer it from the materials
-// referencing an image, and why a drag-and-drop assignment has to carry the
-// slot rather than just a path.
+// referencing an image, and why a drag-and-drop assignment has to carry thes slot (not path)
+
+
 enum class TextureSlot : uint8_t
 {
     BaseColor,
@@ -40,22 +60,28 @@ struct EditorCommand
 {
     enum class Kind : uint8_t
     {
-        CreatePrimitive,   // primitive, parentId
-        CreateEmpty,       // parentId
-        CreateLight,       // parentId -- directional, the only kind so far
-        DeleteNode,        // nodeId
-        DuplicateNode,     // nodeId
-        AssignMaterial,    // nodeId, subMesh, materialId
-        ReparentNode,      // nodeId, parentId
+        CreatePrimitive,   // primitive, parent
+        CreateEmpty,       // parent
+        CreateLight,       // parent
+        DeleteNode,        // node
+        DuplicateNode,     // node
+        AssignMaterial,    // node, subMesh, materialId
+        ReparentNode,      // node, parent
         LoadModel,         // path
         SaveMaterial,      // materialId, path (empty -> MaterialInfo::sourcePath)
         LoadMaterial,      // path
         CreateMaterial,    // path (empty -> in memory only), nodeId + subMesh optional
         CreateDirectory,   // path (Application uniquifies)
         RenameAsset,       // path + name (a file or folder on disk)
-        AssignTexture      // materialId, textureSlot, then EITHER textureId (an
+        AssignTexture,     // materialId, textureSlot, then textureId (an
                            // already-loaded texture) OR path (a file to load).
-                           // Neither set clears the slot.
+
+        BeginEdit,         // editId, name
+        Modify,            // editId, target, snapshot (full new state)
+        EndEdit,           // editId
+
+        Undo,
+        Redo
     };
 
     // subMesh sentinel: retarget every submesh of the node's mesh.
@@ -64,21 +90,21 @@ struct EditorCommand
     Kind          kind      = Kind::CreateEmpty;
     PrimitiveType primitive = PrimitiveType::Cube;
 
-    uint32_t nodeId     = 0;
-    uint32_t parentId   = 0;
+    Guid     node;                   // the node acted on
+    Guid     parent;                 // null = scene root
     uint32_t subMesh    = kAllSubMeshes;
     uint32_t materialId = 0;
 
     TextureSlot textureSlot = TextureSlot::BaseColor;
     uint32_t    textureId   = 0;
 
-    // RenameAsset: the new name, without a directory. Extension optional --
-    // Application keeps the original one when it is left off, so renaming
-    // "rock.mat" to "stone" does not produce an extensionless file.
+    // RenameAsset: new name, extension optional --
+    // Application keeps  original extension  when left out
     std::string name;
-
-    // LoadModel, LoadMaterial, SaveMaterial and RenameAsset use this. A path per command is a few dozen bytes on a
-    // vector that holds a handful of entries for one frame -- not worth a
-    // variant to avoid.
     std::filesystem::path path;
+
+    // BeginEdit / Modify / EndEdit.
+    uint32_t      editId = 0;
+    EditTarget    target;
+    reflect::Blob snapshot;
 };

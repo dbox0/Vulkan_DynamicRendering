@@ -3,7 +3,10 @@
 #include <string>
 #include <cstdint>
 #include <glm/mat4x4.hpp>
+#include <span>
+
 #include "Geometry/NodeWorld.h"
+#include "SceneSnapshot.h"
 
 class GeometryStore;
 struct SubMesh;
@@ -32,6 +35,7 @@ public:
     NodeWorld &nodes()             { return m_nodeWorld; }
     const NodeWorld &nodes() const { return m_nodeWorld; }
     Node &getNode(uint32_t nodeId) { return m_nodeWorld.getNode(nodeId); }
+    const Node &getNode(uint32_t nodeId) const { return m_nodeWorld.getNode(nodeId); }
     uint32_t rootNodeId() const    { return m_rootNodeId; }
     size_t maxNodes() const        { return m_nodeWorld.maxNodes(); }
 
@@ -50,8 +54,7 @@ public:
     // parentId is 0. Returns 0 if the node budget is exhausted.
     //
     // `guid` null (the default) means a new identity. Pass one only to bring
-    // back a node that existed before (undo, scene load); see
-    // NodeWorld::createNode for the rules.
+    // back a node that existed before (undo, scene load)
     uint32_t createNode(uint32_t parentId, std::string name, uint32_t meshId = 0,
                         Guid guid = {});
 
@@ -62,23 +65,35 @@ public:
     // orphanedMeshesOut, every mesh handle that no live node references any
     // more. Those are the ones the caller can safely removeMesh().
     //
-    // The refcount is taken AFTER the subtree dies, which is the only order
-    // that gives the right answer: asking first would always count the nodes
-    // about to be deleted.
+    // The refcount is taken AFTER the subtree dies
     void destroyNode(uint32_t nodeId, std::vector<uint32_t> &orphanedMeshesOut);
 
-    // Moves nodeId under newParentId (0 = root), preserving its world
-    // transform. Refuses cycles, which is the one way a hierarchy drag can
-    // hang the DFS.
+
     bool reparentNode(uint32_t nodeId, uint32_t newParentId);
+
+    // --- structure as data (undo) -----------------------------------------
+
+    // Root nodes in order.
+    std::vector<uint32_t> rootNodes() const;
+
+    // Where a live node sits
+    NodePlacement placementOf(uint32_t nodeId) const;
+
+
+    bool moveNode(uint32_t nodeId, const NodePlacement &to);
+    bool captureNode(Guid guid, reflect::Blob &out) const;
+    bool applyNode(Guid guid, std::span<const uint8_t> snapshot);
+    bool captureSubtree(uint32_t rootId, SubtreeSnapshot &out) const;
+
+    // Recreates a captured subtree. Validates everything. Changes nothing on failure
+    // Returns the root's slot, 0 on failure.
+    uint32_t restoreSubtree(const SubtreeSnapshot &snapshot);
 
     // How many live nodes reference this mesh handle. The delete path uses it
     // to decide whether a mesh has become garbage.
     size_t meshUsers(uint32_t meshId) const;
 
-    // First alive node carrying a directional light, 0 for none. First rather
-    // than "the" one: nothing stops a user making two, and silently using the
-    // first makes sense
+    // First alive node carrying a directional light, 0 for none.
     uint32_t firstDirectionalLight() const;
 
     void collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out);
@@ -99,6 +114,13 @@ private:
     void unlink(uint32_t nodeId);
 
     bool isDescendantOf(uint32_t nodeId, uint32_t ancestorId) const;
+
+    // Appends nodeId to the end of parentId's children (0 = root chain).
+    void appendChild(uint32_t parentId, uint32_t nodeId);
+
+    // Inserts nodeId right after previousId in parentId's children, or first
+    // when previousId is 0. nodeId must be unlinked.
+    void linkAfter(uint32_t parentId, uint32_t previousId, uint32_t nodeId);
 
     NodeWorld m_nodeWorld;
     uint32_t  m_rootNodeId     = 0;

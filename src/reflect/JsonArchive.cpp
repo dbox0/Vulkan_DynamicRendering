@@ -196,7 +196,7 @@ namespace reflect
                 out["$version"] = type.version;
             }
             for (const FieldInfo &field : type.fields) {
-                if (field.isSerialized()) {
+                if (field.inFiles()) {
                     out[field.name] = writeValue(*field.type, field.get(object));
                 }
             }
@@ -242,7 +242,7 @@ namespace reflect
                 }
 
                 for (const FieldInfo &field : type.fields) {
-                    if (!field.isSerialized()) {
+                    if (!field.inFiles()) {
                         continue;
                     }
                     const auto it = source->find(field.name);
@@ -257,7 +257,7 @@ namespace reflect
                         continue;
                     }
                     const FieldInfo *field = type.findField(key);
-                    if (!field || !field->isSerialized()) {
+                    if (!field || !field->inFiles()) {
                         warn(path, "unknown field '" + key + "' ignored");
                     }
                 }

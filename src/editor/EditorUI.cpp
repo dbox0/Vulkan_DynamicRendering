@@ -19,6 +19,8 @@
 #include "../render/ShadowMap.h"      // ShadowSettings
 #include "../common/constants.h"
 #include "../scene/Scene.h"
+#include "../reflect/BinaryArchive.h"
+#include "UndoHistory.h"
 #include "../scene/Camera.h"
 #include "../common/errors.h"
 #include <ImGuizmo.h>
@@ -69,12 +71,7 @@ void EditorUI::applyTheme()
     style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
     style.WindowMenuButtonPosition = ImGuiDir_None;
 
-    // ---------------------------------------------------------------------
-    // Palette
-    //
-    // Almost everything is neutral.
-    // Blue is reserved for interaction.
-    // ---------------------------------------------------------------------
+    // -------------- Palette --------------
 
     const ImVec4 bg          = ImVec4(0.060f, 0.060f, 0.065f, 1.0f);
     const ImVec4 bgDark      = ImVec4(0.045f, 0.045f, 0.050f, 1.0f);
@@ -97,16 +94,11 @@ void EditorUI::applyTheme()
 
     ImVec4* c = style.Colors;
 
-    // ---------------------------------------------------------------------
-    // Text
-    // ---------------------------------------------------------------------
-
     c[ImGuiCol_Text]         = text;
     c[ImGuiCol_TextDisabled] = textDim;
 
-    // ---------------------------------------------------------------------
+
     // Windows / panels
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_WindowBg]     = bg;
     c[ImGuiCol_ChildBg]      = bgDark;
@@ -115,9 +107,7 @@ void EditorUI::applyTheme()
     c[ImGuiCol_Border]       = border;
     c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
 
-    // ---------------------------------------------------------------------
     // Inputs / controls
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_FrameBg]        = control;
     c[ImGuiCol_FrameBgHovered] = hover;
@@ -125,9 +115,6 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Title bars
-    //
-    // IMPORTANT: no blue title bars.
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_TitleBg]          = bgDark;
     c[ImGuiCol_TitleBgActive]    = panel;
@@ -135,9 +122,7 @@ void EditorUI::applyTheme()
 
     c[ImGuiCol_MenuBarBg] = bgDark;
 
-    // ---------------------------------------------------------------------
     // Scrollbars
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_ScrollbarBg]     = bgDark;
     c[ImGuiCol_ScrollbarGrab]   = control;
@@ -146,9 +131,6 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Buttons
-    //
-    // Neutral until interacted with.
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_Button]        = control;
     c[ImGuiCol_ButtonHovered] = hover;
@@ -156,7 +138,6 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Headers / tree nodes
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_Header]        = control;
     c[ImGuiCol_HeaderHovered] = hover;
@@ -164,9 +145,7 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Checkboxes / sliders
-    //
-    // Blue only appears where it communicates state.
-    // ---------------------------------------------------------------------
+
 
     c[ImGuiCol_CheckMark]      = blue;
     c[ImGuiCol_SliderGrab]     = blueSoft;
@@ -174,7 +153,7 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Separators
-    // ---------------------------------------------------------------------
+
 
     c[ImGuiCol_Separator]        = border;
     c[ImGuiCol_SeparatorHovered] = borderLight;
@@ -182,7 +161,6 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Resize grips
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_ResizeGrip]        = control;
     c[ImGuiCol_ResizeGripHovered] = hover;
@@ -190,9 +168,6 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Tabs
-    //
-    // Mostly gray. Blue only communicates the active tab.
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_Tab]                = bgDark;
     c[ImGuiCol_TabHovered]         = hover;
@@ -204,7 +179,6 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Tables
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_TableHeaderBg]     = control;
     c[ImGuiCol_TableBorderStrong] = border;
@@ -215,20 +189,18 @@ void EditorUI::applyTheme()
 
     // ---------------------------------------------------------------------
     // Selection / navigation
-    // ---------------------------------------------------------------------
+
 
     c[ImGuiCol_TextSelectedBg] = blueDim;
     c[ImGuiCol_NavCursor]      = blue;
 
     // ---------------------------------------------------------------------
     // Drag & drop
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_DragDropTarget] = blue;
 
     // ---------------------------------------------------------------------
     // Modal dimming
-    // ---------------------------------------------------------------------
 
     c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.55f);
 }
@@ -253,8 +225,7 @@ void EditorUI::endProperties()
     ImGui::PopStyleVar();
 }
 
-// The three-coloured-field control everyone recognises from Unity/Unreal.
-// Clicking the X/Y/Z button resets that axis.
+
 bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
                            float resetValue, float speed)
 {
@@ -271,8 +242,7 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
     const float lineHeight = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2.0f;
     const ImVec2 buttonSize(lineHeight*.2f, lineHeight);
 
-    // Divides the remaining width into three equal fields, accounting for the
-    // buttons we are about to insert.
+    // Divides the remaining width into three equal fields, accounting for buttons
     ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth() - buttonSize.x * 3.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 
@@ -320,9 +290,8 @@ bool EditorUI::vec3Control(const char *label, glm::vec3 &values,
 
 // ---------------------------------------------------------------------------
 // panels
-// ---------------------------------------------------------------------------
 
-// Property row helper for the little settings windows
+
 namespace
 {
     bool sliderRow(const char *label, float &value, float min, float max,
@@ -384,15 +353,17 @@ void EditorUI::drawShadowWindow()
     ImGui::End();
 }
 
-void EditorUI::drawLightSection(Node &node)
+bool EditorUI::drawLightSection(Node &node)
 {
     if (node.lightType != LightType::Directional) {
-        return;
+        return false;
     }
 
     if (!ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen)) {
-        return;
+        return false;
     }
+
+    bool changed = false;
 
     beginProperties("light_props");
 
@@ -402,16 +373,16 @@ void EditorUI::drawLightSection(Node &node)
     ImGui::TextUnformatted("Color");
     ImGui::TableSetColumnIndex(1);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::ColorEdit3("##lightcolor", &node.lightColor.x);
+    changed |= ImGui::ColorEdit3("##lightcolor", &node.lightColor.x);
 
-    sliderRow("Intensity", node.lightIntensity, 0.0f, 20.0f, "%.2f");
+    changed |= sliderRow("Intensity", node.lightIntensity, 0.0f, 20.0f, "%.2f");
 
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Shadows");
     ImGui::TableSetColumnIndex(1);
-    ImGui::Checkbox("##lightshadows", &node.lightCastsShadows);
+    changed |= ImGui::Checkbox("##lightshadows", &node.lightCastsShadows);
 
     endProperties();
 
@@ -420,15 +391,19 @@ void EditorUI::drawLightSection(Node &node)
     const glm::vec3 direction = glm::normalize(node.getRotation() * glm::vec3(0.0f, 0.0f, -1.0f));
     ImGui::TextDisabled("Direction  %.2f, %.2f, %.2f", direction.x, direction.y, direction.z);
     ImGui::TextDisabled("Rotate the node to aim it.");
+    return changed;
 }
 
-void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore &resources,
+void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const ResourceStore &resources,
                      const Camera &camera, uint32_t width, uint32_t height)
 {
+    resolveSelection(scene);
+
     // Submitted before anything reads WorkPos: the main menu bar is what
     // shrinks the viewport's work area, and the dockspace below sizes itself
     // from it.
     if (ImGui::BeginMainMenuBar()) {
+        drawEditMenu();
         if (ImGui::BeginMenu("Window")) {
             ImGui::MenuItem("Shadows", nullptr, &m_showShadowWindow);
             ImGui::EndMenu();
@@ -458,7 +433,7 @@ void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore 
 
     ImGuiID dockspaceId = ImGui::GetID("EditorDockSpace");
 
-    // If there is no layout loaded from INI, build the default Unity-style layout
+    // If there is no layout loaded from INI, build the default layout
     if (ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
         ImGui::DockBuilderRemoveNode(dockspaceId);
         ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
@@ -503,14 +478,118 @@ void EditorUI::build(Scene &scene, const GeometryStore &geometry, ResourceStore 
     handleShortcuts(scene, resources);
     drawSaveMaterialPopup(resources);
     drawGizmo(scene, camera, width, height);
+
+    m_recorder.endFrame(m_commands, heldId());
+}
+
+void EditorUI::drawEditMenu()
+{
+    if (!ImGui::BeginMenu("Edit")) {
+        return;
+    }
+
+    const bool canUndo = m_history && m_history->canUndo();
+    const bool canRedo = m_history && m_history->canRedo();
+
+    // "###" keeps the item ID stable while the label names the step.
+    const std::string undoLabel = canUndo ? "Undo " + m_history->undoName() + "###undo" : "Undo###undo";
+    const std::string redoLabel = canRedo ? "Redo " + m_history->redoName() + "###redo" : "Redo###redo";
+
+    if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, canUndo)) {
+        submitUndo();
+    }
+    if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, canRedo)) {
+        submitRedo();
+    }
+    ImGui::EndMenu();
+}
+
+void EditorUI::submitUndo()
+{
+    EditorCommand cmd;
+    cmd.kind = EditorCommand::Kind::Undo;
+    submit(std::move(cmd));
+}
+
+void EditorUI::submitRedo()
+{
+    EditorCommand cmd;
+    cmd.kind = EditorCommand::Kind::Redo;
+    submit(std::move(cmd));
+}
+
+EditorSelection EditorUI::selection() const
+{
+    EditorSelection out;
+    switch (m_selectionMode) {
+    case SelectionMode::None:     out.mode = EditorSelection::Mode::None;     break;
+    case SelectionMode::Node:     out.mode = EditorSelection::Mode::Node;     break;
+    case SelectionMode::Material: out.mode = EditorSelection::Mode::Material; break;
+    case SelectionMode::Texture:  out.mode = EditorSelection::Mode::Texture;  break;
+    }
+    out.node     = m_selectedNode;
+    out.subMesh  = static_cast<uint32_t>(m_selectedSubMesh);
+    out.material = m_selectedMaterial;
+    out.texture  = m_selectedTexture;
+    return out;
+}
+
+void EditorUI::setSelection(const EditorSelection &selection)
+{
+    switch (selection.mode) {
+    case EditorSelection::Mode::None:
+        clearSelection();
+        break;
+    case EditorSelection::Mode::Node:
+        selectNode(selection.node, selection.subMesh);
+        break;
+    case EditorSelection::Mode::Material:
+        selectMaterial(selection.material);
+        break;
+    case EditorSelection::Mode::Texture:
+        clearSelection();
+        m_selectionMode   = SelectionMode::Texture;
+        m_selectedTexture = selection.texture;
+        break;
+    }
+}
+
+void EditorUI::submit(EditorCommand command)
+{
+    m_recorder.push(m_commands, std::move(command));
+}
+
+void EditorUI::submitModify(const EditTarget &target, reflect::Blob snapshot, const char *name)
+{
+    m_recorder.modify(m_commands, target, std::move(snapshot), name, heldId());
+}
+
+EditRecorder::HeldId EditorUI::heldId() const
+{
+    // Above the 32-bit ImGuiID range, so it can never equal a widget ID.
+    static constexpr EditRecorder::HeldId GizmoHeld = EditRecorder::HeldId{ 1 } << 32;
+    if (ImGuizmo::IsUsing()) {
+        return GizmoHeld;
+    }
+    return ImGui::GetActiveID();
+}
+
+void EditorUI::resolveSelection(const Scene &scene)
+{
+    m_selectedSlot = 0;
+    if (m_selectionMode != SelectionMode::Node) {
+        return;
+    }
+    m_selectedSlot = scene.findNode(m_selectedNode);
+    if (m_selectedSlot == 0) {
+        clearSelection();
+    }
 }
 
 namespace
 {
-    // Case-insensitive substring test. ASCII-only, which is all a filename or
-    // a material name needs. ImGuiTextFilter would do the multi-term and
-    // -exclude syntax for free, but it is case SENSITIVE -- the wrong default
-    // for a file browser, and it would drag imgui.h into EditorUI.h.
+    // Case-insensitive substring test. ASCII-only
+
     bool matchesFilter(std::string_view haystack, std::string_view needle)
     {
         if (needle.empty()) {
@@ -560,9 +639,6 @@ bool EditorUI::searchBar(const char *id, std::string &filter)
 
 namespace
 {
-    // Exactly the shape the Project panel needs to draw one cell, in either
-    // view, for either tab. Lives here rather than in EditorUI.h because of
-    // the ImTextureID / ImVec4: the header stays imgui-free.
     struct ProjectItem
     {
         std::string label;
@@ -573,8 +649,7 @@ namespace
         bool        renaming = false;                   // draw the label as an edit field
     };
 
-    // Below this the grid stops making sense -- the label is wider than the
-    // tile and everything wraps. That is where list view takes over.
+    // Below this val : list view takes over.
     constexpr float ListThreshold = 26.0f;
 
     struct ProjectItemActions
@@ -585,8 +660,6 @@ namespace
         std::function<void(const ProjectItem &)> onDragSource;   // called right after the widget
         std::function<void(const ProjectItem &)> onContextMenu;  // right-click on the item itself
 
-        // Draws the rename field in place of the label for an item whose
-        // renaming flag is set. Returns true once, on commit.
         std::function<bool(const ProjectItem &)> drawRename;
     };
 
@@ -621,16 +694,12 @@ namespace
                 clicked = ImGui::ImageButton("##thumb", item.thumbnail,
                                              ImVec2(thumbSize, thumbSize));
             } else {
-                // NoDragDrop, or ImGui's own colour payload competes with the
-                // asset payload we attach below.
                 clicked = ImGui::ColorButton("##thumb", item.color,
                                              ImGuiColorEditFlags_NoTooltip |
                                              ImGuiColorEditFlags_NoDragDrop,
                                              ImVec2(thumbSize, thumbSize));
             }
 
-            // Must follow the widget immediately: BeginDragDropSource with
-            // default flags binds to the last item submitted.
             if (actions.onDragSource) {
                 actions.onDragSource(item);
             }
@@ -726,7 +795,7 @@ namespace
         }
     }
 
-    // Lowercased extension, so ".PNG" and ".png" classify the same.
+    // Lowercased extension
     std::string lowerExtension(const std::filesystem::path &path)
     {
         std::string ext = path.extension().string();
@@ -743,7 +812,7 @@ namespace
     }
 }
 
-void EditorUI::drawProjectPanel(ResourceStore &resources)
+void EditorUI::drawProjectPanel(const ResourceStore &resources)
 {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::MenuItem("Assets", nullptr, m_projectTab == ProjectTab::Assets)) {
@@ -756,8 +825,6 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
             m_projectTab = ProjectTab::Textures;
         }
 
-        // Only the asset tabs have an origin to filter on; the file browser
-        // shows the filesystem, which has no such notion.
         if (m_projectTab != ProjectTab::Assets) {
             ImGui::SameLine();
             ImGui::SetNextItemWidth(100.0f);
@@ -768,10 +835,6 @@ void EditorUI::drawProjectPanel(ResourceStore &resources)
                 m_originFilter = static_cast<OriginFilter>(current);
             }
         }
-
-        // Right-aligned, and it is the view switch as well as the zoom: at the
-        // minimum the tiles would be smaller than their own labels, so that end
-        // of the slider is list view.
         constexpr float sliderWidth = 110.0f;
         const float     sliderX     = ImGui::GetContentRegionMax().x - sliderWidth;
         if (sliderX > ImGui::GetCursorPosX()) {
@@ -875,8 +938,6 @@ void EditorUI::drawAssetsTab()
     };
     actions.onClick = [this](const ProjectItem &item)
     {
-        // Purely visual for now, but a click that produces no feedback at all
-        // reads as the panel being broken.
         m_selectedAsset = m_assetEntries[item.payload];
     };
     actions.onActivate = [this](const ProjectItem &item)
@@ -896,12 +957,12 @@ void EditorUI::drawAssetsTab()
             EditorCommand cmd;
             cmd.kind = EditorCommand::Kind::LoadModel;
             cmd.path = path;
-            m_commands.push_back(cmd);
+            submit(std::move(cmd));
         } else if (ext == ".mat") {
             EditorCommand cmd;
             cmd.kind = EditorCommand::Kind::LoadMaterial;
             cmd.path = path;
-            m_commands.push_back(cmd);
+            submit(std::move(cmd));
         }
     };
     actions.onDragSource = [this](const ProjectItem &item)
@@ -930,7 +991,7 @@ void EditorUI::drawAssetsTab()
         cmd.kind = EditorCommand::Kind::RenameAsset;
         cmd.path = m_assetEntries[item.payload];
         cmd.name = m_renameBuffer;
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
         cancelRename();
         return true;
     };
@@ -952,8 +1013,7 @@ void EditorUI::drawAssetsTab()
 
 void EditorUI::drawAssetContextMenu()
 {
-    // NoOpenOverItems so right-clicking a file does not get the create menu --
-    // that space is reserved for a per-item menu (rename, delete, reveal).
+    // NoOpenOverItems so right-clicking a file does not get the create menu
     if (!ImGui::BeginPopupContextWindow("assetcontext",
                                         ImGuiPopupFlags_MouseButtonRight |
                                         ImGuiPopupFlags_NoOpenOverItems)) {
@@ -964,14 +1024,14 @@ void EditorUI::drawAssetContextMenu()
         EditorCommand cmd;
         cmd.kind = EditorCommand::Kind::CreateDirectory;
         cmd.path = m_currentAssetPath / "New Folder";
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
     }
 
     if (ImGui::MenuItem("New Material")) {
         EditorCommand cmd;
         cmd.kind = EditorCommand::Kind::CreateMaterial;
         cmd.path = m_currentAssetPath / "New Material.mat";
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
     }
 
     ImGui::EndPopup();
@@ -985,18 +1045,16 @@ void EditorUI::drawMaterialsContextMenu()
         return;
     }
 
-    // No path: created in memory, MaterialInfo::sourcePath stays empty, and
-    // the inspector offers "Save As" rather than "Save".
     if (ImGui::MenuItem("New Material")) {
         EditorCommand cmd;
         cmd.kind = EditorCommand::Kind::CreateMaterial;
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
     }
 
     ImGui::EndPopup();
 }
 
-void EditorUI::drawMaterialsTab(ResourceStore &resources)
+void EditorUI::drawMaterialsTab(const ResourceStore &resources)
 {
     const bool filtering = searchBar("matsearch", m_materialFilter);
     ImGui::Separator();
@@ -1065,12 +1123,13 @@ void EditorUI::drawMaterialsTab(ResourceStore &resources)
         if (!renameField("##matrename")) {
             return false;
         }
-        // Straight through updateMaterial, like every other edit in the
-        // inspector -- which also marks it dirty, so the asterisk appears the
-        // moment the name changes.
+        // A snapshot of the renamed copy
+        // Applying it goes through updateMaterial, which marks the material
+        // dirty -> asterisk appears
         Material renamed = resources.material(item.payload);
         renamed.name = m_renameBuffer;
-        resources.updateMaterial(item.payload, renamed);
+        submitModify(EditTarget::forMaterial(item.payload), reflect::toBlob(renamed),
+                     "Rename Material");
         cancelRename();
         return true;
     };
@@ -1090,7 +1149,7 @@ void EditorUI::drawMaterialsTab(ResourceStore &resources)
     ImGui::EndChild();
 }
 
-void EditorUI::drawTexturesTab(ResourceStore &resources)
+void EditorUI::drawTexturesTab(const ResourceStore &resources)
 {
     const bool filtering = searchBar("texsearch", m_textureFilter);
     ImGui::Separator();
@@ -1112,8 +1171,6 @@ void EditorUI::drawTexturesTab(ResourceStore &resources)
         ProjectItem item;
         item.payload = i;
 
-        // The filename alone, not the relative path: the path is what the
-        // tooltip and the inspector are for, and a tile is 64 pixels wide.
         item.label = std::filesystem::path(name).filename().string();
         item.badge = "TEX";
 
@@ -1132,7 +1189,8 @@ void EditorUI::drawTexturesTab(ResourceStore &resources)
     {
         m_selectionMode   = SelectionMode::Texture;
         m_selectedTexture = item.payload;
-        m_selectedNode    = 0;
+        m_selectedNode    = {};
+        m_selectedSlot    = 0;
     };
     actions.onActivate = actions.onClick;
     actions.onDragSource = [this, &resources](const ProjectItem &item)
@@ -1153,18 +1211,18 @@ void EditorUI::drawTexturesTab(ResourceStore &resources)
     ImGui::EndChild();
 }
 
-void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
+void EditorUI::drawHierarchy(const Scene &scene, const GeometryStore &geometry)
 {
     if (ImGui::Button("Create")) {
         ImGui::OpenPopup("hierarchy_create");
     }
     if (ImGui::BeginPopup("hierarchy_create")) {
-        drawCreateMenuItems(0);
+        drawCreateMenuItems({});
         ImGui::EndPopup();
     }
 
     ImGui::SameLine();
-    ImGui::BeginDisabled(m_selectionMode != SelectionMode::Node || m_selectedNode == 0);
+    ImGui::BeginDisabled(m_selectionMode != SelectionMode::Node || m_selectedSlot == 0);
     if (ImGui::Button("Delete")) {
         deleteNode(m_selectedNode);
     }
@@ -1174,8 +1232,6 @@ void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
 
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
     if (ImGui::BeginChild("hierarchy", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
-        // next is read before the row is drawn: the row can queue a delete, and
-        // after that its sibling link is the only way out of the loop.
         for (uint32_t id = scene.rootNodeId(); id != 0; ) {
             const uint32_t next = scene.getNode(id).nextSiblingId;
             drawHierarchyNode(scene, geometry, id);
@@ -1190,7 +1246,7 @@ void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
         if (ImGui::BeginPopupContextWindow("hierarchy_context",
                                            ImGuiPopupFlags_MouseButtonRight |
                                            ImGuiPopupFlags_NoOpenOverItems)) {
-            drawCreateMenuItems(0);
+            drawCreateMenuItems({});
             ImGui::EndPopup();
         }
     }
@@ -1198,7 +1254,7 @@ void EditorUI::drawHierarchy(Scene &scene, const GeometryStore &geometry)
     ImGui::PopStyleVar();
 }
 
-void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, ResourceStore &resources)
+void EditorUI::drawInspector(const Scene &scene, const GeometryStore &geometry, const ResourceStore &resources)
 {
     // 1. Nothing selected
     if (m_selectionMode == SelectionMode::None) {
@@ -1213,7 +1269,6 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
             ImGui::TextDisabled("Invalid material selected");
             return;
         }
-        // This existing function already does all the heavy lifting for texture previews!
         drawMaterialSection(resources, m_selectedMaterial);
         return;
     }
@@ -1228,30 +1283,40 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
         return;
     }
 
-    // 4. Inspecting a Scene Node (Original logic goes here)
+    // 4. Inspecting a Scene Node
     if (m_selectionMode == SelectionMode::Node) {
-        if (m_selectedNode == 0) return;
+        if (m_selectedSlot == 0) return;
 
-        Node &node = scene.getNode(m_selectedNode);
+        const Node &node = scene.getNode(m_selectedSlot);
 
-        if (m_eulerOwner != m_selectedNode) {
-            m_eulerOwner = m_selectedNode;
+        // Every widget below edits this copy. If anything changed, the copy's
+        // snapshot goes out as one Modify at the end
+        // the scene itself is never touched from here
+        Node        edited   = node;
+        bool        changed  = false;
+        const char *editName = "Edit Node";
+
+        if (m_eulerOwner != m_selectedNode || node.getRotation() != m_eulerSource) {
+            m_eulerOwner  = m_selectedNode;
+            m_eulerSource = node.getRotation();
             glm::vec3 radians(0.0f);
-            glm::extractEulerAngleYXZ(glm::mat4_cast(node.getRotation()), radians.y, radians.x, radians.z);
+            glm::extractEulerAngleYXZ(glm::mat4_cast(m_eulerSource), radians.y, radians.x, radians.z);
             m_eulerDegrees = glm::degrees(radians);
         }
-
-        // Always editable rather than behind a rename mode: this is the one
-        // place the user is already looking at the node's identity, and a
-        // field here is what makes the name discoverable at all.
         char nameBuffer[128];
         std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", node.name.c_str());
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (ImGui::InputTextWithHint("##nodename", "Name", nameBuffer, sizeof(nameBuffer))) {
-            node.name = nameBuffer;
+            edited.name = nameBuffer;
+            changed     = true;
+            editName    = "Rename Node";
         }
 
-        ImGui::Text("Node %u", m_selectedNode);
+        ImGui::Text("Node %u", m_selectedSlot);
+        if (ImGui::BeginItemTooltip()) {
+            ImGui::Text("Guid %s", m_selectedNode.toString().c_str());
+            ImGui::EndTooltip();
+        }
         if (node.meshId != 0) {
             ImGui::SameLine();
             ImGui::TextDisabled("| mesh %u", node.meshId);
@@ -1262,19 +1327,29 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
         if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
             beginProperties("transform_props");
 
-            glm::vec3 translation = node.getTranslation();
+            glm::vec3 translation = edited.getTranslation();
             if (vec3Control("Position", translation, 0.0f, 0.05f)) {
-                node.setTranslation(translation);
+                edited.setTranslation(translation);
+                changed  = true;
+                editName = "Move";
             }
 
             if (vec3Control("Rotation", m_eulerDegrees, 0.0f, 0.5f)) {
                 const glm::vec3 r = glm::radians(m_eulerDegrees);
-                node.setRotation(glm::quat_cast(glm::eulerAngleYXZ(r.y, r.x, r.z)));
+                const glm::quat q = glm::quat_cast(glm::eulerAngleYXZ(r.y, r.x, r.z));
+                edited.setRotation(q);
+                // What the node will hold once this applies -- so next frame
+                // the cache recognises its own write and keeps the angles.
+                m_eulerSource = q;
+                changed  = true;
+                editName = "Rotate";
             }
 
-            glm::vec3 scale = node.getScale();
+            glm::vec3 scale = edited.getScale();
             if (vec3Control("Scale", scale, 1.0f, 0.01f)) {
-                node.setScale(scale);
+                edited.setScale(scale);
+                changed  = true;
+                editName = "Scale";
             }
 
             endProperties();
@@ -1282,7 +1357,14 @@ void EditorUI::drawInspector(Scene &scene, const GeometryStore &geometry, Resour
 
         // Before the mesh early-out below: a light node has no mesh, and
         // returning first would leave its panel empty.
-        drawLightSection(node);
+        if (drawLightSection(edited)) {
+            changed  = true;
+            editName = "Edit Light";
+        }
+
+        if (changed) {
+            submitModify(EditTarget::forNode(m_selectedNode), reflect::toBlob(edited), editName);
+        }
 
         const uint32_t meshId = node.meshId;
         if (!geometry.meshAlive(meshId)) {
@@ -1403,7 +1485,6 @@ void EditorUI::shutdown(VulkanContext &ctx)
     }
     vkDeviceWaitIdle(ctx.device());
 
-    // Preview sets die with the pool below; just forget the handles.
     m_previewSets.clear();
 
     ImGui_ImplVulkan_Shutdown();
@@ -1440,18 +1521,21 @@ void EditorUI::record(VkCommandBuffer cmd)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
-void EditorUI::selectNode(uint32_t nodeId, uint32_t subMeshIndex)
+void EditorUI::selectNode(Guid node, uint32_t subMeshIndex)
 {
-    if (nodeId == 0) {
+    if (node.isNull()) {
         clearSelection();
         return;
     }
 
     m_selectionMode = SelectionMode::Node;
-    m_selectedNode = nodeId;
+    m_selectedNode  = node;
+    // Resolved by the next build(). A node created this frame is not in the
+    // scene until its command has been applied.
+    m_selectedSlot  = 0;
 
     // Force the inspector to show the exact submesh we clicked on
-    m_subMeshOwner = nodeId;
+    m_subMeshOwner    = node;
     m_selectedSubMesh = subMeshIndex;
 }
 
@@ -1462,31 +1546,32 @@ void EditorUI::selectMaterial(uint32_t materialId)
         return;
     }
 
-    // Node and material selection are the same slot: the inspector shows one
-    // or the other, never both.
     m_selectionMode    = SelectionMode::Material;
     m_selectedMaterial = materialId;
-    m_selectedNode     = 0;
+    m_selectedNode     = {};
+    m_selectedSlot     = 0;
     m_selectedTexture  = 0;
 }
 
 void EditorUI::clearSelection()
 {
-    m_selectionMode = SelectionMode::None;
-    m_selectedNode = 0;
+    m_selectionMode    = SelectionMode::None;
+    m_selectedNode     = {};
+    m_selectedSlot     = 0;
     m_selectedMaterial = 0;
-    m_selectedTexture = 0;
+    m_selectedTexture  = 0;
 }
 
 
 
-void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, uint32_t nodeId)
+void EditorUI::drawHierarchyNode(const Scene &scene, const GeometryStore &geometry, uint32_t nodeId)
 {
     if (!scene.isAlive(nodeId)) {
         return;
     }
 
-    Node &node = scene.getNode(nodeId);
+    const Node &node = scene.getNode(nodeId);
+    const Guid  guid = node.guid();
 
     const uint32_t firstChild = node.firstChildId;
     const uint32_t meshId = node.meshId;
@@ -1496,12 +1581,10 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     if (firstChild == 0) {
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
-    if (m_selectionMode == SelectionMode::Node && nodeId == m_selectedNode) {
+    if (m_selectionMode == SelectionMode::Node && guid == m_selectedNode) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    // Node::name exists now, so an empty node and a second instance of the
-    // same mesh are finally distinguishable. Mesh name is the fallback.
     std::string label = node.name;
     if (label.empty() && geometry.meshAlive(meshId)) {
         label = geometry.mesh(meshId).name;
@@ -1512,11 +1595,8 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     label += " (" + std::to_string(nodeId) + ")";
 
     void *treeId = reinterpret_cast<void *>(static_cast<uintptr_t>(nodeId));
-    const bool renaming = isRenaming(RenameTarget::Node, nodeId);
+    const bool renaming = isRenamingNode(guid);
 
-    // While renaming, the row still draws as a tree node -- with an empty
-    // label -- so the arrow, the indent and the child recursion below are all
-    // unchanged. Only the text is swapped for the field.
     const bool open = renaming
         ? ImGui::TreeNodeEx(treeId, flags, "%s", "")
         : ImGui::TreeNodeEx(treeId, flags, "%s", label.c_str());
@@ -1524,21 +1604,20 @@ void EditorUI::drawHierarchyNode(Scene &scene, const GeometryStore &geometry, ui
     if (renaming) {
         ImGui::SameLine();
         if (renameField("##noderename")) {
-            // Direct, like the transform edits in the inspector: a name change
-            // restructures nothing, so there is nothing for the command queue
-            // to protect the iteration from.
-            node.name = m_renameBuffer;
+            Node renamed = node;
+            renamed.name = m_renameBuffer;
+            submitModify(EditTarget::forNode(guid), reflect::toBlob(renamed), "Rename Node");
             cancelRename();
         }
     } else {
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-            selectNode(nodeId, 0);
+            selectNode(guid, 0);
         }
 
         if (const uint32_t droppedMaterial = acceptMaterialDrop()) {
-            assignMaterial(nodeId, EditorCommand::kAllSubMeshes, droppedMaterial);
+            assignMaterial(guid, EditorCommand::kAllSubMeshes, droppedMaterial);
         }
-        drawNodeContextMenu(nodeId, node.name);
+        drawNodeContextMenu(guid, node.name);
     }
 
     if (open && firstChild != 0) {

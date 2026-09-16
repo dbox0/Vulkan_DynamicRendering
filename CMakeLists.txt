@@ -121,6 +121,20 @@ add_executable(vulkanapp
         src/reflect/JsonArchive.cpp
         src/scene/SceneTypes.h
         src/scene/SceneTypes.cpp
+        src/assets/AssetTypes.h
+        src/assets/AssetTypes.cpp
+        src/editor/EditTarget.h
+        src/editor/EditRecorder.h
+        src/editor/EditRecorder.cpp
+        src/editor/EditorSelection.h
+        src/editor/UndoHistory.h
+        src/editor/UndoHistory.cpp
+        src/editor/SceneUndoWorld.h
+        src/editor/SceneUndoWorld.cpp
+        src/editor/EditorWorld.h
+        src/editor/EditorWorld.cpp
+        src/scene/SceneSnapshot.h
+        src/scene/SceneDrawItems.cpp
 )
 
 # For MSVC, you often need the 'latest' flag specifically
@@ -146,21 +160,30 @@ target_include_directories(vulkanapp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ext
 # Tests
 #
 # Only glm and nlohmann: no GPU, SDL or Vulkan SDK involved, so this runs in
-# CI as-is. Build and run with:  cmake --build . --target reflection_tests
+# CI as-is. Build and run with:  cmake --build . --target engine_tests
 #                                ctest --output-on-failure
 # ---------------------------------------------------------------------------
 enable_testing()
 
-add_executable(reflection_tests
+add_executable(engine_tests
+        tests/main.cpp
+        tests/TestFramework.h
         tests/reflection_tests.cpp
+        tests/edit_recorder_tests.cpp
+        tests/undo_tests.cpp
         src/common/Guid.cpp
         src/reflect/Reflection.cpp
         src/reflect/BinaryArchive.cpp
         src/reflect/JsonArchive.cpp
-        src/scene/SceneTypes.cpp)
+        src/scene/SceneTypes.cpp
+        src/assets/AssetTypes.cpp
+        src/editor/EditRecorder.cpp
+        src/editor/UndoHistory.cpp
+        src/editor/SceneUndoWorld.cpp
+        src/scene/Scene.cpp)
 
-target_link_libraries(reflection_tests PRIVATE
+target_link_libraries(engine_tests PRIVATE
         glm::glm
         nlohmann_json::nlohmann_json)
 
-add_test(NAME reflection COMMAND reflection_tests)
+add_test(NAME engine COMMAND engine_tests)

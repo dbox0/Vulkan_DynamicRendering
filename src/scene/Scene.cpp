@@ -1,37 +1,13 @@
 #include "Scene.h"
-#include "../render/GeometryStore.h"
+#include <algorithm>
+#include <limits>
+#include <unordered_set>
+
+#include "../common/Fatal.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <utility>
 
-
-static void transformAabb(const glm::mat4 &m, const glm::vec3 &lo, const glm::vec3 &hi,
-                          glm::vec3 &outLo, glm::vec3 &outHi)
-{
-    outLo = glm::vec3( std::numeric_limits<float>::max());
-    outHi = glm::vec3(-std::numeric_limits<float>::max());
-    for (int corner = 0; corner < 8; ++corner) {
-        const glm::vec3 p{ (corner & 1) ? hi.x : lo.x,
-                           (corner & 2) ? hi.y : lo.y,
-                           (corner & 4) ? hi.z : lo.z };
-        const glm::vec3 world = glm::vec3(m * glm::vec4(p, 1.0f));
-        outLo = glm::min(outLo, world);
-        outHi = glm::max(outHi, world);
-    }
-}
-
-const std::vector<DrawItem> &Scene::drawItems(const GeometryStore &geometry)
-{
-    const bool moved = m_nodeWorld.updateTransforms(m_rootNodeId);
-    const uint64_t revision = geometry.revision();
-
-    if (moved || m_drawItemsDirty || revision != m_geometryRevision) {
-        collectDrawItems(geometry, m_drawItems);
-        m_drawItemsDirty   = false;
-        m_geometryRevision = revision;
-    }
-    return m_drawItems;
-}
 
 void Scene::initialize(size_t maxNodes)
 {
@@ -78,14 +54,18 @@ uint32_t Scene::createNode(uint32_t parentId, std::string name, uint32_t meshId,
         node.parentId = parentId;
     }
 
+    appendChild(parentId, nodeId);
+    return nodeId;
+}
+
+void Scene::appendChild(uint32_t parentId, uint32_t nodeId)
+{
     if (parentId == 0) {
         addRootNode(nodeId);
-        return nodeId;
+        return;
     }
 
-    // Append to the parent's child list. Walking to the tail keeps new nodes
-    // in creation order in the hierarchy panel; prepending would be O(1) but
-    // makes the panel reshuffle everytime a user does something
+    m_nodeWorld.getNode(nodeId).parentId = parentId;
     Node &parent = m_nodeWorld.getNode(parentId);
     if (parent.firstChildId == 0) {
         parent.firstChildId = nodeId;
@@ -97,8 +77,36 @@ uint32_t Scene::createNode(uint32_t parentId, std::string name, uint32_t meshId,
         m_nodeWorld.getNode(tail).nextSiblingId = nodeId;
     }
 
+    m_nodeWorld.flagTopologyChanged();
     invalidateDrawItems();
-    return nodeId;
+}
+
+void Scene::linkAfter(uint32_t parentId, uint32_t previousId, uint32_t nodeId)
+{
+    Node &node = m_nodeWorld.getNode(nodeId);
+    node.parentId = parentId;
+
+    if (previousId != 0) {
+        Node &previous     = m_nodeWorld.getNode(previousId);
+        node.nextSiblingId = previous.nextSiblingId;
+        previous.nextSiblingId = nodeId;
+        if (parentId == 0 && m_lastRootNodeId == previousId) {
+            m_lastRootNodeId = nodeId;
+        }
+    } else if (parentId == 0) {
+        node.nextSiblingId = m_rootNodeId;
+        m_rootNodeId       = nodeId;
+        if (m_lastRootNodeId == 0) {
+            m_lastRootNodeId = nodeId;
+        }
+    } else {
+        Node &parent        = m_nodeWorld.getNode(parentId);
+        node.nextSiblingId  = parent.firstChildId;
+        parent.firstChildId = nodeId;
+    }
+
+    m_nodeWorld.flagTopologyChanged();
+    invalidateDrawItems();
 }
 
 void Scene::unlink(uint32_t nodeId)
@@ -110,7 +118,6 @@ void Scene::unlink(uint32_t nodeId)
     const uint32_t parentId = m_nodeWorld.getNode(nodeId).parentId;
     const uint32_t next     = m_nodeWorld.getNode(nodeId).nextSiblingId;
 
-    // this runs on user actions, not per frame.
     if (parentId == 0) {
         if (m_rootNodeId == nodeId) {
             m_rootNodeId = next;
@@ -299,39 +306,183 @@ uint32_t Scene::firstDirectionalLight() const
     return 0;
 }
 
-void Scene::collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out)
+// structure as data
+
+std::vector<uint32_t> Scene::rootNodes() const
 {
+    std::vector<uint32_t> roots;
+    for (uint32_t id = m_rootNodeId; id != 0; id = m_nodeWorld.getNode(id).nextSiblingId) {
+        roots.push_back(id);
+    }
+    return roots;
+}
+
+NodePlacement Scene::placementOf(uint32_t nodeId) const
+{
+    if (!m_nodeWorld.isAlive(nodeId)) {
+        fatalError("Scene::placementOf: node is not alive");
+    }
+
+    const uint32_t parentId = m_nodeWorld.getNode(nodeId).parentId;
+    uint32_t       first    = parentId ? m_nodeWorld.getNode(parentId).firstChildId : m_rootNodeId;
+
+    NodePlacement placement;
+    placement.parent = parentId ? m_nodeWorld.getNode(parentId).guid() : Guid{};
+
+    uint32_t previous = 0;
+    for (uint32_t id = first; id != 0 && id != nodeId; id = m_nodeWorld.getNode(id).nextSiblingId) {
+        previous = id;
+    }
+    placement.previous = previous ? m_nodeWorld.getNode(previous).guid() : Guid{};
+    return placement;
+}
+
+bool Scene::moveNode(uint32_t nodeId, const NodePlacement &to)
+{
+    if (!m_nodeWorld.isAlive(nodeId)) {
+        return false;
+    }
+
+    const uint32_t parentId   = to.parent.isNull() ? 0 : m_nodeWorld.findNode(to.parent);
+    const uint32_t previousId = to.previous.isNull() ? 0 : m_nodeWorld.findNode(to.previous);
+
+    if ((!to.parent.isNull() && parentId == 0) || (!to.previous.isNull() && previousId == 0)) {
+        return false;
+    }
+    if (parentId == nodeId || previousId == nodeId) {
+        return false;
+    }
+    if (parentId != 0 && isDescendantOf(parentId, nodeId)) {
+        return false;       // would splice the hierarchy into a ring
+    }
+    if (previousId != 0 && m_nodeWorld.getNode(previousId).parentId != parentId) {
+        return false;
+    }
+
+    unlink(nodeId);
+    linkAfter(parentId, previousId, nodeId);
+    return true;
+}
+
+bool Scene::captureNode(Guid guid, reflect::Blob &out) const
+{
+    const uint32_t nodeId = m_nodeWorld.findNode(guid);
+    if (nodeId == 0) {
+        return false;
+    }
     out.clear();
-    const size_t count = m_nodeWorld.size();
+    reflect::writeBinary(m_nodeWorld.getNode(nodeId), out);
+    return true;
+}
 
-    for (uint32_t nodeId = 1; nodeId <= count; ++nodeId) {
-        if (!m_nodeWorld.isAlive(nodeId)) {
-            continue;
+bool Scene::applyNode(Guid guid, std::span<const uint8_t> snapshot)
+{
+    const uint32_t nodeId = m_nodeWorld.findNode(guid);
+    if (nodeId == 0) {
+        return false;
+    }
+    if (!reflect::readBinary(m_nodeWorld.getNode(nodeId), snapshot)) {
+        return false;
+    }
+    // meshId may have changed, which the transform pass cannot see.
+    invalidateDrawItems();
+    return true;
+}
+
+bool Scene::captureSubtree(uint32_t rootId, SubtreeSnapshot &out) const
+{
+    if (!m_nodeWorld.isAlive(rootId)) {
+        return false;
+    }
+
+    out.nodes.clear();
+    out.placement = placementOf(rootId);
+
+    // Explicit stack, children pushed in reverse so they pop in sibling order.
+    std::vector<uint32_t> stack{ rootId };
+    std::vector<uint32_t> children;
+    while (!stack.empty()) {
+        const uint32_t id = stack.back();
+        stack.pop_back();
+
+        const Node &node = m_nodeWorld.getNode(id);
+
+        SubtreeSnapshot::Entry &entry = out.nodes.emplace_back();
+        entry.guid   = node.guid();
+        entry.parent = node.parentId ? m_nodeWorld.getNode(node.parentId).guid() : Guid{};
+        reflect::writeBinary(node, entry.data);
+
+        children.clear();
+        for (uint32_t child = node.firstChildId; child != 0;
+             child = m_nodeWorld.getNode(child).nextSiblingId) {
+            children.push_back(child);
         }
-        const Node &node = m_nodeWorld.getNode(nodeId);
+        stack.insert(stack.end(), children.rbegin(), children.rend());
+    }
+    return true;
+}
 
-        // meshAlive rather than a bare non-zero test: mesh IDs are
-        // generation-tagged handles, so a node left pointing at an unloaded
-        // mesh is detectable instead of resolving to whatever was loaded into
-        // that slot next.
-        if (!geometry.meshAlive(node.meshId)) {
-            continue;
+uint32_t Scene::restoreSubtree(const SubtreeSnapshot &snapshot)
+{
+    // ---- validate everything before touching anything -------------------
+    if (snapshot.nodes.empty()) {
+        return 0;
+    }
+    if (m_nodeWorld.liveCount() + snapshot.nodes.size() > m_nodeWorld.maxNodes()) {
+        return 0;
+    }
+
+    const NodePlacement &at = snapshot.placement;
+    const uint32_t parentId   = at.parent.isNull() ? 0 : m_nodeWorld.findNode(at.parent);
+    const uint32_t previousId = at.previous.isNull() ? 0 : m_nodeWorld.findNode(at.previous);
+    if ((!at.parent.isNull() && parentId == 0) || (!at.previous.isNull() && previousId == 0)) {
+        return 0;
+    }
+    if (previousId != 0 && m_nodeWorld.getNode(previousId).parentId != parentId) {
+        return 0;
+    }
+    if (snapshot.nodes.front().parent != at.parent) {
+        return 0;
+    }
+
+    std::unordered_set<Guid> seen;
+    seen.reserve(snapshot.nodes.size());
+    Node scratch;
+    for (size_t i = 0; i < snapshot.nodes.size(); ++i) {
+        const SubtreeSnapshot::Entry &entry = snapshot.nodes[i];
+        if (entry.guid.isNull() || m_nodeWorld.findNode(entry.guid) != 0 ||
+            !seen.insert(entry.guid).second) {
+            return 0;
         }
-
-        const Mesh &mesh = geometry.mesh(node.meshId);
-        const glm::mat4 &world = m_nodeWorld.worldMatrix(nodeId);
-
-        for (uint32_t s = 0; s < mesh.subMeshes.size(); ++s) {
-            const SubMesh &subMesh = mesh.subMeshes[s];
-
-            DrawItem &item = out.emplace_back();
-            item.subMesh      = &subMesh;
-            item.worldMatrix  = world;
-            item.nodeId       = nodeId;
-            item.subMeshIndex = s;
-
-            transformAabb(world, subMesh.boundsMin, subMesh.boundsMax,
-                          item.worldBoundsMin, item.worldBoundsMax);
+        // Every non-root node's parent comes earlier in pre-order.
+        if (i > 0 && !seen.contains(entry.parent)) {
+            return 0;
+        }
+        if (!reflect::readBinary(scratch, entry.data)) {
+            return 0;
         }
     }
+
+    //  apply
+    const auto create = [this](const SubtreeSnapshot::Entry &entry) {
+        const uint32_t id = m_nodeWorld.createNode(entry.guid).second;
+        if (!reflect::readBinary(m_nodeWorld.getNode(id), entry.data)) {
+            fatalError("Scene::restoreSubtree: validated snapshot failed to apply");
+        }
+        return id;
+    };
+
+    const uint32_t rootId = create(snapshot.nodes.front());
+    linkAfter(parentId, previousId, rootId);
+
+    // Pre-order plus append-to-tail rebuilds each child list in its
+    // original order.
+    for (size_t i = 1; i < snapshot.nodes.size(); ++i) {
+        const SubtreeSnapshot::Entry &entry = snapshot.nodes[i];
+        const uint32_t id = create(entry);
+        appendChild(m_nodeWorld.findNode(entry.parent), id);
+    }
+
+    invalidateDrawItems();
+    return rootId;
 }

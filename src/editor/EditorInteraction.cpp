@@ -1,17 +1,13 @@
 // ============================================================================
 // EditorInteraction.cpp
-//
-// The half of EditorUI that produces edits rather than displays state:
-// the transform gizmo, material drag and drop, and the create / delete menus.
-// Split out so EditorUI.cpp stays about lifetime, theme and panel layout.
-//
+// produces edits
+
 // Nothing here mutates the scene directly. Everything goes on the command
-// queue and is applied by Application after build() returns -- see
-// EditorCommands.h for why.
-// ============================================================================
+// queue and is applied by Application after build() returns
 
 #include "EditorUI.h"
 #include "EditorCommands.h"
+#include "../reflect/BinaryArchive.h"
 
 #include <imgui.h>
 #include <ImGuizmo.h>
@@ -30,19 +26,8 @@
 
 namespace
 {
-    // One payload type for materials, so every target accepts every source.
     constexpr const char *kMaterialPayload = "EDITOR_MATERIAL";
-
-    // A filesystem path, as bytes including the terminator. ImGui copies the
-    // payload into its own buffer, so a pointer into a temporary would be
-    // fine -- but the string itself has to be the payload, not a pointer to
-    // it, because the source's storage is gone by the time the drop lands.
     constexpr const char *kAssetPathPayload = "EDITOR_ASSET_PATH";
-
-    // An already-resident texture. Kept separate from the path payload
-    // because the two resolve differently: a path has to be decoded in the
-    // colour space the destination slot wants, while a texture that already
-    // exists has its format baked in and gets reused as-is.
     constexpr const char *kTexturePayload = "EDITOR_TEXTURE";
 }
 
@@ -54,9 +39,6 @@ void EditorUI::beginAssetDrag(const std::filesystem::path &path)
 
     const std::string text = path.string();
     ImGui::SetDragDropPayload(kAssetPathPayload, text.c_str(), text.size() + 1);
-
-    // Filename rather than the full path: the preview follows the cursor and a
-    // long absolute path covers the target you are aiming at.
     ImGui::TextUnformatted(path.filename().string().c_str());
     ImGui::EndDragDropSource();
 }
@@ -89,8 +71,6 @@ bool EditorUI::acceptTextureDrop(std::filesystem::path &outPath, uint32_t &outTe
 
     bool accepted = false;
 
-    // Texture first: if both somehow matched, the resident one is the cheaper
-    // and less surprising answer.
     if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kTexturePayload)) {
         outTextureId = *static_cast<const uint32_t *>(payload->Data);
         accepted     = true;
@@ -105,21 +85,15 @@ bool EditorUI::acceptTextureDrop(std::filesystem::path &outPath, uint32_t &outTe
 
 // ---------------------------------------------------------------------------
 // drag and drop
-// ---------------------------------------------------------------------------
 
 void EditorUI::beginMaterialDrag(const ResourceStore &resources, uint32_t materialId)
 {
-    // Default flags: the source is the item drawn immediately before this, and
-    // the drag only starts once the mouse actually moves, so a plain click
-    // still selects.
     if (!ImGui::BeginDragDropSource()) {
         return;
     }
 
     ImGui::SetDragDropPayload(kMaterialPayload, &materialId, sizeof(uint32_t));
 
-    // The preview is what makes the drop target legible -- without it you are
-    // dragging an unlabelled rectangle across three panels.
     const Material &mat = resources.material(materialId);
     const std::string name = mat.name.empty() ? "Material " + std::to_string(materialId)
                                               : mat.name;
@@ -150,8 +124,8 @@ uint32_t EditorUI::acceptMaterialDrop()
 
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kMaterialPayload)) {
-            // Copy rather than alias: ImGui owns the payload buffer and reuses
-            // it, and this value outlives the frame on the command queue.
+            // Copy , not alias: ImGui owns the payload buffer and reuses it
+            // value outlives the frame on the command queue.
             materialId = *static_cast<const uint32_t *>(payload->Data);
         }
         ImGui::EndDragDropTarget();
@@ -159,17 +133,17 @@ uint32_t EditorUI::acceptMaterialDrop()
     return materialId;
 }
 
-void EditorUI::assignMaterial(uint32_t nodeId, uint32_t subMesh, uint32_t materialId)
+void EditorUI::assignMaterial(Guid node, uint32_t subMesh, uint32_t materialId)
 {
-    if (nodeId == 0 || materialId == 0) {
+    if (node.isNull() || materialId == 0) {
         return;
     }
     EditorCommand cmd;
     cmd.kind       = EditorCommand::Kind::AssignMaterial;
-    cmd.nodeId     = nodeId;
+    cmd.node       = node;
     cmd.subMesh    = subMesh;
     cmd.materialId = materialId;
-    m_commands.push_back(cmd);
+    submit(std::move(cmd));
 }
 
 // ---------------------------------------------------------------------------
@@ -177,21 +151,21 @@ void EditorUI::assignMaterial(uint32_t nodeId, uint32_t subMesh, uint32_t materi
 // ---------------------------------------------------------------------------
 
 // Shared by the Hierarchy toolbar, the empty-space context menu and the
-// per-node context menu. parentId 0 creates at the scene root.
-void EditorUI::drawCreateMenuItems(uint32_t parentId)
+// per-node context menu. A null parent creates at the scene root.
+void EditorUI::drawCreateMenuItems(Guid parent)
 {
     if (ImGui::MenuItem("Empty Node")) {
         EditorCommand cmd;
         cmd.kind     = EditorCommand::Kind::CreateEmpty;
-        cmd.parentId = parentId;
-        m_commands.push_back(cmd);
+        cmd.parent   = parent;
+        submit(std::move(cmd));
     }
 
     if (ImGui::MenuItem("Directional Light")) {
         EditorCommand cmd;
         cmd.kind     = EditorCommand::Kind::CreateLight;
-        cmd.parentId = parentId;
-        m_commands.push_back(cmd);
+        cmd.parent   = parent;
+        submit(std::move(cmd));
     }
 
     ImGui::Separator();
@@ -202,28 +176,22 @@ void EditorUI::drawCreateMenuItems(uint32_t parentId)
             EditorCommand cmd;
             cmd.kind      = EditorCommand::Kind::CreatePrimitive;
             cmd.primitive = type;
-            cmd.parentId  = parentId;
-            m_commands.push_back(cmd);
+            cmd.parent    = parent;
+            submit(std::move(cmd));
         }
     }
 }
 
-void EditorUI::deleteNode(uint32_t nodeId)
+void EditorUI::deleteNode(Guid node)
 {
-    if (nodeId == 0) {
+    if (node.isNull()) {
         return;
     }
     EditorCommand cmd;
-    cmd.kind   = EditorCommand::Kind::DeleteNode;
-    cmd.nodeId = nodeId;
-    m_commands.push_back(cmd);
+    cmd.kind = EditorCommand::Kind::DeleteNode;
+    cmd.node = node;
+    submit(std::move(cmd));
 
-    // Dropped here rather than in Application: the selection is this class's
-    // state, and leaving it pointing at a node that dies later this frame
-    // means one frame of the inspector reading a dead slot.
-    if (m_selectedNode == nodeId) {
-        clearSelection();
-    }
 }
 
 
@@ -235,20 +203,24 @@ void EditorUI::beginRename(RenameTarget target, uint32_t id, const std::string &
 {
     m_renameTarget = target;
     m_renameId     = id;
+    m_renameNode   = {};
     m_renamePath.clear();
     std::snprintf(m_renameBuffer, sizeof(m_renameBuffer), "%s", current.c_str());
     m_renameFocusPending = true;
+}
+
+void EditorUI::beginRenameNode(Guid node, const std::string &current)
+{
+    beginRename(RenameTarget::Node, 0, current);
+    m_renameNode = node;
 }
 
 void EditorUI::beginRenameAsset(const std::filesystem::path &path)
 {
     m_renameTarget = RenameTarget::Asset;
     m_renameId     = 0;
+    m_renameNode   = {};
     m_renamePath   = path;
-
-    // Stem, not filename: nobody wants to retype ".mat", and typing over the
-    // extension by accident is the classic way to make a file disappear from
-    // its own browser.
     std::snprintf(m_renameBuffer, sizeof(m_renameBuffer), "%s",
                   path.stem().string().c_str());
     m_renameFocusPending = true;
@@ -258,6 +230,7 @@ void EditorUI::cancelRename()
 {
     m_renameTarget = RenameTarget::None;
     m_renameId     = 0;
+    m_renameNode   = {};
     m_renamePath.clear();
     m_renameFocusPending = false;
 }
@@ -273,9 +246,6 @@ bool EditorUI::renameField(const char *id)
     const bool entered = ImGui::InputText(id, m_renameBuffer, sizeof(m_renameBuffer),
                                           ImGuiInputTextFlags_EnterReturnsTrue |
                                           ImGuiInputTextFlags_AutoSelectAll);
-
-    // Enter commits. So does clicking away
-    // Escape: cancel
 
     if (entered || ImGui::IsItemDeactivatedAfterEdit()) {
         return true;
@@ -305,11 +275,6 @@ void EditorUI::drawSaveMaterialPopup(const ResourceStore &resources)
         return;
     }
 
-    // The folder is wherever the Assets tab is pointing, shown rather than
-    // chosen.
-    // A real directory picker is a lot of UI for a decision the user
-    // has usually already made by browsing there.
-
     ImGui::TextDisabled("Folder");
     ImGui::TextUnformatted(m_currentAssetPath.string().c_str());
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
@@ -336,39 +301,39 @@ void EditorUI::drawSaveMaterialPopup(const ResourceStore &resources)
         cmd.kind       = EditorCommand::Kind::SaveMaterial;
         cmd.materialId = m_saveAsMaterial;
         cmd.path       = m_currentAssetPath / (std::string(m_saveAsBuffer) + ".mat");
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
         ImGui::CloseCurrentPopup();
     }
 
     ImGui::EndPopup();
 }
 
-void EditorUI::drawNodeContextMenu(uint32_t nodeId, const std::string &name)
+void EditorUI::drawNodeContextMenu(Guid node, const std::string &name)
 {
     if (!ImGui::BeginPopupContextItem()) {
         return;
     }
 
     if (ImGui::BeginMenu("Create Child")) {
-        drawCreateMenuItems(nodeId);
+        drawCreateMenuItems(node);
         ImGui::EndMenu();
     }
 
     if (ImGui::MenuItem("Rename", "F2")) {
-        beginRename(RenameTarget::Node, nodeId, name);
+        beginRenameNode(node, name);
     }
 
     if (ImGui::MenuItem("Duplicate")) {
         EditorCommand cmd;
-        cmd.kind   = EditorCommand::Kind::DuplicateNode;
-        cmd.nodeId = nodeId;
-        m_commands.push_back(cmd);
+        cmd.kind = EditorCommand::Kind::DuplicateNode;
+        cmd.node = node;
+        submit(std::move(cmd));
     }
 
     ImGui::Separator();
 
     if (ImGui::MenuItem("Delete", "Del")) {
-        deleteNode(nodeId);
+        deleteNode(node);
     }
 
     ImGui::EndPopup();
@@ -380,8 +345,6 @@ void EditorUI::drawNodeContextMenu(uint32_t nodeId, const std::string &name)
 
 void EditorUI::drawGizmoToolbar()
 {
-    // Radio buttons rather than a combo: the mode has to be readable at a
-    // glance while you are mid-drag.
     const auto modeButton = [this](const char *label, int op, const char *shortcut)
     {
         const bool selected = m_gizmoOperation == op;
@@ -405,9 +368,7 @@ void EditorUI::drawGizmoToolbar()
     modeButton("Rotate", ImGuizmo::ROTATE,    "2");
     modeButton("Scale",  ImGuizmo::SCALE,     "3");
 
-    // Scaling in world space is meaningless for a rotated node -- ImGuizmo
-    // ignores MODE for SCALE anyway, so say so instead of offering a toggle
-    // that does nothing.
+
     ImGui::BeginDisabled(m_gizmoOperation == ImGuizmo::SCALE);
     if (ImGui::Button(m_gizmoMode == ImGuizmo::WORLD ? "World" : "Local")) {
         m_gizmoMode = (m_gizmoMode == ImGuizmo::WORLD) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
@@ -424,8 +385,6 @@ void EditorUI::drawGizmoToolbar()
         ImGui::SameLine();
         ImGui::SetNextItemWidth(70.0f);
 
-        // One snap value per operation: 0.25 units is useless for degrees and
-        // 15 degrees is useless for metres.
         float *value = m_gizmoOperation == ImGuizmo::TRANSLATE ? &m_snapTranslate
                      : m_gizmoOperation == ImGuizmo::ROTATE    ? &m_snapRotate
                                                                : &m_snapScale;
@@ -433,16 +392,23 @@ void EditorUI::drawGizmoToolbar()
     }
 }
 
-void EditorUI::handleShortcuts(Scene &scene, const ResourceStore &resources)
+void EditorUI::handleShortcuts(const Scene &scene, const ResourceStore &resources)
 {
-    // Skipped while a text field or a slider owns the keyboard, or typing a
-    // node name retargets the gizmo on every keystroke.
     if (ImGui::GetIO().WantCaptureKeyboard || ImGuizmo::IsUsing()) {
         return;
     }
 
-    // 1/2/3 rather than the usual W/E/R: W and E are already the camera's
-    // forward and up.
+    if (heldId() == 0) {
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
+            submitUndo();
+        }
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y) ||
+            ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) {
+            submitRedo();
+        }
+    }
+
+
     if (ImGui::IsKeyPressed(ImGuiKey_1, false)) m_gizmoOperation = ImGuizmo::TRANSLATE;
     if (ImGui::IsKeyPressed(ImGuiKey_2, false)) m_gizmoOperation = ImGuizmo::ROTATE;
     if (ImGui::IsKeyPressed(ImGuiKey_3, false)) m_gizmoOperation = ImGuizmo::SCALE;
@@ -452,16 +418,12 @@ void EditorUI::handleShortcuts(Scene &scene, const ResourceStore &resources)
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) &&
-        m_selectionMode == SelectionMode::Node && m_selectedNode != 0) {
+        m_selectionMode == SelectionMode::Node && m_selectedSlot != 0) {
         deleteNode(m_selectedNode);
     }
-
-    // F2 renames whatever is selected. The early return above means this never
-    // fires while a rename field already has the keyboard.
     if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
-        if (m_selectionMode == SelectionMode::Node && m_selectedNode != 0 &&
-            scene.isAlive(m_selectedNode)) {
-            beginRename(RenameTarget::Node, m_selectedNode, scene.getNode(m_selectedNode).name);
+        if (m_selectionMode == SelectionMode::Node && m_selectedSlot != 0) {
+            beginRenameNode(m_selectedNode, scene.getNode(m_selectedSlot).name);
         } else if (m_selectionMode == SelectionMode::Material &&
                    m_selectedMaterial != 0 && m_selectedMaterial <= resources.materialCount()) {
             beginRename(RenameTarget::Material, m_selectedMaterial,
@@ -470,39 +432,38 @@ void EditorUI::handleShortcuts(Scene &scene, const ResourceStore &resources)
     }
 }
 
-void EditorUI::drawGizmo(Scene &scene, const Camera &camera, uint32_t width, uint32_t height)
+void EditorUI::drawGizmo(const Scene &scene, const Camera &camera, uint32_t width, uint32_t height)
 {
     m_gizmoHovered = false;
 
-    if (m_selectionMode != SelectionMode::Node || m_selectedNode == 0 ||
-        !scene.isAlive(m_selectedNode) || width == 0 || height == 0) {
+    if (m_selectionMode != SelectionMode::Node || m_selectedSlot == 0 ||
+        width == 0 || height == 0) {
         return;
     }
 
     // THE RECT IS THE WHOLE WINDOW, not the central dock node.
     //
     // The scene is drawn fullscreen into the swapchain and the dockspace is
-    // laid over it with PassthruCentralNode -- the panels cover the render,
-    // they do not shrink it. The camera's aspect ratio comes from the window
-    // for the same reason. If the scene ever moves to an offscreen image
+    // laid over it with PassthruCentralNode
+    // The camera's aspect ratio comes from the window for the same reason.
+    // If the scene ever moves to an offscreen image
     // displayed in a viewport panel, this becomes that panel's rect and the
     // aspect ratio has to follow it.
+
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGuizmo::SetRect(viewport->Pos.x, viewport->Pos.y, viewport->Size.x, viewport->Size.y);
     ImGuizmo::SetOrthographic(false);
 
     const float aspect = static_cast<float>(width) / static_cast<float>(height);
 
-    // The projection goes in WITHOUT a Y flip, matching what the shader gets.
-    // The renderer flips Y with a negative-height viewport instead of baking
-    // it into the matrix, so ImGuizmo's standard NDC-to-screen mapping lands
-    // on the same pixels the rasteriser does. Bake proj[1][1] *= -1 into the
-    // camera later and this needs the flip undone before it is handed over.
     const glm::mat4 view = camera.getViewMatrix();
     const glm::mat4 proj = camera.projection(aspect);
 
-    // ImGuizmo manipulates a world matrix, and nodes store a local one.
-    glm::mat4 world = scene.nodes().worldMatrix(m_selectedNode);
+    if (!ImGuizmo::IsUsing() || m_gizmoNode != m_selectedNode) {
+        m_gizmoWorld = scene.nodes().worldMatrix(m_selectedSlot);
+        m_gizmoNode  = m_selectedNode;
+    }
+    glm::mat4 world = m_gizmoWorld;
 
     const float snapValues[3] =
     {
@@ -522,30 +483,26 @@ void EditorUI::drawGizmo(Scene &scene, const Camera &camera, uint32_t width, uin
         nullptr,
         m_gizmoSnap ? snapAll : nullptr);
 
-    // Queried before the early-out below: the picker has to know the cursor is
-    // over an axis handle even on a frame where nothing was dragged, or the
-    // click that grabs the gizmo also deselects the node.
     m_gizmoHovered = ImGuizmo::IsOver() || ImGuizmo::IsUsing();
 
     if (!manipulated) {
         return;
     }
+    m_gizmoWorld = world;
 
-    Node &node = scene.getNode(m_selectedNode);
+    const Node &node = scene.getNode(m_selectedSlot);
 
     // world = parentWorld * local, so local = inverse(parentWorld) * world.
-    // The parent's world matrix is this frame's: the transform pass ran in
-    // drawItems() before the UI was built, and the parent has not moved since.
     const uint32_t parentId = node.parentId;
     const glm::mat4 local = parentId
         ? glm::inverse(scene.nodes().worldMatrix(parentId)) * world
         : world;
 
-    node.setTransform(local);
-    scene.invalidateDrawItems();
+    Node edited = node;
+    edited.setTransform(local);
 
-    // The inspector caches Euler angles per selected node and only refreshes
-    // them when the selection changes. Rotating with the gizmo changes the
-    // quaternion behind that cache's back, so force a reread.
-    m_eulerOwner = 0;
+    const char *name = m_gizmoOperation == ImGuizmo::TRANSLATE ? "Move"
+                     : m_gizmoOperation == ImGuizmo::ROTATE    ? "Rotate"
+                                                               : "Scale";
+    submitModify(EditTarget::forNode(m_selectedNode), reflect::toBlob(edited), name);
 }

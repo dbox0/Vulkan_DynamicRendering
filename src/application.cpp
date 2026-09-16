@@ -1,7 +1,9 @@
 #include "application.h"
 
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <iostream>
+#include <string_view>
 
 #include "assets/GltfLoader.h"
 #include "assets/Mesh.h"
@@ -11,6 +13,9 @@
 #include "editor/EditorCommands.h"
 #include "scene/Geometry/Node.h"
 #include "scene/SceneTypes.h"
+#include "assets/AssetTypes.h"
+#include "editor/EditorWorld.h"
+#include "editor/UndoHistory.h"
 #include "reflect/BinaryArchive.h"
 #include "reflect/Reflection.h"
 #include <glm/gtx/quaternion.hpp>
@@ -39,6 +44,33 @@ namespace
             }
         }
         return desired;
+    }
+}
+
+namespace
+{
+
+    class ScopedTransaction
+    {
+    public:
+        ScopedTransaction(UndoHistory &history, const EditorUI &editor, std::string_view name)
+            : m_history(history), m_editor(editor)
+        {
+            m_history.begin(name, m_editor.selection());
+        }
+        ~ScopedTransaction() { m_history.commit(m_editor.selection()); }
+
+        ScopedTransaction(const ScopedTransaction &) = delete;
+        ScopedTransaction &operator=(const ScopedTransaction &) = delete;
+
+    private:
+        UndoHistory    &m_history;
+        const EditorUI &m_editor;
+    };
+
+    std::string nodeLabel(const Node &node)
+    {
+        return node.name.empty() ? std::string("Node") : node.name;
     }
 }
 
@@ -79,10 +111,8 @@ bool Application::initialize()
         return false;
     }
 
-    // Type tables first: nothing may snapshot or save an object before every
-    // type it touches is described. A hole here is a programming error, and
-    // it is reported now rather than as a silently incomplete undo later.
     registerSceneTypes();
+    registerAssetTypes();
     if (const auto errors = reflect::validate(); !errors.empty()) {
         std::string message = "Reflection tables are incomplete:";
         for (const auto &error : errors) {
@@ -102,8 +132,6 @@ bool Application::initialize()
         return false;
     }
 
-    // Must come before the renderer: createPipeline() needs the global
-    // descriptor set layout this owns.
     if (!m_resources.initialize()) {
         showError("Failed to initialize the resource store");
         return false;
@@ -130,6 +158,7 @@ bool Application::initialize()
     // The editor edits the renderer's shadow state in place; nothing is copied
     // back, so there is no lag on a slider drag.
     m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
+    m_editor.bindHistory(m_history);
 
     return true;
 }
@@ -187,10 +216,6 @@ void Application::run()
                 case SDL_EVENT_QUIT:
                     m_running = false;
                     break;
-
-                // The Project panel is rooted at ASSET_DIR and cannot navigate
-                // above it, so dropping a file on the window is the only way to
-                // reach a model living anywhere else on disk.
                 case SDL_EVENT_DROP_FILE:
                     if (event.drop.data) {
                         const std::filesystem::path dropped(event.drop.data);
@@ -224,13 +249,6 @@ void Application::run()
                                 (isKey   && m_editor.wantsKeyboard());
 
             if (!claimed) {
-                // wantsMouse() already excluded clicks that landed on a panel,
-                // so anything arriving here is a click in the viewport.
-                // The gizmo needs a check of its own: ImGuizmo draws into a
-                // NoInputs window, so ImGui never reports capture for it and
-                // the click that grabs an axis handle would also deselect the
-                // node. One frame stale, since events are polled before
-                // build() runs -- bounded by one frame of mouse movement.
                 if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                     event.button.button == SDL_BUTTON_LEFT &&
                     !m_editor.gizmoCapturesMouse()) {
@@ -243,11 +261,6 @@ void Application::run()
         if (!m_running) {
             break;
         }
-
-
-
-        // Minimised window: no valid extent to render into, so idle instead
-        // of feeding a 0x0 swapchain.
         if (m_width == 0 || m_height == 0) {
             SDL_Delay(16);
             continue;
@@ -258,11 +271,9 @@ void Application::run()
         m_editor.beginFrame();
         m_editor.build(m_scene, m_geometry, m_resources, m_camera, m_width, m_height);
 
-        // After build(), before render(): the commands mutate containers the
-        // panels were iterating, and the draw list they produced has already
-        // copied every string it needs.
         applyEditorCommands();
         loadPendingAssets();
+        m_world.collectGarbage(m_history);
 
         // Pushed in rather than pulled out: the renderer knows nothing about
         // EditorUI, so a build without an editor still compiles and runs.
@@ -270,7 +281,7 @@ void Application::run()
         // Moved below the commands -- reading the selection after them means a
         // node created or deleted this frame gets the right outline on that
         // frame rather than the next one.
-        m_renderer.setSelection(m_editor.selectedNode());
+        m_renderer.setSelection(m_scene.findNode(m_editor.selectedNode()));
 
         m_renderer.render(m_scene, m_camera, m_width, m_height,
                          [this](VkCommandBuffer cmd) { m_editor.record(cmd); });
@@ -285,26 +296,80 @@ void Application::applyEditorCommands()
     }
 
     bool geometryAdded = false;
+    const auto select = [this](uint32_t nodeId) {
+        m_editor.selectNode(m_scene.getNode(nodeId).guid(), 0);
+    };
+    m_structurallyChanged.clear();
+    bool historyStepped = false;
+    const auto isStale = [&](const EditTarget &target) {
+        return historyStepped ||
+               (target.kind == EditTarget::Kind::Node &&
+                std::find(m_structurallyChanged.begin(), m_structurallyChanged.end(),
+                          target.node) != m_structurallyChanged.end());
+    };
 
     for (const EditorCommand &cmd : commands) {
+        if (const std::string error = m_editChecker.check(cmd); !error.empty()) {
+            fatalError("Editor command stream: " + error);
+        }
+
         switch (cmd.kind) {
+
+        // ---- property edits: one gesture, one undo step ------------------
+        case EditorCommand::Kind::BeginEdit:
+            m_history.begin(cmd.name, m_editor.selection());
+            break;
+
+        case EditorCommand::Kind::EndEdit:
+            m_history.commit(m_editor.selection());
+            break;
+
+        case EditorCommand::Kind::Modify:
+        {
+            if (isStale(cmd.target)) {
+                break;
+            }
+            if (!m_history.touch(cmd.target)) {
+                break;
+            }
+            if (!m_world.apply(cmd.target, cmd.snapshot)) {
+                fatalError("Modify: snapshot did not apply to a live target");
+            }
+            break;
+        }
+
+        // ---- history --------------------------------------------------------
+        case EditorCommand::Kind::Undo:
+            applyHistoryStep(m_history.undo(), "Undo");
+            historyStepped = true;
+            break;
+
+        case EditorCommand::Kind::Redo:
+            applyHistoryStep(m_history.redo(), "Redo");
+            historyStepped = true;
+            break;
+
 
         case EditorCommand::Kind::CreateEmpty:
         {
-            if (!m_scene.createNode(cmd.parentId, "Empty")) {
+            ScopedTransaction tx(m_history, m_editor, "Create Empty");
+            const uint32_t nodeId = m_scene.createNode(m_scene.findNode(cmd.parent), "Empty");
+            if (!nodeId) {
                 std::cerr << "[warn] Node budget exhausted" << std::endl;
+                break;
             }
+            m_history.created(m_scene.getNode(nodeId).guid());
             break;
         }
 
         case EditorCommand::Kind::CreateLight:
         {
-            const uint32_t nodeId = m_scene.createNode(cmd.parentId, "Directional Light");
+            ScopedTransaction tx(m_history, m_editor, "Create Directional Light");
+            const uint32_t nodeId = m_scene.createNode(m_scene.findNode(cmd.parent), "Directional Light");
             if (!nodeId) {
                 std::cerr << "[warn] Node budget exhausted" << std::endl;
                 break;
             }
-
             Node &node = m_scene.getNode(nodeId);
             node.lightType = LightType::Directional;
 
@@ -313,7 +378,8 @@ void Application::applyEditorCommands()
             node.setRotation(glm::quatLookAt(
                 glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)), glm::vec3(0.0f, 1.0f, 0.0f)));
 
-            m_editor.selectNode(nodeId, 0);
+            m_history.created(node.guid());
+            select(nodeId);
             break;
         }
 
@@ -327,38 +393,38 @@ void Application::applyEditorCommands()
             }
             geometryAdded = true;
 
-            const uint32_t nodeId = m_scene.createNode(cmd.parentId,
+            ScopedTransaction tx(m_history, m_editor,
+                                 std::string("Create ") + primitiveName(cmd.primitive));
+            const uint32_t nodeId = m_scene.createNode(m_scene.findNode(cmd.parent),
                                                        primitiveName(cmd.primitive), meshId);
             if (!nodeId) {
                 m_geometry.removeMesh(meshId);      // no node ever claimed it
                 std::cerr << "[warn] Node budget exhausted" << std::endl;
                 break;
             }
-            m_editor.selectNode(nodeId, 0);
+            m_history.created(m_scene.getNode(nodeId).guid());
+            select(nodeId);
             break;
         }
 
         case EditorCommand::Kind::DuplicateNode:
         {
-            if (!m_scene.isAlive(cmd.nodeId)) {
+            const uint32_t sourceId = m_scene.findNode(cmd.node);
+            if (!sourceId) {
                 break;
             }
-            // Snapshot first: createNode() writes a fresh Node into a recycled
-            // slot, and a reference into NodeWorld taken before that is a
-            // hazard even though the storage itself never reallocates.
-            //
-            // The snapshot carries every reflected field, so a duplicate stays
-            // complete as Node grows. The hand-written copy this replaces
-            // listed name + T/R/S and silently dropped the light settings:
-            // duplicating a Directional Light produced a plain Empty.
-            const Node         &src      = m_scene.getNode(cmd.nodeId);
+            // Snapshot first
+            // The snapshot carries every reflected field
+
+            const Node         &src      = m_scene.getNode(sourceId);
             const uint32_t      parentId = src.parentId;
-            const uint32_t      meshId   = src.meshId;   // runtime handle, not reflected
+            const uint32_t      meshId   = src.meshId;
+            const std::string   label    = nodeLabel(src);
             const reflect::Blob snapshot = reflect::toBlob(src);
 
-            // Shares the mesh handle rather than rebuilding it -- two nodes
-            // pointing at one mesh is exactly what glTF instancing produces,
-            // and Scene::destroyNode already refcounts for it.
+            ScopedTransaction tx(m_history, m_editor, "Duplicate " + label);
+
+            // Shares the mesh handle
             const uint32_t nodeId = m_scene.createNode(parentId, {}, meshId);
             if (!nodeId) {
                 std::cerr << "[warn] Node budget exhausted" << std::endl;
@@ -366,36 +432,49 @@ void Application::applyEditorCommands()
             }
             Node &copy = m_scene.getNode(nodeId);
             if (!reflect::readBinary(copy, snapshot)) {
-                // Same build, same type, one frame apart: cannot happen unless
-                // the reflection layer itself is broken.
                 fatalError("DuplicateNode: node snapshot did not read back");
             }
             copy.name = copy.name.empty() ? "Copy" : copy.name + " Copy";
 
-            m_editor.selectNode(nodeId, 0);
+            m_history.created(copy.guid());
+            select(nodeId);
             break;
         }
 
         case EditorCommand::Kind::DeleteNode:
         {
-            m_orphanedMeshes.clear();
-            m_scene.destroyNode(cmd.nodeId, m_orphanedMeshes);
-
-            // Only meshes no surviving node references. removeMesh defers the
-            // range free until the frames that could still be reading it have
-            // retired, so this is safe to call mid-frame.
-            for (const uint32_t meshId : m_orphanedMeshes) {
-                m_geometry.removeMesh(meshId);
+            const uint32_t nodeId = m_scene.findNode(cmd.node);
+            if (!nodeId) {
+                break;
             }
+            ScopedTransaction tx(m_history, m_editor, "Delete " + nodeLabel(m_scene.getNode(nodeId)));
+            (void)m_history.destroy(cmd.node);
             break;
         }
 
         case EditorCommand::Kind::ReparentNode:
         {
-            m_scene.reparentNode(cmd.nodeId, cmd.parentId);
+            const uint32_t nodeId   = m_scene.findNode(cmd.node);
+            const uint32_t parentId = m_scene.findNode(cmd.parent);
+            // A parent that vanished is not the same as "to the root".
+            if (!nodeId || (!cmd.parent.isNull() && !parentId)) {
+                break;
+            }
+
+            ScopedTransaction tx(m_history, m_editor, "Reparent " + nodeLabel(m_scene.getNode(nodeId)));
+
+            const NodePlacement from = m_scene.placementOf(nodeId);
+            if (!m_history.touch(EditTarget::forNode(cmd.node))) {
+                break;
+            }
+            if (m_scene.reparentNode(nodeId, parentId)) {
+                m_history.moved(cmd.node, from, m_scene.placementOf(nodeId));
+                m_structurallyChanged.push_back(cmd.node);
+            }
             break;
         }
 
+        //assets and files
         case EditorCommand::Kind::LoadModel:
         {
             m_pendingAssets.push_back({ PendingAsset::Kind::Model, cmd.path });
@@ -410,11 +489,6 @@ void Application::applyEditorCommands()
 
         case EditorCommand::Kind::CreateMaterial:
         {
-            // A fresh Material, not a copy of anything. The struct defaults
-            // are the glTF ones -- metallic 1, roughness 1 -- which renders
-            // as a dark mirror and reads as "broken" rather than "new". A
-            // dielectric at half roughness is what you actually want to start
-            // from, so that is what the editor hands you.
             Material mat;
             mat.metallicFactor  = 0.0f;
             mat.roughnessFactor = 0.5f;
@@ -433,6 +507,7 @@ void Application::applyEditorCommands()
                 const std::filesystem::path path = uniquePath(cmd.path);
                 if (saveMaterial(m_resources, m_cache, materialId, path)) {
                     m_resources.setMaterialSource(materialId, path);
+                    m_world.markMaterialSaved(materialId);
                 }
             }
 
@@ -448,9 +523,6 @@ void Application::applyEditorCommands()
 
             std::filesystem::path target = cmd.path.parent_path() / cmd.name;
 
-            // The field is seeded with the stem, so a name typed without an
-            // extension keeps the one it had. Typing a different extension on
-            // purpose still works.
             if (!target.has_extension() && cmd.path.has_extension()) {
                 target.replace_extension(cmd.path.extension());
             }
@@ -476,10 +548,9 @@ void Application::applyEditorCommands()
                 }
             }
 
-            // NOTE: renaming an IMAGE is not handled here. TextureCache keys on
+            // NOTE: renaming an image is not handled here. TextureCache keys on
             // the path, so every .mat referencing the old name silently falls
-            // back to the error texture on next load. That is the cost of
-            // path-as-identity, and the fix is stable IDs, not a special case.
+            // back to the error texture on next load
             break;
         }
 
@@ -499,9 +570,6 @@ void Application::applyEditorCommands()
                 break;
             }
 
-            // Deferred even when it is only a clear, so assignment order is
-            // the order the user made them in -- a drop followed by a clear in
-            // the same frame must not resolve backwards.
             PendingAsset pending;
             pending.kind       = PendingAsset::Kind::Texture;
             pending.path       = cmd.path;
@@ -517,10 +585,6 @@ void Application::applyEditorCommands()
             if (!cmd.materialId || cmd.materialId > m_resources.materialCount()) {
                 break;
             }
-
-            // Explicit path wins; then wherever it was loaded from; then a
-            // default under ASSET_DIR/materials. No dialog yet, which is why
-            // MaterialInfo::sourcePath exists at all.
             std::filesystem::path path = cmd.path;
             if (path.empty()) {
                 path = m_resources.materialInfo(cmd.materialId).sourcePath;
@@ -536,23 +600,30 @@ void Application::applyEditorCommands()
             // Read-only, so unlike a load this needs no deferral.
             if (saveMaterial(m_resources, m_cache, cmd.materialId, path)) {
                 m_resources.setMaterialSource(cmd.materialId, path);
+                m_world.markMaterialSaved(cmd.materialId);
             }
             break;
         }
 
         case EditorCommand::Kind::AssignMaterial:
         {
-            if (!m_scene.isAlive(cmd.nodeId)) {
+            const uint32_t nodeId = m_scene.findNode(cmd.node);
+            if (!nodeId) {
                 break;
             }
-            const uint32_t meshId = m_scene.getNode(cmd.nodeId).meshId;
+            const uint32_t meshId = m_scene.getNode(nodeId).meshId;
             if (!m_geometry.meshAlive(meshId)) {
                 break;
             }
 
+            ScopedTransaction tx(m_history, m_editor, "Assign Material");
+            if (!m_history.touch(EditTarget::forMeshMaterials(meshId))) {
+                break;
+            }
+
             // materialId lives on the SubMesh and the renderer reads it fresh
-            // every frame into RenderItem::materialIndex -- no upload, no
-            // descriptor churn, visible next frame.
+            // every frame into RenderItem::materialIndex
+
             Mesh &mesh = m_geometry.meshMutable(meshId);
             if (cmd.subMesh == EditorCommand::kAllSubMeshes) {
                 for (SubMesh &subMesh : mesh.subMeshes) {
@@ -574,9 +645,34 @@ void Application::applyEditorCommands()
     m_editor.clearCommands();
 }
 
+void Application::applyHistoryStep(const UndoHistory::Outcome &outcome, const char *verb)
+{
+    switch (outcome.result) {
+    case UndoHistory::Result::Nothing:
+        break;
+    case UndoHistory::Result::Done:
+        m_editor.setSelection(outcome.selection);
+        break;
+    case UndoHistory::Result::Failed:
+        // The history rolled the step back and discarded itself
+        m_editor.setSelection(outcome.selection);
+        showError(std::string(verb) + " \"" + outcome.name +
+                  "\" failed: the scene no longer matched the undo history. "
+                  "The history has been cleared; the scene is unchanged.");
+        break;
+    }
+}
+
 void Application::loadPendingAssets()
 {
     if (m_pendingAssets.empty()) {
+        return;
+    }
+
+    // Load is an undo step of its own
+    // must not land inside a gesture that is still open (example: drag spanning frames)
+    // It waits for the next frame
+    if (m_history.isOpen()) {
         return;
     }
 
@@ -594,16 +690,21 @@ void Application::loadPendingAssets()
 
     for (const PendingAsset &asset : m_pendingAssets) {
         if (asset.kind == PendingAsset::Kind::Model) {
+            // New roots are appended to the root chain, so everything past
+            // the old count is this file's. Recorded even if the load fails
+            const size_t rootsBefore = m_scene.rootNodes().size();
+            ScopedTransaction tx(m_history, m_editor, "Import " + asset.path.filename().string());
+
             loadData(asset.path);   // reports its own failures; a bad drop is not fatal
+
+            const std::vector<uint32_t> roots = m_scene.rootNodes();
+            for (size_t i = rootsBefore; i < roots.size(); ++i) {
+                m_history.created(m_scene.getNode(roots[i]).guid());
+            }
             continue;
         }
 
         if (asset.kind == PendingAsset::Kind::Texture) {
-            // Dragged out of the Textures tab: already resident, already in
-            // whatever colour space loaded it first. No decode, no upload, no
-            // descriptor churn -- and if that space is wrong for this slot the
-            // inspector's "expected sRGB" warning is what says so, rather than
-            // this silently re-decoding a second copy.
             uint32_t textureId = asset.textureId;
             if (textureId > m_resources.textureCount()) {
                 textureId = 0;
@@ -612,8 +713,7 @@ void Application::loadPendingAssets()
             if (!textureId && !asset.path.empty()) {
                 // Outside ASSET_DIR there is no portable way to record the
                 // reference, so the material could never be saved with it.
-                // Refuse at the point of assignment rather than silently
-                // producing an unsaveable material.
+                // Refuse instead of producing an unsaveable material.
                 const std::string relative = m_cache.toRelative(asset.path);
                 if (relative.empty()) {
                     showError("Textures must live under the asset folder: " + asset.path.string());
@@ -636,6 +736,12 @@ void Application::loadPendingAssets()
                 texturesAdded = true;
             }
 
+            ScopedTransaction tx(m_history, m_editor, "Assign Texture");
+            const EditTarget target = EditTarget::forMaterial(asset.materialId);
+            if (!m_history.touch(target)) {
+                continue;       // material ID out of range
+            }
+
             Material mat = m_resources.material(asset.materialId);
             switch (asset.slot) {
             case TextureSlot::BaseColor:         mat.baseColorTexture         = textureId; break;
@@ -644,7 +750,9 @@ void Application::loadPendingAssets()
             case TextureSlot::Occlusion:         mat.occlusionTexture         = textureId; break;
             case TextureSlot::Emissive:          mat.emissiveTexture          = textureId; break;
             }
-            m_resources.updateMaterial(asset.materialId, mat);
+            if (!m_world.apply(target, reflect::toBlob(mat))) {
+                showError("Failed to assign the texture");
+            }
             continue;
         }
 
@@ -660,6 +768,7 @@ void Application::loadPendingAssets()
             loadMaterial(m_ctx, m_resources, m_cache, materialUploads, asset.path);
         if (materialId) {
             m_resources.setMaterialSource(materialId, asset.path);
+            m_world.markMaterialSaved(materialId);
             texturesAdded = true;
         }
     }
@@ -694,9 +803,8 @@ void Application::pickAt(float mouseX, float mouseY)
         hit = light;
     }
 
-    // A miss selects node 0, which is how the inspector already spells
-    // "nothing selected" -- clicking empty space deselects.
-    m_editor.selectNode(hit.nodeId, hit.subMesh);
+    // A miss selects the null Guid
+    m_editor.selectNode(hit ? m_scene.getNode(hit.nodeId).guid() : Guid{}, hit.subMesh);
 }
 
 void Application::shutdown()

@@ -1,7 +1,4 @@
-// Standalone tests for Guid, reflect:: and NodeWorld identity.
-//
-// No Vulkan, no SDL: this target only links glm and nlohmann, so it builds
-// and runs anywhere, including CI. Exit code is the failure count.
+// Guid, reflect:: and NodeWorld identity.
 
 #include <cmath>
 #include <cstdio>
@@ -12,29 +9,19 @@
 #include <unordered_set>
 #include <vector>
 
+#include "TestFramework.h"
+
 #include "../src/common/Guid.h"
 #include "../src/reflect/BinaryArchive.h"
 #include "../src/reflect/JsonArchive.h"
 #include "../src/reflect/Reflection.h"
 #include "../src/scene/Geometry/NodeWorld.h"
 #include "../src/scene/SceneTypes.h"
+#include "../src/assets/AssetTypes.h"
+#include "../src/assets/Material.h"
 
 namespace
 {
-    int g_failures = 0;
-    int g_checks   = 0;
-
-#define CHECK(cond)                                                                     \
-    do {                                                                                \
-        ++g_checks;                                                                     \
-        if (!(cond)) {                                                                  \
-            ++g_failures;                                                               \
-            std::printf("  FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);               \
-        }                                                                               \
-    } while (0)
-
-    void section(const char *name) { std::printf("%s\n", name); }
-
     bool sameBits(float a, float b) { return std::memcmp(&a, &b, sizeof(float)) == 0; }
 
     // ------------------------------------------------------------------------
@@ -74,6 +61,7 @@ namespace
         std::vector<std::string> tags;
         std::vector<std::vector<int32_t>> grid;
         float       cachedLength = 0.0f;   // Transient
+        uint32_t    gpuHandle    = 0;      // RuntimeHandle
     };
 
     struct Unregistered { int32_t x = 0; };
@@ -127,7 +115,8 @@ namespace
             .field<&Everything::route>("route")
             .field<&Everything::tags>("tags")
             .field<&Everything::grid>("grid")
-            .field<&Everything::cachedLength>("cachedLength", reflect::FieldFlags::Transient);
+            .field<&Everything::cachedLength>("cachedLength", reflect::FieldFlags::Transient)
+            .field<&Everything::gpuHandle>("gpuHandle", reflect::FieldFlags::RuntimeHandle);
 
         reflect::registerType<Versioned>("Versioned", 2)
             .field<&Versioned::velocity>("velocity")
@@ -158,6 +147,7 @@ namespace
         e.tags   = { "enemy", "", "boss" };
         e.grid   = { { 1, 2 }, {}, { 3 } };
         e.cachedLength = 99.0f;
+        e.gpuHandle    = 17;
         return e;
     }
 
@@ -177,7 +167,7 @@ namespace
                a.v3 == b.v3 && a.v4 == b.v4 && a.q.x == b.q.x && a.q.y == b.q.y &&
                a.q.z == b.q.z && a.q.w == b.q.w && a.text == b.text && a.id == b.id &&
                a.target == b.target && a.mood == b.mood && equalWaypoint(a.home, b.home) &&
-               a.tags == b.tags && a.grid == b.grid;
+               a.tags == b.tags && a.grid == b.grid && a.gpuHandle == b.gpuHandle;
     }
 
     bool hasWarning(const std::vector<std::string> &warnings, const std::string &needle)
@@ -236,9 +226,12 @@ namespace
         }
 
         const auto &info = reflect::typeOf<Everything>();
-        CHECK(info.fields.size() == 20);
+        CHECK(info.fields.size() == 21);
         CHECK(info.findField("v3")->hint == reflect::FieldHint::Color);
-        CHECK(!info.findField("cachedLength")->isSerialized());
+        CHECK(!info.findField("cachedLength")->inSnapshots());
+        CHECK(!info.findField("cachedLength")->inFiles());
+        CHECK(info.findField("gpuHandle")->inSnapshots());
+        CHECK(!info.findField("gpuHandle")->inFiles());
         CHECK(info.create != nullptr);
 
         // Factory produces a default object.
@@ -275,6 +268,7 @@ namespace
         CHECK(reflect::readBinary(target, blob));
         CHECK(equalEverything(source, target));
         CHECK(target.cachedLength == -1.0f);          // transient: untouched
+        CHECK(target.gpuHandle == 17);                 // runtime handle: restored
         CHECK(target.home.restoredCount == 1);         // afterRead on nested struct
         CHECK(target.route[0].restoredCount == 1);     // ... and on array elements
         CHECK(target.route[1].restoredCount == 1);
@@ -404,18 +398,24 @@ namespace
         CHECK(json["home"]["$version"] == 2);              // nested type is v2
         CHECK(!json.contains("$version"));                 // top level: caller's job
         CHECK(!json.contains("cachedLength"));
+        CHECK(!json.contains("gpuHandle"));             // runtime handle: never in files
         CHECK(json["q"].size() == 4);
         CHECK(json.begin().key() == "flag");               // declaration order
 
         // Through text and back.
         const reflect::Json reparsed = reflect::Json::parse(json.dump(2));
         Everything target;
+        target.gpuHandle = source.gpuHandle;            // files cannot carry it
         std::vector<std::string> warnings;
         CHECK(reflect::fromJson(target, reparsed, 1, &warnings));
         CHECK(warnings.empty());
         CHECK(equalEverything(source, target));
         CHECK(reflect::toJson(target).dump() == json.dump());   // stable text
         CHECK(reflect::toBlob(target) == reflect::toBlob(source));
+
+        Everything fresh;
+        CHECK(reflect::fromJson(fresh, reparsed, 1));
+        CHECK(fresh.gpuHandle == 0);
 
         // Null NodeRef/Guid are JSON null.
         const reflect::Json empty = reflect::toJson(Everything{});
@@ -473,6 +473,7 @@ namespace
             "home": { "wait": 9, "surprise": true },
             "removedField": 1,
             "cachedLength": 4,
+            "gpuHandle": 99,
             "$comment": "metadata keys are ignored"
         })");
 
@@ -493,6 +494,7 @@ namespace
         CHECK(target.flag == before.flag);
         CHECK(target.tags == before.tags);
         CHECK(target.cachedLength == before.cachedLength);
+        CHECK(target.gpuHandle == before.gpuHandle);
 
         // Good values apply.
         CHECK(target.f == 2.0f);
@@ -518,6 +520,7 @@ namespace
         CHECK(hasWarning(warnings, "Everything.home: unknown field 'surprise'"));
         CHECK(hasWarning(warnings, "unknown field 'removedField'"));
         CHECK(hasWarning(warnings, "unknown field 'cachedLength'"));
+        CHECK(hasWarning(warnings, "unknown field 'gpuHandle'"));
         CHECK(!hasWarning(warnings, "$comment"));
 
         // 32-bit fields accept integral floats; enums accept raw integers.
@@ -610,7 +613,7 @@ namespace
         CHECK(copy.hasChanged());                           // afterRead ran
         CHECK(copy.getTransform() == world.getNode(aId).getTransform());   // cache rebuilt
         CHECK(copy.guid() == bGuid);                        // identity untouched
-        CHECK(copy.meshId == 0);                            // runtime handle not copied
+        CHECK(copy.meshId == 5);                            // runtime handle: in snapshots
         CHECK(world.findNode(bGuid) == bId);
 
         const reflect::Json json = reflect::toJson(world.getNode(aId));
@@ -622,6 +625,8 @@ namespace
         auto [c, cId] = world.createNode();
         (void)c;
         CHECK(reflect::fromJson(world.getNode(cId), reflect::Json::parse(json.dump()), 1));
+        CHECK(world.getNode(cId).meshId == 0);              // ...but never in files
+        world.getNode(cId).meshId = 5;
         CHECK(reflect::toBlob(world.getNode(cId)) == blob);
     }
 
@@ -701,6 +706,39 @@ namespace
         CHECK(consistent);
     }
 
+    void testMaterialReflection()
+    {
+        section("material reflection");
+
+        Material m;
+        m.name             = "Brushed Metal";
+        m.baseColorFactor  = { 0.8f, 0.8f, 0.82f, 1.0f };
+        m.metallicFactor   = 1.0f;
+        m.roughnessFactor  = 0.35f;
+        m.alphaMode        = AlphaMode::Mask;
+        m.doubleSided      = true;
+        m.baseColorTexture = 12;
+        m.normalTexture    = 3;
+
+        Material copy;
+        CHECK(reflect::readBinary(copy, reflect::toBlob(m)));
+        CHECK(copy.name == m.name && copy.roughnessFactor == 0.35f);
+        CHECK(copy.alphaMode == AlphaMode::Mask && copy.doubleSided);
+        CHECK(copy.baseColorTexture == 12 && copy.normalTexture == 3);   // undo keeps handles
+
+        const reflect::Json json = reflect::toJson(m);
+        CHECK(json["alphaMode"] == "Mask");
+        CHECK(json["roughnessFactor"].dump() == "0.35");
+        CHECK(!json.contains("baseColorTexture"));                         // files do not
+
+        // Same keys as the .mat format, so the eventual switch is free.
+        for (const char *key : { "name", "baseColorFactor", "metallicFactor", "roughnessFactor",
+                                 "emissiveFactor", "emissiveStrength", "normalScale",
+                                 "occlusionStrength", "alphaMode", "alphaCutoff", "doubleSided" }) {
+            CHECK(json.contains(key));
+        }
+    }
+
     // Runs last: it deliberately registers a type with a hole in it.
     void testValidate()
     {
@@ -716,9 +754,8 @@ namespace
     }
 }
 
-int main()
+void runReflectionTests()
 {
-    registerSceneTypes();
     registerTestTypes();
 
     testGuid();
@@ -730,9 +767,12 @@ int main()
     testJsonTolerance();
     testJsonMigration();
     testNodeReflection();
+    testMaterialReflection();
     testNodeIdentity();
-    testValidate();
+}
 
-    std::printf("\n%d checks, %d failed\n", g_checks, g_failures);
-    return g_failures;
+// Runs last of all: it deliberately registers a type with a hole in it.
+void runValidateTest()
+{
+    testValidate();
 }

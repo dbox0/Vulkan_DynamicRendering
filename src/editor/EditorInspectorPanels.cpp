@@ -1,16 +1,14 @@
-// ============================================================================
-// EditorInspectorPanels.cpp
-//
-// The mesh / material half of EditorUI's inspector, split out so EditorUI.cpp
-// stays about lifetime, theme and the hierarchy.
+
+// The mesh / material half of EditorUI's inspector,
+// EditorUI.cpp stays about lifetime, theme and the hierarchy.
 //
 // Written against the authoring Material (assets/Material.h). Every edit goes
 // through ResourceStore::updateMaterial(), which re-packs the GpuMaterial and
-// writes it through the persistent map -- the next frame shows the change.
-// ============================================================================
+// writes it through the persistent map. Next frame shows change
 
 #include "EditorUI.h"
 #include "EditorCommands.h"
+#include "../reflect/BinaryArchive.h"
 
 #include <volk.h>
 #include <imgui.h>
@@ -84,9 +82,8 @@ namespace
     }
 }
 
-// ============================================================================
-// texture previews
-// ============================================================================
+// ======================== texture previews =============================
+
 
 VkDescriptorSet EditorUI::texturePreview(const ResourceStore &resources, uint32_t textureId)
 {
@@ -97,14 +94,13 @@ VkDescriptorSet EditorUI::texturePreview(const ResourceStore &resources, uint32_
     const Texture &texture = resources.texture(textureId);
 
     // Every bindless image is left in SHADER_READ_ONLY_OPTIMAL after upload,
-    // which is what ImGui's sampler binding expects. Using the texture's own
-    // sampler means the preview filters/wraps exactly like the material does.
+    // ImGui's sampler binding expects this. Using the texture's own sampler
     const VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(
         resources.sampler(texture.samplerId),
         resources.imageView(texture.imageId),
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    // Cached even if null, so a failure isn't retried (and logged) every frame.
+    // Cached even if null, so a failure isn't retried every frame
     m_previewSets.emplace(textureId, set);
     return set;
 }
@@ -125,9 +121,6 @@ void EditorUI::textureSlot(const char *label, TextureSlot slot, uint32_t materia
     drawList->AddRectFilled(origin, boxMax, ImGui::GetColorU32(ImGuiCol_FrameBg), 3.0f);
     ImGui::Dummy(ImVec2(ThumbSize, ThumbSize));        // hover target and drop target
 
-    // Immediately after the Dummy, so the well itself is what accepts the
-    // drop. The command carries the SLOT, not a colour space: whether the
-    // file is decoded as sRGB is decided here, by which map it lands in.
     std::filesystem::path dropped;
     uint32_t              droppedTexture = 0;
     if (acceptTextureDrop(dropped, droppedTexture)) {
@@ -137,7 +130,7 @@ void EditorUI::textureSlot(const char *label, TextureSlot slot, uint32_t materia
         cmd.textureSlot = slot;
         cmd.path        = dropped;
         cmd.textureId   = droppedTexture;
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
     }
 
     const bool hasTexture = textureId != 0 && textureId <= resources.textureCount();
@@ -181,21 +174,19 @@ void EditorUI::textureSlot(const char *label, TextureSlot slot, uint32_t materia
     ImGui::TextUnformatted(name);                      // table column clips long names
     ImGui::TextDisabled("%u x %u  %s", info.width, info.height, srgb ? "sRGB" : "linear");
 
-    // The bug class from the PBR migration: a colour slot sampling a linear
-    // image (or a data slot sampling an sRGB one) looks almost right, so
-    // make it loud instead.
     if (srgb != expectSrgb) {
         ImGui::TextColored(WarnText, "expected %s", expectSrgb ? "sRGB" : "linear");
     }
 
-    // An empty path is the clear: the slot goes back to 0, which the shader
-    // already maps to the white default rather than the error texture.
+    // An empty path is the clear: the slot goes back to 0
+    // shader maps this to the default white material
+
     if (ImGui::SmallButton("Clear")) {
         EditorCommand cmd;
         cmd.kind        = EditorCommand::Kind::AssignTexture;
         cmd.materialId  = materialId;
         cmd.textureSlot = slot;
-        m_commands.push_back(cmd);
+        submit(std::move(cmd));
     }
     ImGui::EndGroup();
 
@@ -206,7 +197,7 @@ void EditorUI::textureSlot(const char *label, TextureSlot slot, uint32_t materia
 // mesh
 // ============================================================================
 
-void EditorUI::drawMeshSection(uint32_t nodeId, const Mesh &mesh, const ResourceStore &resources)
+void EditorUI::drawMeshSection(Guid node, const Mesh &mesh, const ResourceStore &resources)
 {
     if (!ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
         return;
@@ -255,11 +246,10 @@ void EditorUI::drawMeshSection(uint32_t nodeId, const Mesh &mesh, const Resource
                 m_selectedSubMesh = i;
             }
 
-            // The selectable spans all columns, so the whole row is the drop
-            // target. This is the one that matters: it is how a single submesh
-            // of a multi-material glTF mesh gets retargeted.
+            // The selectable spans all columns, whole row is the drop target
+
             if (const uint32_t dropped = acceptMaterialDrop()) {
-                assignMaterial(nodeId, static_cast<uint32_t>(i), dropped);
+                assignMaterial(node, static_cast<uint32_t>(i), dropped);
                 m_selectedSubMesh = i;      // show what was just assigned
             }
 
@@ -287,9 +277,6 @@ void EditorUI::drawTextureSection(const ResourceStore &resources, uint32_t textu
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
     if (const VkDescriptorSet set = texturePreview(resources, textureId)) {
-        // Fits the panel rather than a fixed box: this is the one place the
-        // user is looking at the texture itself rather than at a material that
-        // happens to use it.
         const float  available = ImGui::GetContentRegionAvail().x;
         const ImVec2 size      = fitInto(available, info.width, info.height);
         ImGui::Image(reinterpret_cast<ImTextureID>(set), size);
@@ -319,10 +306,6 @@ void EditorUI::drawTextureSection(const ResourceStore &resources, uint32_t textu
     }
     endProperties();
 
-    // A linear scan over every material. materialCount() is in the hundreds at
-    // worst and this only runs for the one selected texture, so an index would
-    // be bookkeeping for nothing -- and bookkeeping that has to stay correct
-    // across every material edit.
     ImGui::SeparatorText("Used by");
 
     size_t users = 0;
@@ -347,30 +330,23 @@ void EditorUI::drawTextureSection(const ResourceStore &resources, uint32_t textu
     }
 }
 
-// ============================================================================
-// material
-// ============================================================================
+// ============================ Material ============================
 
-void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId,
-                                   uint32_t nodeId, uint32_t subMesh)
+
+void EditorUI::drawMaterialSection(const ResourceStore &resources, uint32_t materialId,
+                                   Guid node, uint32_t subMesh)
 {
-
-
-    // Not an early return on the header any more: a collapsed header still has
-    // to accept a drop, and BeginDragDropTarget only sees the item submitted
-    // immediately before it.
     const bool open = ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen);
 
-    if (nodeId != 0) {
+    if (!node.isNull()) {
         if (const uint32_t dropped = acceptMaterialDrop()) {
-            assignMaterial(nodeId, subMesh, dropped);
+            assignMaterial(node, subMesh, dropped);
         }
     }
     if (!open) {
         return;
     }
 
-    // materialId 0 renders with the engine default, so show (and edit) that.
     const bool     isDefault = materialId == 0 || materialId > resources.materialCount();
     const uint32_t id        = isDefault ? resources.defaultMaterialId() : materialId;
     if (id == 0 || id > resources.materialCount()) {
@@ -378,7 +354,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
         return;
     }
 
-    // Edit a copy; push it back once, only if something changed.
+    // Edit a copy; submit its snapshot once, only if something changed.
     Material mat = resources.material(id);
 
 
@@ -395,10 +371,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     beginMaterialDrag(resources, id);
     ImGui::SameLine();
 
-    // The engine default is regenerated at startup and has no file on disk, so
-    // it gets neither a name field nor a save button -- renaming something the
-    // next launch rebuilds is a lie, and writing it out would produce a .mat
-    // that nothing ever loads.
+    // The engine default is regenerated at startup and has no file on disk
     const bool isEngineDefault = (id == resources.defaultMaterialId());
 
     ImGui::AlignTextToFramePadding();
@@ -409,7 +382,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
         ImGui::SetNextItemWidth(180.0f);
         if (ImGui::InputTextWithHint("##matname", "Name", nameBuffer, sizeof(nameBuffer))) {
             mat.name = nameBuffer;
-            changed  = true;      // pushed through updateMaterial with the rest
+            changed  = true;      // submitted with the rest
         }
     }
     ImGui::EndDisabled();
@@ -435,7 +408,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
                 EditorCommand save;
                 save.kind       = EditorCommand::Kind::SaveMaterial;
                 save.materialId = id;
-                m_commands.push_back(save);
+                submit(std::move(save));
             }
         }
         if (!info.sourcePath.empty() && ImGui::BeginItemTooltip()) {
@@ -476,7 +449,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     endProperties();
 
-    // ---- base colour --------------------------------------------------------
+    // ---- base colour
     ImGui::SeparatorText("Base Color");
     beginProperties("mat_base");
     {
@@ -487,7 +460,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     endProperties();
 
-    // ---- metallic / roughness -----------------------------------------------
+    // ---- metallic / roughness
     ImGui::SeparatorText("Metallic / Roughness");
     beginProperties("mat_mr");
     {
@@ -504,7 +477,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     endProperties();
     if (!isEngineDefault) {
-    // ---- normal -------------------------------------------------------------
+    // ---- normal
     ImGui::SeparatorText("Normal");
     beginProperties("mat_normal");
     {
@@ -514,7 +487,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     endProperties();
 
-    // ---- occlusion ----------------------------------------------------------
+    // ---- occlusion
     ImGui::SeparatorText("Occlusion");
     beginProperties("mat_ao");
     {
@@ -524,7 +497,7 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     endProperties();
 
-    // ---- emissive -----------------------------------------------------------
+    // ---- emissive
     ImGui::SeparatorText("Emissive");
     beginProperties("mat_emissive");
     {
@@ -539,6 +512,6 @@ void EditorUI::drawMaterialSection(ResourceStore &resources, uint32_t materialId
     }
     ImGui::EndDisabled();
     if (changed) {
-        resources.updateMaterial(id, mat);
+        submitModify(EditTarget::forMaterial(id), reflect::toBlob(mat), "Edit Material");
     }
 }

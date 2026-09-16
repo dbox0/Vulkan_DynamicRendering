@@ -23,7 +23,7 @@ namespace reflect
         {
             uint32_t count = 0;
             for (const FieldInfo &field : type.fields) {
-                count += field.isSerialized() ? 1u : 0u;
+                count += field.inSnapshots() ? 1u : 0u;
             }
             return count;
         }
@@ -51,7 +51,7 @@ namespace reflect
                 pod(fnv1a(type.name));
                 pod(serializedFieldCount(type));
                 for (const FieldInfo &field : type.fields) {
-                    if (field.isSerialized()) {
+                    if (field.inSnapshots()) {
                         value(*field.type, field.get(object));
                     }
                 }
@@ -155,7 +155,7 @@ namespace reflect
                 }
 
                 for (const FieldInfo &field : type.fields) {
-                    if (!field.isSerialized()) {
+                    if (!field.inSnapshots()) {
                         continue;
                     }
                     if (!value(*field.type, m_apply ? field.get(object) : nullptr)) {
