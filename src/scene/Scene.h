@@ -37,13 +37,23 @@ public:
 
     bool isAlive(uint32_t nodeId) const { return m_nodeWorld.isAlive(nodeId); }
 
+    // Current slot of a node, 0 if no live node has this Guid. Anything that
+    // remembers a node past the current frame stores the Guid and comes
+    // through here.
+    uint32_t findNode(Guid guid) const { return m_nodeWorld.findNode(guid); }
+
     void addRootNode(uint32_t nodeId);
 
     // --- editing ---------------------------------------------------------
 
     // Creates a node and links it under parentId, or into the root chain when
     // parentId is 0. Returns 0 if the node budget is exhausted.
-    uint32_t createNode(uint32_t parentId, std::string name, uint32_t meshId = 0);
+    //
+    // `guid` null (the default) means a new identity. Pass one only to bring
+    // back a node that existed before (undo, scene load); see
+    // NodeWorld::createNode for the rules.
+    uint32_t createNode(uint32_t parentId, std::string name, uint32_t meshId = 0,
+                        Guid guid = {});
 
     // Unlinks nodeId and kills its whole subtree.
     //

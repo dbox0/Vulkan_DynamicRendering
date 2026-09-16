@@ -57,7 +57,7 @@ void Scene::addRootNode(uint32_t nodeId)
 // editing
 // ---------------------------------------------------------------------------
 
-uint32_t Scene::createNode(uint32_t parentId, std::string name, uint32_t meshId)
+uint32_t Scene::createNode(uint32_t parentId, std::string name, uint32_t meshId, Guid guid)
 {
     if (m_nodeWorld.liveCount() >= m_nodeWorld.maxNodes()) {
         return 0;
@@ -69,7 +69,7 @@ uint32_t Scene::createNode(uint32_t parentId, std::string name, uint32_t meshId)
     // createNode() may reallocate nothing (the vector is reserved to maxNodes)
     // but taking the ID first and re-fetching keeps that an implementation
     // detail rather than a promise this function relies on.
-    const uint32_t nodeId = m_nodeWorld.createNode().second;
+    const uint32_t nodeId = m_nodeWorld.createNode(guid).second;
 
     {
         Node &node = m_nodeWorld.getNode(nodeId);

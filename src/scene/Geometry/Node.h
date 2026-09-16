@@ -8,6 +8,11 @@
 #include <string>
 #include <cstdint>
 
+#include "../../common/Guid.h"
+
+class NodeWorld;
+void registerSceneTypes();
+
 // A node carries a light instead of a light being its own object type: the
 // transform, the hierarchy, the gizmo, the picker and the inspector all already
 // work on nodes
@@ -26,6 +31,13 @@ enum class LightType : uint8_t
 //                   Set by every mutator, cleared by NodeWorld. 
 class Node
 {
+    // Identity. Assigned by NodeWorld when the node is created and never
+    // changed afterwards -- NodeWorld keeps a Guid -> slot map that must not
+    // go stale, which is why nothing else can write it. Not a reflected
+    // field either: reading a snapshot into a node restores its data, never
+    // its identity.
+    Guid m_guid;
+
     glm::vec3 m_translation = glm::vec3(0, 0, 0);
     glm::vec3 m_scale       = glm::vec3(1.0f);
     glm::quat m_rotation    = glm::quat(1, 0, 0, 0);
@@ -33,6 +45,17 @@ class Node
 
     bool m_localDirty = true;
     bool m_changed    = true;
+
+    friend class NodeWorld;
+    friend void registerSceneTypes();   // reflects the private transform fields
+
+    // afterRead hook: an archive just wrote T/R/S straight into the fields,
+    // bypassing the setters, so redo what the setters would have done.
+    void onFieldsRestored()
+    {
+        m_localDirty = true;
+        m_changed    = true;
+    }
 
 public:
     // Nodes used to borrow the mesh name in the hierarchy, which left an empty
@@ -53,6 +76,8 @@ public:
 
     uint32_t nextSiblingId = 0;
     uint32_t firstChildId  = 0;
+
+    [[nodiscard]] Guid guid() const { return m_guid; }
 
     [[nodiscard]] bool hasChanged() const { return m_changed; }
     void clearChanged() { m_changed = false; }

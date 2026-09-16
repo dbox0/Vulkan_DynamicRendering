@@ -2,7 +2,11 @@
 #include "Node.h"
 #include <cassert>
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <vector>
+
+#include "../../common/Fatal.h"
 
 // Flat node storage with 1-based IDs (id == index + 1, 0 == none).
 //
@@ -18,6 +22,8 @@ class NodeWorld
     std::vector<glm::mat4> m_world;       // parallel to m_nodes, world space
     std::vector<uint8_t>   m_worldDirty;  // did this node's world change this pass?
     std::vector<uint8_t>   m_alive;
+
+    std::unordered_map<Guid, uint32_t> m_slotByGuid;
 
     std::vector<uint32_t> m_freeSlots;
     std::vector<uint32_t> m_stack;        // DFS scratch, kept to avoid per-frame allocation
@@ -39,6 +45,7 @@ public:
         m_world.reserve(m_maxNodes);
         m_worldDirty.reserve(m_maxNodes);
         m_alive.reserve(m_maxNodes);
+        m_slotByGuid.reserve(m_maxNodes);
         m_stack.reserve(64);
     }
 
@@ -51,33 +58,56 @@ public:
         return nodeId != 0 && nodeId <= m_alive.size() && m_alive[nodeId - 1] != 0;
     }
 
+    // Slot of the live node with this Guid, 0 if there is none.
+    [[nodiscard]] uint32_t findNode(Guid guid) const
+    {
+        const auto it = m_slotByGuid.find(guid);
+        return it == m_slotByGuid.end() ? 0 : it->second;
+    }
+
     [[nodiscard]] const glm::mat4 &worldMatrix(uint32_t nodeId) const
     {
         assert(nodeId > 0 && nodeId <= m_world.size());
         return m_world[nodeId - 1];
     }
 
-    std::pair<Node &, uint32_t> createNode()
+    // A null guid (the default) gets a fresh one. A specific guid is for
+    // bringing a node back under its old identity -- undo of a delete, loading
+    // a scene -- and must not belong to a live node. Callers holding untrusted
+    // data (a scene file) check findNode() first; reaching here with a
+    // duplicate is a bug, and a hard stop, because a second node answering to
+    // the same Guid would corrupt every record that names it.
+    std::pair<Node &, uint32_t> createNode(Guid guid = {})
     {
-        m_topologyDirty = true;
-        ++m_liveNodes;
+        if (guid.isNull()) {
+            do {
+                guid = Guid::generate();
+            } while (m_slotByGuid.contains(guid));
+        } else if (m_slotByGuid.contains(guid)) {
+            fatalError("NodeWorld::createNode: guid " + guid.toString() + " is already in use");
+        }
 
+        uint32_t nodeId = 0;
         if (!m_freeSlots.empty()) {
-            const uint32_t nodeId = m_freeSlots.back();
+            nodeId = m_freeSlots.back();
             m_freeSlots.pop_back();
 
             m_nodes[nodeId - 1] = Node{};          // fresh, and dirty by default
             m_alive[nodeId - 1] = 1;
-            return { m_nodes[nodeId - 1], nodeId };
+        } else {
+            assert(m_nodes.size() < m_maxNodes && "Node world is at capacity");
+            m_nodes.push_back(Node{});
+            m_world.push_back(glm::mat4(1.0f));
+            m_worldDirty.push_back(1);
+            m_alive.push_back(1);
+            nodeId = static_cast<uint32_t>(m_nodes.size());
         }
 
-        assert(m_nodes.size() < m_maxNodes && "Node world is at capacity");
-        m_nodes.push_back(Node{});
-        m_world.push_back(glm::mat4(1.0f));
-        m_worldDirty.push_back(1);
-        m_alive.push_back(1);
+        m_nodes[nodeId - 1].m_guid = guid;
+        m_slotByGuid.emplace(guid, nodeId);
 
-        const auto nodeId = static_cast<uint32_t>(m_nodes.size());
+        m_topologyDirty = true;
+        ++m_liveNodes;
         return { m_nodes[nodeId - 1], nodeId };
     }
 
@@ -89,8 +119,9 @@ public:
         if (!isAlive(nodeId)) {
             return;
         }
+        m_slotByGuid.erase(m_nodes[nodeId - 1].m_guid);
         m_alive[nodeId - 1] = 0;
-        m_nodes[nodeId - 1] = Node{};   // drops the name and the child links
+        m_nodes[nodeId - 1] = Node{};   // drops the name, the guid and the child links
         m_freeSlots.push_back(nodeId);
 
         --m_liveNodes;

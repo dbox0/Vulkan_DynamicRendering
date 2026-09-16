@@ -10,6 +10,9 @@
 #include "common/errors.h"
 #include "editor/EditorCommands.h"
 #include "scene/Geometry/Node.h"
+#include "scene/SceneTypes.h"
+#include "reflect/BinaryArchive.h"
+#include "reflect/Reflection.h"
 #include <glm/gtx/quaternion.hpp>
 
 namespace
@@ -73,6 +76,19 @@ bool Application::initializeWindow()
 bool Application::initialize()
 {
     if (!initializeWindow()) {
+        return false;
+    }
+
+    // Type tables first: nothing may snapshot or save an object before every
+    // type it touches is described. A hole here is a programming error, and
+    // it is reported now rather than as a silently incomplete undo later.
+    registerSceneTypes();
+    if (const auto errors = reflect::validate(); !errors.empty()) {
+        std::string message = "Reflection tables are incomplete:";
+        for (const auto &error : errors) {
+            message += "\n  " + error;
+        }
+        showError(message);
         return false;
     }
 
@@ -327,31 +343,34 @@ void Application::applyEditorCommands()
             if (!m_scene.isAlive(cmd.nodeId)) {
                 break;
             }
-            // Copied by value first: createNode() writes a fresh Node into a
-            // recycled slot, and a reference into NodeWorld taken before that
-            // is a hazard even though the storage itself never reallocates.
-            const Node       &src         = m_scene.getNode(cmd.nodeId);
-            const uint32_t    parentId    = src.parentId;
-            const uint32_t    meshId      = src.meshId;
-            const std::string name        = src.name;
-            const glm::vec3   translation = src.getTranslation();
-            const glm::quat   rotation    = src.getRotation();
-            const glm::vec3   scale       = src.getScale();
+            // Snapshot first: createNode() writes a fresh Node into a recycled
+            // slot, and a reference into NodeWorld taken before that is a
+            // hazard even though the storage itself never reallocates.
+            //
+            // The snapshot carries every reflected field, so a duplicate stays
+            // complete as Node grows. The hand-written copy this replaces
+            // listed name + T/R/S and silently dropped the light settings:
+            // duplicating a Directional Light produced a plain Empty.
+            const Node         &src      = m_scene.getNode(cmd.nodeId);
+            const uint32_t      parentId = src.parentId;
+            const uint32_t      meshId   = src.meshId;   // runtime handle, not reflected
+            const reflect::Blob snapshot = reflect::toBlob(src);
 
             // Shares the mesh handle rather than rebuilding it -- two nodes
             // pointing at one mesh is exactly what glTF instancing produces,
             // and Scene::destroyNode already refcounts for it.
-            const uint32_t nodeId = m_scene.createNode(parentId,
-                                                       name.empty() ? "Copy" : name + " Copy",
-                                                       meshId);
+            const uint32_t nodeId = m_scene.createNode(parentId, {}, meshId);
             if (!nodeId) {
                 std::cerr << "[warn] Node budget exhausted" << std::endl;
                 break;
             }
             Node &copy = m_scene.getNode(nodeId);
-            copy.setTranslation(translation);
-            copy.setRotation(rotation);
-            copy.setScale(scale);
+            if (!reflect::readBinary(copy, snapshot)) {
+                // Same build, same type, one frame apart: cannot happen unless
+                // the reflection layer itself is broken.
+                fatalError("DuplicateNode: node snapshot did not read back");
+            }
+            copy.name = copy.name.empty() ? "Copy" : copy.name + " Copy";
 
             m_editor.selectNode(nodeId, 0);
             break;

@@ -110,7 +110,17 @@ add_executable(vulkanapp
         src/assets/TextureCache.cpp
         src/assets/MaterialSerializer.h
         src/assets/MaterialSerializer.cpp
-
+        src/common/Fatal.h
+        src/common/Guid.h
+        src/common/Guid.cpp
+        src/reflect/Reflection.h
+        src/reflect/Reflection.cpp
+        src/reflect/BinaryArchive.h
+        src/reflect/BinaryArchive.cpp
+        src/reflect/JsonArchive.h
+        src/reflect/JsonArchive.cpp
+        src/scene/SceneTypes.h
+        src/scene/SceneTypes.cpp
 )
 
 # For MSVC, you often need the 'latest' flag specifically
@@ -131,3 +141,26 @@ target_compile_definitions(vulkanapp PRIVATE
         ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/res/")
 
 target_include_directories(vulkanapp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/external)
+
+# ---------------------------------------------------------------------------
+# Tests
+#
+# Only glm and nlohmann: no GPU, SDL or Vulkan SDK involved, so this runs in
+# CI as-is. Build and run with:  cmake --build . --target reflection_tests
+#                                ctest --output-on-failure
+# ---------------------------------------------------------------------------
+enable_testing()
+
+add_executable(reflection_tests
+        tests/reflection_tests.cpp
+        src/common/Guid.cpp
+        src/reflect/Reflection.cpp
+        src/reflect/BinaryArchive.cpp
+        src/reflect/JsonArchive.cpp
+        src/scene/SceneTypes.cpp)
+
+target_link_libraries(reflection_tests PRIVATE
+        glm::glm
+        nlohmann_json::nlohmann_json)
+
+add_test(NAME reflection COMMAND reflection_tests)
