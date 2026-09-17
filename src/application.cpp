@@ -206,6 +206,7 @@ void Application::run()
         }
     }
 
+    m_camera.lookAt(glm::vec3(0,0,0));
     while (m_running) {
 
         const uint64_t currentTime = SDL_GetTicks();

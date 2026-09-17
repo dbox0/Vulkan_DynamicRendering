@@ -280,7 +280,7 @@ void main()
 
     // Reflective environment
 
-    vec3 R = reflect(V, N);
+    vec3 R = reflect(-V, N);
     vec3 irradiance;
     vec3 radiance;
 

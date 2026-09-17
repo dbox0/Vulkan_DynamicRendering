@@ -6,6 +6,8 @@
 #include <SDL3/SDL_events.h>
 #include <glm/gtx/quaternion.hpp>
 
+#include "Geometry/Node.h"
+
 class Camera
 {
 private:
@@ -50,6 +52,17 @@ public:
 
     void Update(float deltaTime);
 
+    void lookAt(const glm::vec3 &target) {
+        const glm::vec3 d = target - position;
+        if (glm::length2(d) < 1e-8f) return;          // camera sits on the target
+        const glm::vec3 dir = glm::normalize(d);
+        yaw   = std::atan2(dir.x, -dir.z);
+        pitch = std::asin(glm::clamp(dir.y, -1.0f, 1.0f));
+    }
+    void lookAt(const Node &node) {
+        viewMatrix = glm::lookAt(position, node.getTranslation(), glm::vec3(0.0f, 1.0f, 0.0f));
+    }
 private:
+
     float m_speed    = 6.0f;
 };

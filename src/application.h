@@ -105,7 +105,7 @@ private:
     ResourceStore m_resources;
     GeometryStore m_geometry;
     Scene         m_scene;
-    Camera        m_camera;
+        Camera        m_camera;
 
     // Holds no Vulkan handles of its own -- only IDs into m_resources -- so it
     // needs nothing in shutdown().
