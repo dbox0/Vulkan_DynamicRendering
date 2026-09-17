@@ -229,15 +229,16 @@ void main()
     // ---- normal -------------------------------------------------------------
     vec3 N = normalize(inNormal);
 
-
+    float flip = 1;
     if ((mat.flags & MAT_DOUBLE_SIDED) != 0u && !gl_FrontFacing) {
         N = -N;
+        flip = -1;
     }
 
     if ((mat.flags & MAT_NORMAL_MAP) != 0u) {
         vec3 T, B;
         if (inTangent.w != 0.0) {
-            T = normalize(inTangent.xyz - N * dot(N, inTangent.xyz));  // re-orthogonalise
+            T = normalize(inTangent.xyz - N * dot(N, inTangent.xyz))*flip;  // re-orthogonalise
             B = cross(N, T) * sign(inTangent.w);
         } else {
             // No tangents in the mesh: cotangent frame from screen-space
@@ -301,8 +302,12 @@ void main()
     vec3 ambient    = (ambientDif + ambientSpc) * ao * frame.ambientIntensity;
 
     vec3 hdr = direct + ambient + emissive;
-    vec3 invalid = max(vec3(isnan(hdr)), vec3(isinf(hdr)));
-    hdr = mix(hdr, vec3(0.0), invalid);
 
-    fragColor = vec4(PBRNeutralToneMapping(hdr * frame.exposure), baseColor.a);
+    if (any(isnan(hdr)) || any(isinf(hdr))) hdr = vec3(0.0);
+
+    vec3 color = hdr * frame.exposure;
+
+    //fragColor = vec4(PBRNeutralToneMapping(hdr * frame.exposure), baseColor.a);
+    fragColor = vec4(color, baseColor.a);
+
 }
