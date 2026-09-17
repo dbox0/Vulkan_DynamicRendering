@@ -270,19 +270,16 @@ void Application::run()
 
         // NewFrame must not run on a frame that gets skipped above -- ImGui
         // asserts if NewFrame is called twice without a Render in between.
+
         m_editor.beginFrame();
         m_editor.build(m_scene, m_geometry, m_resources, m_camera, m_width, m_height);
 
+        m_detector.beginFrame();
         applyEditorCommands();
         loadPendingAssets();
         m_world.collectGarbage(m_history);
+        m_detector.endFrame();
 
-        // Pushed in rather than pulled out: the renderer knows nothing about
-        // EditorUI, so a build without an editor still compiles and runs.
-        //
-        // Moved below the commands -- reading the selection after them means a
-        // node created or deleted this frame gets the right outline on that
-        // frame rather than the next one.
         m_renderer.setSelection(m_scene.findNode(m_editor.selectedNode()));
 
         m_renderer.render(m_scene, m_camera, m_width, m_height,
@@ -296,7 +293,6 @@ void Application::applyEditorCommands()
 
     const std::vector<EditorCommand> &commands = m_editor.commands();
     if (commands.empty()) {
-        m_detector.endFrame();
         return;
     }
 
@@ -711,8 +707,6 @@ void Application::applyEditorCommands()
     if (geometryAdded && !m_geometry.flushUploads()) {
         showError("Failed to upload generated geometry");
     }
-
-    m_detector.endFrame();
     m_editor.clearCommands();
 }
 
