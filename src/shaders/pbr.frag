@@ -89,6 +89,7 @@ vec3 sampleEnv(uint slot, vec3 dir, float lod)
     vec2 uv = vec2(atan(dir.z, dir.x), asin(clamp(dir.y, -1.0, 1.0)));
     uv *= vec2(0.1591, 0.3183);   // 1/(2pi), 1/pi
     uv += 0.5;
+    uv.y = 1.0 - uv.y;
     return textureLod(textures[nonuniformEXT(slot)], uv, lod).rgb;
 }
 
