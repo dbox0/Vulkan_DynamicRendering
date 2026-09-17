@@ -83,8 +83,9 @@ struct EditorCommand
         Undo,
         Redo,
 
-        SaveScene,    // path
-        LoadScene     // path
+        SaveScene,    // path (never empty: EditorUI asks for a name first)
+        LoadScene,    // path
+        NewScene      // clears the scene and history; the result is untitled
     };
 
     // subMesh sentinel: retarget every submesh of the node's mesh.

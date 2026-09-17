@@ -1,11 +1,11 @@
 #pragma once
 #include <cstdint>
+#include <string_view>
 
 class GeometryStore;
 
 // Procedural meshes for the editor's Create menu.
 //
-// CONVENTIONS, matching the glTF the loader
 //   * right handed, Y up, counter-clockwise winding seen from outside
 //   * unit sized and centred on the origin -- except Plane, which is 10x10
 //   * UV origin top-left, V down (glTF)
@@ -22,6 +22,9 @@ enum class PrimitiveType : uint8_t
 };
 
 const char *primitiveName(PrimitiveType type);
+
+// Inverse of primitiveName(). False for anything that is not a primitive.
+bool primitiveFromName(std::string_view name, PrimitiveType &out);
 
 // Allocates out of the geometry store's vertex/index budget and registers the
 // mesh. Returns a mesh handle, or 0 if the budget could not take it.

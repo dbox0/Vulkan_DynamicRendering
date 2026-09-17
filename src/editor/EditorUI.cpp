@@ -408,6 +408,8 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
             ImGui::MenuItem("Shadows", nullptr, &m_showShadowWindow);
             ImGui::EndMenu();
         }
+
+        drawSceneStatus();
         ImGui::EndMainMenuBar();
     }
 
@@ -477,6 +479,7 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
 
     handleShortcuts(scene, resources);
     drawSaveMaterialPopup(resources);
+    drawScenePopups();
     drawGizmo(scene, camera, width, height);
 
     m_recorder.endFrame(m_commands, heldId());
@@ -485,9 +488,11 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
 void EditorUI::drawEditMenu()
 {
     if (ImGui::BeginMenu("File")) {          // was: if (!ImGui::BeginMenu ...
-        if (ImGui::MenuItem("Save Scene...", "Ctrl+S")) { submitSaveScene(); }
-        if (ImGui::MenuItem("Load Scene...", "Ctrl+O")) { submitLoadScene(); }
+        if (ImGui::MenuItem("New Scene", "Ctrl+N"))          { requestSceneAction(SceneAction::New); }
+        if (ImGui::MenuItem("Open Scene...", "Ctrl+O"))      { openScenePicker(); }
         ImGui::Separator();
+        if (ImGui::MenuItem("Save Scene", "Ctrl+S"))         { saveScene(false); }
+        if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) { saveScene(true); }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Edit")) {
@@ -506,21 +511,6 @@ void EditorUI::drawEditMenu()
         }
         ImGui::EndMenu();
     }
-}
-
-void EditorUI::submitSaveScene()
-{
-    EditorCommand cmd;
-    cmd.kind = EditorCommand::Kind::SaveScene;
-    // path is empty: Application picks a default
-    submit(std::move(cmd));
-}
-
-void EditorUI::submitLoadScene()
-{
-    EditorCommand cmd;
-    cmd.kind = EditorCommand::Kind::LoadScene;
-    submit(std::move(cmd));
 }
 
 void EditorUI::submitUndo()
@@ -935,6 +925,9 @@ void EditorUI::drawAssetsTab()
             } else if (ext == ".mat") {
                 item.badge = "MAT";
                 item.color = ImVec4(0.30f, 0.22f, 0.34f, 1.0f);
+            } else if (ext == ".scene") {
+                item.badge = "SCENE";
+                item.color = ImVec4(0.36f, 0.26f, 0.18f, 1.0f);
             } else if (isImageExtension(ext)) {
                 // No thumbnail: a file on disk is not a loaded texture, and
                 // decoding every image in a folder just to browse it would
@@ -982,6 +975,8 @@ void EditorUI::drawAssetsTab()
             cmd.kind = EditorCommand::Kind::LoadMaterial;
             cmd.path = path;
             submit(std::move(cmd));
+        } else if (ext == ".scene") {
+            requestSceneAction(SceneAction::Open, path);
         }
     };
     actions.onDragSource = [this](const ProjectItem &item)

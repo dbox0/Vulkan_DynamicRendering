@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 #include "assets/PrimitiveBuilder.h"
 #include "assets/TextureCache.h"
@@ -49,6 +50,13 @@ private:
     // the load happens between build() and render() rather than mid-event.
     void loadPendingAssets();
 
+    // Empties the scene, the undo history and the editor selection. Shared by
+    // New Scene and Load Scene.
+    void clearScene();
+
+    // "<scene>[*] - Learning Vulkan", only touched when it changes.
+    void updateWindowTitle();
+
     // Selection and error reporting after an undo or redo.
     void applyHistoryStep(const UndoHistory::Outcome &outcome, const char *verb);
 
@@ -72,6 +80,10 @@ private:
     EditStreamChecker         m_editChecker;
     std::vector<Guid>         m_structurallyChanged;   // scratch, see applyEditorCommands
     std::vector<PendingAsset> m_pendingAssets;
+
+    // The open scene's file; empty while untitled. EditorUI reads it to decide whether Save needs a name.
+    std::filesystem::path     m_scenePath;
+    std::string               m_windowTitle;
 
     static constexpr uint32_t VulkanVersion     = VK_API_VERSION_1_4;
     static constexpr size_t   MaxNodes          = 1024;

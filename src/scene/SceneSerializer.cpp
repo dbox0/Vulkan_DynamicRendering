@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -11,9 +10,10 @@
 #include <nlohmann/json.hpp>
 
 #include "../assets/GltfLoader.h"
+#include "../assets/MaterialSerializer.h"
 #include "../assets/Mesh.h"
+#include "../assets/PrimitiveBuilder.h"
 #include "../assets/TextureCache.h"
-#include "../common/errors.h"
 #include "../reflect/JsonArchive.h"
 #include "../render/GeometryStore.h"
 #include "../render/ResourceStore.h"
@@ -29,228 +29,441 @@ namespace
 {
     constexpr int kFormatVersion = 1;
 
-    // -----------------------------------------------------------------------
+    std::string nodeLabel(const Node &node)
+    {
+        return node.name.empty() ? std::string("Node") : "'" + node.name + "'";
+    }
+
+    // =======================================================================
     // save
-    // -----------------------------------------------------------------------
+    // =======================================================================
 
-    Json nodeToJson(const Node &node, const Scene &scene, const GeometryStore &geometry,
-                    const ResourceStore &resources, const TextureCache &cache)
-    {
-        Json j = Json::object();
-
-        j["id"] = node.guid().toString();
-
-        // Hierarchy: parent Guid and the Guid of the sibling before this one.
-        // A reader can reconstruct the order by appending in file order.
-        if (node.parentId) {
-            j["parent"] = scene.getNode(node.parentId).guid().toString();
-        } else {
-            j["parent"] = nullptr;
-        }
-        if (node.nextSiblingId) {
-            // "previous" is the sibling before us: walk the parent's child
-            // list to find our predecessor.
-            uint32_t previous = 0;
-            const uint32_t self = scene.findNode(node.guid());
-            const uint32_t first = node.parentId
-                ? scene.getNode(node.parentId).firstChildId
-                : scene.rootNodeId();
-            for (uint32_t id = first; id != 0 && id != self; id = scene.getNode(id).nextSiblingId) {
-                previous = id;
-            }
-            j["previous"] = previous ? Json(scene.getNode(previous).guid().toString()) : Json(nullptr);
-        } else {
-            j["previous"] = nullptr;
-        }
-
-        // All reflected fields (name, T/R/S, lights). Asset refs are separate.
-        j["data"] = reflect::toJson(node);
-
-        // Mesh asset reference.
-        if (node.meshId != 0 && geometry.meshAlive(node.meshId)) {
-            const Mesh &mesh = geometry.mesh(node.meshId);
-
-            // Make the path ASSET_DIR-relative.
-            const std::string relative = mesh.sourcePath.empty()
-                ? std::string()
-                : cache.toRelative(mesh.sourcePath);
-
-            if (!relative.empty() && mesh.sourceMeshIndex >= 0) {
-                Json meshRef = Json::object();
-                meshRef["path"]  = relative;
-                meshRef["index"] = mesh.sourceMeshIndex;
-
-                // Submesh material assignments. Written only when they differ
-                // from what the glTF itself specifies (index 0 is the glTF
-                // default). We write them unconditionally: the cost is
-                // negligible and a round-trip test doesn't need to know the
-                // glTF defaults.
-                Json mats = Json::array();
-                for (const SubMesh &sub : mesh.subMeshes) {
-                    if (sub.materialId != 0) {
-                        const std::string matPath = cache.toRelative(
-                            resources.materialInfo(sub.materialId).sourcePath.string());
-                        mats.push_back(matPath.empty() ? Json(nullptr) : Json(matPath));
-                    } else {
-                        mats.push_back(nullptr);
-                    }
-                }
-                meshRef["materials"] = std::move(mats);
-                j["mesh"] = std::move(meshRef);
-            } else if (!mesh.sourcePath.empty()) {
-                // Procedural or unregistered: mark as embedded (no path).
-                // The node is saved without a mesh reference; warn on save.
-                j["mesh"] = nullptr;
-            }
-            // No mesh ref written for pure primitives without a source path.
-        }
-
-        return j;
-    }
-
-    void writeDepthFirst(const Scene &scene, uint32_t nodeId, const GeometryStore &geometry,
-                         const ResourceStore &resources, const TextureCache &cache,
-                         Json &nodesArray)
-    {
-        const Node &node = scene.getNode(nodeId);
-        nodesArray.push_back(nodeToJson(node, scene, geometry, resources, cache));
-
-        for (uint32_t child = node.firstChildId; child != 0;
-             child = scene.getNode(child).nextSiblingId) {
-            writeDepthFirst(scene, child, geometry, resources, cache, nodesArray);
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // load
-    // -----------------------------------------------------------------------
-
-    // Maps a mesh asset reference to a meshId, loading the glTF file the
-    // first time each (path, index) pair is seen. Uses a per-load cache so a
-    // file referenced by many nodes is only parsed once.
-    class MeshCache
+    class SceneWriter
     {
     public:
-        MeshCache(GeometryStore &geometry, ResourceStore &resources,
-                  VulkanContext &ctx, TextureCache &cache, VkCommandBuffer cmd)
-            : m_geometry(geometry), m_resources(resources), m_ctx(ctx),
-              m_cache(cache), m_cmd(cmd) {}
+        SceneWriter(const Scene &scene, const GeometryStore &geometry,
+                    const ResourceStore &resources, const TextureCache &cache,
+                    std::vector<std::string> &warnings)
+            : m_scene(scene), m_geometry(geometry), m_resources(resources),
+              m_cache(cache), m_warnings(warnings) {}
 
-        // Returns 0 if loading fails.
-        uint32_t get(const std::string &path, int32_t meshIndex,
-                     Scene &scene, std::vector<std::string> &warnings)
+        void writeDepthFirst(uint32_t nodeId, Json &nodesArray)
         {
-            const Key key{ path, meshIndex };
-            const auto it = m_loaded.find(key);
-            if (it != m_loaded.end()) {
-                return it->second;
-            }
+            const Node &node = m_scene.getNode(nodeId);
+            nodesArray.push_back(nodeToJson(nodeId, node));
 
-            // Load the whole file if not seen yet.
-            if (!m_loadedFiles.contains(path)) {
-                m_loadedFiles.insert(path);
-                const std::filesystem::path full = m_cache.root() / path;
-                GltfLoader loader(m_ctx, m_resources, m_geometry, scene, m_cache);
-                // Load but don't let it append root nodes. We handle placement
-                // ourselves. Pass a dummy scene that we discard.
-                // Actually: we do want to load the meshes but NOT add the glTF
-                // scene graph. GltfLoader::load() does both. For now, use a
-                // separate Scene just to load meshes and copy their IDs.
-                if (!loader.load(full)) {
-                    warnings.push_back("scene: could not load mesh source '" + path + "'");
-                }
-                // After loading, scan GeometryStore for meshes with this sourcePath.
-                // We identify them by (sourcePath, sourceMeshIndex).
-                const NodeWorld &nw = scene.nodes();
-                (void)nw;   // used below indirectly
+            for (uint32_t child = node.firstChildId; child != 0;
+                 child = m_scene.getNode(child).nextSiblingId) {
+                writeDepthFirst(child, nodesArray);
             }
-
-            // Find the mesh in GeometryStore by matching sourcePath and index.
-            // Walk via the scene we're building (nodes may already reference it).
-            // Better: scan geometry directly. Since GeometryStore doesn't expose
-            // iteration, use the scene-level scan.
-            uint32_t found = 0;
-            // GltfLoader creates nodes pointing at the new meshes. After the
-            // load, we look for a mesh with the right sourcePath + index in
-            // GeometryStore via a node that references it.
-            // This is fragile. A cleaner approach: add a meshBySource() query
-            // to GeometryStore. For now, scan all scene nodes for a match.
-            const auto &nw = scene.nodes();
-            for (uint32_t id = 1; id <= static_cast<uint32_t>(nw.size()); ++id) {
-                if (!nw.isAlive(id)) continue;
-                const uint32_t mid = nw.getNode(id).meshId;
-                if (mid == 0 || !m_geometry.meshAlive(mid)) continue;
-                const Mesh &mesh = m_geometry.mesh(mid);
-                if (mesh.sourceMeshIndex == meshIndex) {
-                    // normalize both paths for comparison
-                    const std::filesystem::path fullA = std::filesystem::path(mesh.sourcePath).lexically_normal();
-                    const std::filesystem::path fullB = (m_cache.root() / path).lexically_normal();
-                    if (fullA == fullB) {
-                        found = mid;
-                        break;
-                    }
-                }
-            }
-
-            if (!found) {
-                warnings.push_back("scene: mesh index " + std::to_string(meshIndex) +
-                                   " not found in '" + path + "'");
-            }
-            m_loaded.emplace(key, found);
-            return found;
         }
 
     private:
-        struct Key {
-            std::string path;
-            int32_t     index = -1;
-            bool operator==(const Key &o) const = default;
-        };
-        struct KeyHash {
-            size_t operator()(const Key &k) const noexcept {
-                return std::hash<std::string>{}(k.path) ^ std::hash<int>{}(k.index);
+        Json nodeToJson(uint32_t self, const Node &node)
+        {
+            Json j = Json::object();
+            j["id"] = node.guid().toString();
+
+            j["parent"] = node.parentId
+                ? Json(m_scene.getNode(node.parentId).guid().toString())
+                : Json(nullptr);
+
+            // The sibling before this one. Informational for now: the reader
+            // relies on file order.
+            uint32_t previous = 0;
+            const uint32_t first = node.parentId
+                ? m_scene.getNode(node.parentId).firstChildId
+                : m_scene.rootNodeId();
+            for (uint32_t id = first; id != 0 && id != self; id = m_scene.getNode(id).nextSiblingId) {
+                previous = id;
             }
+            j["previous"] = previous
+                ? Json(m_scene.getNode(previous).guid().toString())
+                : Json(nullptr);
+
+            j["data"] = reflect::toJson(node);
+
+            if (node.meshId != 0 && m_geometry.meshAlive(node.meshId)) {
+                Json meshRef = meshToJson(node, m_geometry.mesh(node.meshId));
+                if (!meshRef.is_null()) {
+                    j["mesh"] = std::move(meshRef);
+                }
+            }
+            return j;
+        }
+
+        Json meshToJson(const Node &node, const Mesh &mesh)
+        {
+            Json ref = Json::object();
+            const bool isPrimitive = !mesh.primitive.empty();
+
+            if (isPrimitive) {
+                ref["primitive"] = mesh.primitive;
+            } else {
+                const std::string relative = mesh.sourcePath.empty()
+                    ? std::string()
+                    : m_cache.toRelative(mesh.sourcePath);
+                if (relative.empty() || mesh.sourceMeshIndex < 0) {
+                    m_warnings.push_back("Node " + nodeLabel(node) + ": mesh '" + mesh.name +
+                                         "' is not a primitive and not a file under the asset "
+                                         "folder; saved without its mesh");
+                    return nullptr;
+                }
+                ref["path"]  = relative;
+                ref["index"] = mesh.sourceMeshIndex;
+            }
+
+            // One number per runtime mesh, in first-seen order: nodes sharing
+            // a handle share it again after load.
+            const auto [it, inserted] = m_instances.try_emplace(
+                node.meshId, static_cast<int>(m_instances.size()));
+            ref["instance"] = it->second;
+
+            Json mats = Json::array();
+            for (const SubMesh &sub : mesh.subMeshes) {
+                mats.push_back(materialRef(node, sub.materialId, isPrimitive));
+            }
+            ref["materials"] = std::move(mats);
+            return ref;
+        }
+
+        Json materialRef(const Node &node, uint32_t materialId, bool isPrimitive)
+        {
+            if (materialId == 0 || materialId > m_resources.materialCount()) {
+                return nullptr;
+            }
+            const std::string relative =
+                m_cache.toRelative(m_resources.materialInfo(materialId).sourcePath);
+            if (!relative.empty()) {
+                return relative;
+            }
+
+            // No file to point at. For a glTF mesh null means "the file's own
+            // material", which is right unless the user reassigned it
+            // that case cannot be told apart here.
+            // For a primitive :
+            // null means the default, so anything else is a known loss.
+            if (isPrimitive && materialId != m_resources.defaultMaterialId()) {
+                const std::string &name = m_resources.material(materialId).name;
+                m_warnings.push_back("Node " + nodeLabel(node) + ": material '" +
+                                     (name.empty() ? std::string("unnamed") : name) +
+                                     "' has no .mat file; saved as the default material");
+            }
+            return nullptr;
+        }
+
+        const Scene         &m_scene;
+        const GeometryStore &m_geometry;
+        const ResourceStore &m_resources;
+        const TextureCache  &m_cache;
+        std::vector<std::string> &m_warnings;
+
+        std::unordered_map<uint32_t, int> m_instances;   // meshId -> instance
+    };
+
+    // =======================================================================
+    // load
+    // =======================================================================
+
+    // One lazily opened upload for .mat textures. GltfLoader opens its own,
+    // and the uploader allows only one open at a time, so this must be
+    // flushed before every glTF load.
+    class UploadScope
+    {
+    public:
+        explicit UploadScope(VulkanContext &ctx) : m_ctx(ctx) {}
+        ~UploadScope() { flush(); }
+
+        VkCommandBuffer get()
+        {
+            if (!m_cmd) {
+                m_cmd = m_ctx.beginUpload();
+            }
+            return m_cmd;
+        }
+
+        void flush()
+        {
+            if (m_cmd) {
+                m_ctx.submitUpload();
+                m_cmd = nullptr;
+            }
+        }
+
+    private:
+        VulkanContext  &m_ctx;
+        VkCommandBuffer m_cmd = nullptr;
+    };
+
+    class AssetResolver
+    {
+    public:
+        AssetResolver(Scene &scene, GeometryStore &geometry, ResourceStore &resources,
+                      VulkanContext &ctx, TextureCache &cache, SceneLoadResult &result)
+            : m_scene(scene), m_geometry(geometry), m_resources(resources), m_ctx(ctx),
+              m_cache(cache), m_result(result), m_uploads(ctx)
+        {
+            // Every material that already has a file, by its relative path.
+            for (uint32_t m = 1; m <= static_cast<uint32_t>(m_resources.materialCount()); ++m) {
+                const std::string rel = m_cache.toRelative(m_resources.materialInfo(m).sourcePath);
+                if (!rel.empty()) {
+                    m_materialsByPath.try_emplace(rel, m);
+                }
+            }
+        }
+
+        // Returns 0 when the reference cannot be resolved (warning recorded).
+        uint32_t mesh(const Json &ref)
+        {
+            const bool hasInstance = ref.contains("instance") && ref["instance"].is_number_integer();
+            const bool hasPath     = ref.contains("path") && ref["path"].is_string() &&
+                                     ref.contains("index") && ref["index"].is_number_integer();
+            const bool hasPrim     = ref.contains("primitive") && ref["primitive"].is_string();
+
+            // Sharing key. Files written before "instance" existed share by
+            // (path, index) and never share primitives.
+            std::string key;
+            if (hasInstance) {
+                key = "#" + std::to_string(ref["instance"].get<int64_t>());
+            } else if (hasPath) {
+                key = ref["path"].get<std::string>() + ":" +
+                      std::to_string(ref["index"].get<int64_t>());
+            }
+            if (!key.empty()) {
+                if (const auto it = m_byKey.find(key); it != m_byKey.end()) {
+                    return it->second;
+                }
+            }
+
+            uint32_t meshId = 0;
+            if (hasPrim) {
+                meshId = primitive(ref["primitive"].get<std::string>());
+            } else if (hasPath) {
+                meshId = fileMesh(ref["path"].get<std::string>(), ref["index"].get<int32_t>());
+            } else {
+                m_result.warnings.push_back("Mesh reference has neither 'path' nor 'primitive'");
+            }
+
+            if (!key.empty()) {
+                m_byKey.emplace(key, meshId);
+            }
+            return meshId;
+        }
+
+        // 0 when the path is not a loadable .mat.
+        uint32_t material(const std::string &relative)
+        {
+            if (const auto it = m_materialsByPath.find(relative); it != m_materialsByPath.end()) {
+                return it->second;
+            }
+
+            const std::filesystem::path full = m_cache.toAbsolute(relative);
+            uint32_t materialId = 0;
+            if (std::filesystem::exists(full)) {
+                if (VkCommandBuffer cmd = m_uploads.get()) {
+                    materialId = loadMaterial(m_ctx, m_resources, m_cache, cmd, full);
+                }
+            }
+            if (materialId) {
+                m_resources.setMaterialSource(materialId, full);
+                m_result.loadedMaterials.push_back(materialId);
+            } else {
+                m_result.warnings.push_back("Material '" + relative + "' could not be loaded");
+            }
+            m_materialsByPath.emplace(relative, materialId);   // do not retry
+            return materialId;
+        }
+
+        // Frees every glTF mesh that was loaded but never handed to a node,
+        // and submits pending uploads.
+        void finish()
+        {
+            m_uploads.flush();
+            for (auto &[path, copies] : m_files) {
+                for (FileCopy &copy : copies) {
+                    for (size_t i = 0; i < copy.meshIds.size(); ++i) {
+                        if (!copy.used[i] && copy.meshIds[i]) {
+                            m_geometry.removeMesh(copy.meshIds[i]);
+                        }
+                    }
+                }
+            }
+        }
+
+    private:
+        uint32_t primitive(const std::string &name)
+        {
+            PrimitiveType type{};
+            if (!primitiveFromName(name, type)) {
+                m_result.warnings.push_back("Unknown primitive '" + name + "'");
+                return 0;
+            }
+            const uint32_t meshId = buildPrimitive(m_geometry, type, m_resources.defaultMaterialId());
+            if (!meshId) {
+                m_result.warnings.push_back("Geometry budget exhausted building a " + name);
+            }
+            return meshId;
+        }
+
+        // Each distinct instance of (path, index) needs its own runtime mesh,
+        // so a file is loaded again once every copy of that index is taken.
+        uint32_t fileMesh(const std::string &path, int32_t index)
+        {
+            if (index < 0) {
+                m_result.warnings.push_back("Negative mesh index in '" + path + "'");
+                return 0;
+            }
+            std::vector<FileCopy> &copies = m_files[path];
+            for (FileCopy &copy : copies) {
+                if (static_cast<size_t>(index) < copy.meshIds.size() && !copy.used[index]) {
+                    copy.used[index] = true;
+                    return copy.meshIds[index];
+                }
+            }
+
+            // Loading creates no nodes, so nothing in the scene moves.
+            m_uploads.flush();
+            FileCopy copy;
+            GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene, m_cache);
+            if (!loader.loadMeshesOnly(m_cache.toAbsolute(path), copy.meshIds)) {
+                m_result.warnings.push_back("Could not load mesh source '" + path + "'");
+                return 0;
+            }
+            copy.used.assign(copy.meshIds.size(), false);
+
+            if (static_cast<size_t>(index) >= copy.meshIds.size() || !copy.meshIds[index]) {
+                m_result.warnings.push_back("'" + path + "' has no mesh " + std::to_string(index));
+                copies.push_back(std::move(copy));
+                return 0;
+            }
+            copy.used[index] = true;
+            const uint32_t meshId = copy.meshIds[index];
+            copies.push_back(std::move(copy));
+            return meshId;
+        }
+
+        struct FileCopy
+        {
+            std::vector<uint32_t> meshIds;
+            std::vector<bool>     used;
         };
 
-        std::unordered_map<Key, uint32_t, KeyHash> m_loaded;
-        std::unordered_set<std::string>             m_loadedFiles;
+        Scene           &m_scene;
+        GeometryStore   &m_geometry;
+        ResourceStore   &m_resources;
+        VulkanContext   &m_ctx;
+        TextureCache    &m_cache;
+        SceneLoadResult &m_result;
+        UploadScope      m_uploads;
 
-        GeometryStore &m_geometry;
-        ResourceStore &m_resources;
-        VulkanContext &m_ctx;
-        TextureCache  &m_cache;
-        VkCommandBuffer m_cmd;
+        std::unordered_map<std::string, uint32_t>              m_byKey;
+        std::unordered_map<std::string, std::vector<FileCopy>> m_files;
+        std::unordered_map<std::string, uint32_t>              m_materialsByPath;
     };
+
+    void applyMaterials(const Json &mats, Mesh &mesh, AssetResolver &assets)
+    {
+        for (size_t i = 0; i < mats.size() && i < mesh.subMeshes.size(); ++i) {
+            if (!mats[i].is_string()) {
+                continue;   // null: keep what the mesh came with
+            }
+            if (const uint32_t materialId = assets.material(mats[i].get<std::string>())) {
+                mesh.subMeshes[i].materialId = materialId;
+            }
+        }
+    }
+
+    bool readSceneFile(const std::filesystem::path &file, Json &root, uint32_t &version,
+                       std::vector<std::string> &warnings)
+    {
+        std::ifstream in(file);
+        if (!in) {
+            warnings.push_back("Cannot open '" + file.string() + "'");
+            return false;
+        }
+        try {
+            root = Json::parse(in);
+        } catch (const Json::parse_error &e) {
+            warnings.push_back("JSON parse error: " + std::string(e.what()));
+            return false;
+        }
+        if (!root.is_object()) {
+            warnings.push_back("Scene file is not a JSON object");
+            return false;
+        }
+
+        version = 1;
+        if (root.contains("version") && root["version"].is_number_unsigned()) {
+            version = root["version"].get<uint32_t>();
+        }
+        if (version == 0 || version > static_cast<uint32_t>(kFormatVersion)) {
+            warnings.push_back("Unsupported scene version " + std::to_string(version));
+            return false;
+        }
+        if (root.contains("nodes") && !root["nodes"].is_array()) {
+            warnings.push_back("'nodes' is not an array");
+            return false;
+        }
+        for (const auto &item : root.items()) {
+            if (item.key() != "version" && item.key() != "nodes") {
+                warnings.push_back("Unknown top-level key '" + item.key() + "' ignored");
+            }
+        }
+        return true;
+    }
 }
 
 // ---------------------------------------------------------------------------
 // save
 // ---------------------------------------------------------------------------
 
-bool saveScene(const Scene &scene, const GeometryStore &geometry,
-               const ResourceStore &resources, const TextureCache &cache,
-               const std::filesystem::path &file)
+SceneSaveResult saveScene(const Scene &scene, const GeometryStore &geometry,
+                          const ResourceStore &resources, const TextureCache &cache,
+                          const std::filesystem::path &file)
 {
+    SceneSaveResult result;
+
     Json root = Json::object();
     root["version"] = kFormatVersion;
 
     Json nodes = Json::array();
-    for (uint32_t rootId : scene.rootNodes()) {
-        writeDepthFirst(scene, rootId, geometry, resources, cache, nodes);
+    SceneWriter writer(scene, geometry, resources, cache, result.warnings);
+    for (const uint32_t rootId : scene.rootNodes()) {
+        writer.writeDepthFirst(rootId, nodes);
     }
     root["nodes"] = std::move(nodes);
 
-    std::ofstream out(file);
-    if (!out) {
-        showError("Scene save: cannot open '" + file.string() + "' for writing");
-        return false;
+    std::error_code ec;
+    if (file.has_parent_path()) {
+        std::filesystem::create_directories(file.parent_path(), ec);
     }
-    out << root.dump(2) << '\n';
-    if (!out) {
-        showError("Scene save: write failed for '" + file.string() + "'");
-        return false;
+
+    std::filesystem::path temp = file;
+    temp += ".tmp";
+    {
+        std::ofstream out(temp, std::ios::trunc);
+        if (!out) {
+            result.warnings.push_back("Cannot open '" + temp.string() + "' for writing");
+            return result;
+        }
+        out << root.dump(2) << '\n';
+        out.flush();
+        if (!out) {
+            result.warnings.push_back("Write failed for '" + temp.string() + "'");
+            std::filesystem::remove(temp, ec);
+            return result;
+        }
     }
-    return true;
+
+    std::filesystem::rename(temp, file, ec);
+    if (ec) {
+        result.warnings.push_back("Cannot replace '" + file.string() + "': " + ec.message());
+        std::filesystem::remove(temp, ec);
+        return result;
+    }
+
+    result.ok = true;
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,153 +471,92 @@ bool saveScene(const Scene &scene, const GeometryStore &geometry,
 // ---------------------------------------------------------------------------
 
 SceneLoadResult loadScene(Scene &scene, GeometryStore &geometry, ResourceStore &resources,
-                          VulkanContext &ctx, TextureCache &cache, VkCommandBuffer cmd,
-                          const std::filesystem::path &file)
+                          VulkanContext &ctx, TextureCache &cache,
+                          const std::filesystem::path &file,
+                          const std::function<void()> &clearExisting)
 {
     SceneLoadResult result;
 
-    std::ifstream in(file);
-    if (!in) {
-        result.warnings.push_back("Cannot open '" + file.string() + "'");
-        return result;
-    }
-
-    Json root;
-    try {
-        root = Json::parse(in);
-    } catch (const Json::parse_error &e) {
-        result.warnings.push_back("JSON parse error: " + std::string(e.what()));
-        return result;
-    }
-
-    if (!root.is_object()) {
-        result.warnings.push_back("Scene file is not a JSON object");
-        return result;
-    }
-
+    Json     root;
     uint32_t version = 1;
-    if (root.contains("version") && root["version"].is_number_unsigned()) {
-        version = root["version"].get<uint32_t>();
-    }
-    if (version == 0 || version > static_cast<uint32_t>(kFormatVersion)) {
-        result.warnings.push_back("Unsupported scene version " + std::to_string(version));
-        return result;
+    if (!readSceneFile(file, root, version, result.warnings)) {
+        return result;   // current scene untouched
     }
 
-    // Report unknown top-level keys.
-    for (const auto &item : root.items()) {
-        if (item.key() != "version" && item.key() != "nodes") {
-            result.warnings.push_back("Unknown top-level key '" + item.key() + "' ignored");
-        }
+    if (clearExisting) {
+        clearExisting();
     }
 
-    const Json &nodesJson = root.contains("nodes") ? root["nodes"] : Json::array();
-    if (!nodesJson.is_array()) {
-        result.warnings.push_back("'nodes' is not an array");
-        return result;
-    }
+    const Json nodesJson = root.contains("nodes") ? root["nodes"] : Json::array();
 
-    // Pre-validate: collect all Guids so we can check for duplicates before
-    // touching the scene.
-    std::unordered_set<std::string> seenGuids;
-    for (const Json &jn : nodesJson) {
-        if (!jn.is_object() || !jn.contains("id") || !jn["id"].is_string()) {
-            continue;
-        }
-        seenGuids.insert(jn["id"].get<std::string>());
-    }
-
-    MeshCache meshCache(geometry, resources, ctx, cache, cmd);
-    std::unordered_map<std::string, uint32_t> guidToSlot;  // guid hex -> slot
+    AssetResolver assets(scene, geometry, resources, ctx, cache, result);
+    std::unordered_map<std::string, uint32_t> guidToSlot;   // guid hex -> slot
     guidToSlot.reserve(nodesJson.size());
 
-    // Nodes are in depth-first pre-order, so a parent's slot is always
-    // populated before its children.
+    // Depth-first pre-order: a parent is always created before its children.
     for (const Json &jn : nodesJson) {
-        if (!jn.is_object()) {
-            result.warnings.push_back("Node entry is not an object, skipped");
-            continue;
-        }
-
-        // ID
-        if (!jn.contains("id") || !jn["id"].is_string()) {
-            result.warnings.push_back("Node without 'id', skipped");
+        if (!jn.is_object() || !jn.contains("id") || !jn["id"].is_string()) {
+            result.warnings.push_back("Node entry without a valid 'id', skipped");
             continue;
         }
         const std::string idStr = jn["id"].get<std::string>();
-        const auto guidOpt = Guid::parse(idStr);
-        if (!guidOpt) {
+        const auto guid = Guid::parse(idStr);
+        if (!guid) {
             result.warnings.push_back("Invalid guid '" + idStr + "', skipped");
             continue;
         }
-        const Guid guid = *guidOpt;
-        if (scene.findNode(guid) != 0) {
+        if (scene.findNode(*guid) != 0) {
             result.warnings.push_back("Guid '" + idStr + "' already in scene, skipped");
             continue;
         }
 
-        // Parent slot (already created, or 0 = root).
         uint32_t parentId = 0;
         if (jn.contains("parent") && jn["parent"].is_string()) {
             const std::string parentStr = jn["parent"].get<std::string>();
-            const auto it = guidToSlot.find(parentStr);
-            if (it == guidToSlot.end()) {
+            if (const auto it = guidToSlot.find(parentStr); it != guidToSlot.end()) {
+                parentId = it->second;
+            } else {
                 result.warnings.push_back("Node '" + idStr + "': parent '" + parentStr +
                                           "' not found, placed at root");
-            } else {
-                parentId = it->second;
             }
         }
 
-        const uint32_t nodeId = scene.createNode(parentId, {}, 0, guid);
+        // Checked up front so a mesh is never built for a node that cannot exist.
+        if (scene.nodes().liveCount() >= scene.maxNodes()) {
+            result.warnings.push_back("Node budget exhausted, remaining nodes skipped");
+            break;
+        }
+
+        // Mesh first: it may load files, and no Node& is held across that.
+        uint32_t meshId = 0;
+        if (jn.contains("mesh") && jn["mesh"].is_object()) {
+            const Json &meshRef = jn["mesh"];
+            meshId = assets.mesh(meshRef);
+            if (meshId && meshRef.contains("materials") && meshRef["materials"].is_array()) {
+                applyMaterials(meshRef["materials"], geometry.meshMutable(meshId), assets);
+            }
+        }
+
+        // meshId goes through createNode so the scene's refcount sees it.
+        const uint32_t nodeId = scene.createNode(parentId, {}, meshId, *guid);
         if (nodeId == 0) {
             result.warnings.push_back("Node budget exhausted, remaining nodes skipped");
             break;
         }
         guidToSlot[idStr] = nodeId;
 
-        // Node data (name, T/R/S, light settings).
-        Node &node = scene.getNode(nodeId);
         if (jn.contains("data") && jn["data"].is_object()) {
-            reflect::fromJson(node, jn["data"], version, &result.warnings);
-            // meshId in "data" is a runtime handle and must not be applied from a file.
-            node.meshId = 0;
-        }
-
-        // Mesh asset reference.
-        if (jn.contains("mesh") && jn["mesh"].is_object()) {
-            const Json &meshRef = jn["mesh"];
-            if (meshRef.contains("path") && meshRef["path"].is_string() &&
-                meshRef.contains("index") && meshRef["index"].is_number_integer()) {
-                const std::string path  = meshRef["path"].get<std::string>();
-                const int32_t     index = meshRef["index"].get<int32_t>();
-                const uint32_t meshId = meshCache.get(path, index, scene, result.warnings);
-                if (meshId) {
-                    node.meshId = meshId;
-
-                    // Restore per-submesh material assignments.
-                    if (meshRef.contains("materials") && meshRef["materials"].is_array()) {
-                        const Json &mats = meshRef["materials"];
-                        Mesh &mesh = geometry.meshMutable(meshId);
-                        for (size_t i = 0; i < mats.size() && i < mesh.subMeshes.size(); ++i) {
-                            if (!mats[i].is_string()) continue;
-                            const std::string matPath = mats[i].get<std::string>();
-                            // Look up the material by its source path.
-                            for (uint32_t m = 1; m <= static_cast<uint32_t>(resources.materialCount()); ++m) {
-                                const auto &info = resources.materialInfo(m);
-                                if (!info.sourcePath.empty() &&
-                                    cache.toRelative(info.sourcePath.string()) == matPath) {
-                                    mesh.subMeshes[i].materialId = m;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+            Node &node = scene.getNode(nodeId);
+            if (!reflect::fromJson(node, jn["data"], version, &result.warnings)) {
+                result.warnings.push_back("Node '" + idStr + "': data could not be read");
             }
+            // "data" carries meshId as a runtime handle; the file's value is
+            // meaningless in this session.
+            node.meshId = meshId;
         }
     }
 
+    assets.finish();
     result.ok = true;
     return result;
 }

@@ -74,6 +74,7 @@ add_executable(vulkanapp
         src/editor/EditorUI.h
         src/editor/EditorInspectorPanels.cpp
         src/editor/EditorInteraction.cpp
+        src/editor/EditorScenePanels.cpp
         src/editor/EditorCommands.h
         src/assets/PrimitiveBuilder.cpp
         src/assets/PrimitiveBuilder.h

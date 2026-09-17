@@ -400,10 +400,16 @@ void EditorUI::handleShortcuts(const Scene &scene, const ResourceStore &resource
 
     if (heldId() == 0) {
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
-            submitSaveScene();
+            saveScene(false);
+        }
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) {
+            saveScene(true);
         }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_O)) {
-            submitLoadScene();
+            openScenePicker();
+        }
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_N)) {
+            requestSceneAction(SceneAction::New);
         }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) {
             submitUndo();

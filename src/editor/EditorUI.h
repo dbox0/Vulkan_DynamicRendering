@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "EditorCommands.h"
@@ -89,6 +90,7 @@ public:
 
 
     void bindHistory(const UndoHistory &history) { m_history = &history; }
+    void bindScenePath(const std::filesystem::path &path) { m_scenePath = &path; }
     void selectNode(Guid node, uint32_t subMeshIndex = 0);
     void selectMaterial(uint32_t materialId);
     void clearSelection();
@@ -226,9 +228,43 @@ private:
 
     void drawEditMenu();
 
-    void submitSaveScene();
+    // ---- scene files (EditorScenePanels.cpp) -----------------------------
+    const std::filesystem::path *m_scenePath = nullptr;
 
-    void submitLoadScene();
+    enum class SceneAction : uint8_t { None, New, Open };
+
+    // An action that replaces the scene, parked while the user decides what
+    // to do with unsaved changes.
+    SceneAction           m_pendingSceneAction = SceneAction::None;
+    std::filesystem::path m_pendingScenePath;
+
+    bool m_sceneSaveAsRequested  = false;
+    bool m_sceneOpenRequested    = false;
+    bool m_sceneDiscardRequested = false;
+    char m_sceneNameBuffer[128]{};
+
+    // Rescanned each time the Open popup opens.
+    std::vector<std::filesystem::path> m_sceneFiles;
+    int                                m_sceneFileSelected = -1;
+
+    [[nodiscard]] bool        hasScenePath() const;
+    [[nodiscard]] bool        sceneDirty() const;
+    [[nodiscard]] std::string sceneDisplayName() const;
+
+    // Save: writes to the current file, or asks for a name when there is none.
+    // Save As: always asks.
+    void saveScene(bool forceSaveAs);
+    void openScenePicker();
+
+    // New / Open go through here: asks first when there are unsaved changes.
+    void requestSceneAction(SceneAction action, const std::filesystem::path &path = {});
+    void submitSceneAction(SceneAction action, const std::filesystem::path &path);
+
+    void drawSceneStatus();     // right side of the main menu bar
+    void drawScenePopups();
+    void drawSaveScenePopup();
+    void drawOpenScenePopup();
+    void drawDiscardChangesPopup();
 
     void submitUndo();
     void submitRedo();

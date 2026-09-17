@@ -3,9 +3,6 @@
 #include <vector>
 #include <cstdint>
 
-// tiny_gltf_v3.h is included ONLY in GltfLoader.cpp. Forward declarations
-// here keep it out of every other translation unit -- application.h currently
-// drags it (and shaderc, and SDL) into everything that includes it.
 struct tg3_model;
 
 class VulkanContext;
@@ -15,14 +12,13 @@ class Scene;
 class TextureCache;
 struct Image;
 
-// Translates a parsed glTF document into the stores. Contains no Vulkan calls
-// of its own -- it goes through ResourceStore / GeometryStore for everything.
+// Translates a parsed glTF document into the stores.
 class GltfLoader
 {
 public:
     // The cache is taken so every image this loader uploads is registered
     // against its source file. Without that, materials imported from a .gltf
-    // resolve to images with no known path and cannot be saved as .mat -- and
+    // resolve to images with no known path and cannot be saved as .mat and
     // the same PNG referenced by two files gets uploaded twice.
     GltfLoader(VulkanContext &ctx, ResourceStore &resources,
                GeometryStore &geometry, Scene &scene, TextureCache &cache)
@@ -33,7 +29,17 @@ public:
     // root chain. Returns false on parse or IO failure.
     bool load(const std::filesystem::path &filepath);
 
+    // Loads images, materials and meshes but creates NO scene nodes. Used by
+    // the scene loader, which builds the hierarchy from the .scene file and
+    // only needs the meshes. meshIdsOut[i] is the handle for the file's mesh
+    // i (0 where that mesh failed). The caller owns every returned mesh,
+    // including the ones it does not end up using.
+    bool loadMeshesOnly(const std::filesystem::path &filepath, std::vector<uint32_t> &meshIdsOut);
+
 private:
+    bool loadImpl(const std::filesystem::path &filepath, bool importNodes,
+                  std::vector<uint32_t> *meshIdsOut);
+
     std::vector<Image>    loadImages(const tg3_model &model, const std::filesystem::path &imageDir) const;
 
     // Decides each image's VkFormat (sRGB vs linear) from the material slots

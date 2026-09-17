@@ -257,6 +257,18 @@ const char *primitiveName(PrimitiveType type)
     }
 }
 
+bool primitiveFromName(std::string_view name, PrimitiveType &out)
+{
+    for (uint8_t i = 0; i < static_cast<uint8_t>(PrimitiveType::Count); ++i) {
+        const auto type = static_cast<PrimitiveType>(i);
+        if (name == primitiveName(type)) {
+            out = type;
+            return true;
+        }
+    }
+    return false;
+}
+
 uint32_t buildPrimitive(GeometryStore &geometry, PrimitiveType type, uint32_t materialId)
 {
     MeshData data;
@@ -293,7 +305,8 @@ uint32_t buildPrimitive(GeometryStore &geometry, PrimitiveType type, uint32_t ma
     // Indices are local to the submesh -- the indirect draw supplies
     // vertexOffset = vertexStart, exactly as the glTF path relies on.
     Mesh mesh;
-    mesh.name = primitiveName(type);
+    mesh.name      = primitiveName(type);
+    mesh.primitive = primitiveName(type);   // the scene file's asset reference
     mesh.subMeshes.push_back(subMesh);
 
     return geometry.addMesh(std::move(mesh));

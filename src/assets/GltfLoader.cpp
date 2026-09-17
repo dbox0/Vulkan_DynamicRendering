@@ -36,6 +36,18 @@ struct Image
 
 bool GltfLoader::load(const std::filesystem::path &filepath)
 {
+    return loadImpl(filepath, true, nullptr);
+}
+
+bool GltfLoader::loadMeshesOnly(const std::filesystem::path &filepath, std::vector<uint32_t> &meshIdsOut)
+{
+    meshIdsOut.clear();
+    return loadImpl(filepath, false, &meshIdsOut);
+}
+
+bool GltfLoader::loadImpl(const std::filesystem::path &filepath, bool importNodes,
+                          std::vector<uint32_t> *meshIdsOut)
+{
     // Recorded into every Mesh this file produces so the scene serializer
     // can write "load this file, take mesh N" as the asset reference.
     // Use the full path here; TextureCache::toRelative() strips ASSET_DIR.
@@ -110,16 +122,21 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
     const std::vector<uint32_t> textureIds  = loadTextures(model, imageIds, samplerIds);
     const std::vector<uint32_t> materialIds = loadMaterials(model, textureIds);
     const std::vector<uint32_t> meshIds     = loadMeshes(model, materialIds);
+    if (meshIdsOut) {
+        *meshIdsOut = meshIds;
+    }
 
     // Scene nodes.
-    const int sceneIndex = model.default_scene != -1 ? model.default_scene : 0;
-    const tg3_scene *scene = &model.scenes[sceneIndex];
+    if (importNodes && model.scenes_count > 0) {
+        const int sceneIndex = model.default_scene != -1 ? model.default_scene : 0;
+        const tg3_scene *scene = &model.scenes[sceneIndex];
 
-    for (int i = 0; i < scene->nodes_count; ++i) {
-        // The root chain is bookkept by Scene now, so the loader no longer
-        // tracks m_rootNodeId / m_lastRootNodeId itself.
-        const uint32_t nodeId = importNode(model, scene->nodes[i], 0, 0, meshIds);
-        m_scene.addRootNode(nodeId);
+        for (int i = 0; i < scene->nodes_count; ++i) {
+            // The root chain is bookkept by Scene now, so the loader no longer
+            // tracks m_rootNodeId / m_lastRootNodeId itself.
+            const uint32_t nodeId = importNode(model, scene->nodes[i], 0, 0, meshIds);
+            m_scene.addRootNode(nodeId);
+        }
     }
 
     tg3_model_free(&model);

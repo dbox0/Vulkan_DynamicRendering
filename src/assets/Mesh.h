@@ -23,6 +23,11 @@ struct Mesh
     // Empty when the mesh was created procedurally (primitives).
     std::string sourcePath;   // e.g. "models/character.gltf"
     int32_t     sourceMeshIndex = -1;
+
+    // Procedural meshes: the generator that built it (primitiveName(), e.g.
+    // "Cube"), so a scene can rebuild it instead of storing vertices.
+    // Empty for meshes that came from a file.
+    std::string primitive;
 };
 
 struct SubMesh

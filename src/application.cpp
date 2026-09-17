@@ -160,6 +160,7 @@ bool Application::initialize()
     // back, so there is no lag on a slider drag.
     m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
     m_editor.bindHistory(m_history);
+    m_editor.bindScenePath(m_scenePath);
     m_detector.initialize(m_scene, m_resources, m_geometry, m_history);
 
     return true;
@@ -260,6 +261,7 @@ void Application::run()
             }
         }
         m_camera.Update(deltaTime);
+        updateWindowTitle();
         if (!m_running) {
             break;
         }
@@ -302,6 +304,9 @@ void Application::applyEditorCommands()
     };
     m_structurallyChanged.clear();
     bool historyStepped = false;
+    // A failed save stops a New/Load queued behind it in the same frame
+    // ("Save" in the unsaved-changes prompt), so nothing unsaved is dropped.
+    bool sceneSaveFailed = false;
     const auto isStale = [&](const EditTarget &target) {
         return historyStepped ||
                (target.kind == EditTarget::Kind::Node &&
@@ -549,73 +554,102 @@ void Application::applyEditorCommands()
                 }
             }
 
+            // Same for the open scene: Save must follow the file.
+            if (!m_scenePath.empty() && m_scenePath == cmd.path) {
+                m_scenePath = target;
+            }
+
             // NOTE: renaming an image is not handled here. TextureCache keys on
             // the path, so every .mat referencing the old name silently falls
             // back to the error texture on next load
             break;
         }
-                case EditorCommand::Kind::SaveScene:
+        case EditorCommand::Kind::SaveScene:
         {
-            // Default path next to ASSET_DIR; proper dialog comes later.
-            const std::filesystem::path path = cmd.path.empty()
-                ? std::filesystem::path(ASSET_DIR) / "scene.scene"
-                : cmd.path;
-            if (saveScene(m_scene, m_geometry, m_resources, m_cache, path)) {
-                m_history.markSaved();
-                std::cout << "[scene] Saved to " << path << std::endl;
+            // EditorUI always names the file (Save As when untitled). Never
+            // mid-gesture: markSaved() requires a closed transaction.
+            if (cmd.path.empty() || m_history.isOpen()) {
+                sceneSaveFailed = true;
+                break;
             }
+            std::filesystem::path path = cmd.path;
+            if (path.extension() != ".scene") {
+                path += ".scene";
+            }
+
+            const SceneSaveResult saved = saveScene(m_scene, m_geometry, m_resources, m_cache, path);
+            for (const std::string &w : saved.warnings) {
+                std::cerr << "[scene warn] " << w << std::endl;
+            }
+            if (!saved.ok) {
+                sceneSaveFailed = true;
+                showError("Saving the scene failed:\n" +
+                          (saved.warnings.empty() ? std::string("unknown error") : saved.warnings.back()));
+                break;
+            }
+
+            m_scenePath = path;
+            m_history.markSaved();
+            std::cout << "[scene] Saved to " << path << std::endl;
+
+            if (!saved.warnings.empty()) {
+                std::string message = "Scene saved, but some references could not be written:";
+                for (const std::string &w : saved.warnings) {
+                    message += "\n  " + w;
+                }
+                showError(message);
+            }
+            break;
+        }
+
+        case EditorCommand::Kind::NewScene:
+        {
+            if (sceneSaveFailed || m_history.isOpen()) {
+                break;
+            }
+            clearScene();
+            m_scenePath.clear();
+            m_history.markSaved();
+            std::cout << "[scene] New scene" << std::endl;
             break;
         }
 
         case EditorCommand::Kind::LoadScene:
         {
-            const std::filesystem::path path = cmd.path.empty()
-                ? std::filesystem::path(ASSET_DIR) / "scene.scene"
-                : cmd.path;
-            if (!std::filesystem::exists(path)) {
-                showError("No scene file found at " + path.string());
+            if (sceneSaveFailed || m_history.isOpen()) {
                 break;
             }
-            // Open a GPU upload buffer now; the scene loader uses it for
-            // mesh assets. Load clears the scene first, so open the buffer
-            // before the clear -- any in-flight frames have already retired.
-            auto uploadCmd = m_ctx.beginUpload();
-            if (!uploadCmd) {
-                showError("Scene load: could not open upload command buffer");
+            if (cmd.path.empty() || !std::filesystem::exists(cmd.path)) {
+                showError("No scene file found at " + cmd.path.string());
                 break;
             }
 
-            // Clear everything: scene, history, mesh candidates.
-            m_history.clear();
-            m_world.resetOrphanedMeshes();
-            m_editor.clearSelection();
-            {
-                // Destroy all current nodes cleanly (frees mesh refcounts).
-                std::vector<uint32_t> orphans;
-                for (const uint32_t root : m_scene.rootNodes()) {
-                    m_scene.destroyNode(root, orphans);
-                }
-                for (const uint32_t meshId : orphans) {
-                    m_geometry.removeMesh(meshId);
-                }
-            }
-
+            // The file is parsed before clearScene runs, so a broken file
+            // leaves the current scene (and its history) alone.
             const SceneLoadResult loaded = loadScene(
-                m_scene, m_geometry, m_resources, m_ctx, m_cache, uploadCmd, path);
-            m_ctx.submitUpload();
+                m_scene, m_geometry, m_resources, m_ctx, m_cache, cmd.path,
+                [this] { clearScene(); });
 
-            if (!m_resources.commitTextureDescriptors()) {
-                showError("Scene load: failed to commit texture descriptors");
+            for (const uint32_t materialId : loaded.loadedMaterials) {
+                m_world.markMaterialSaved(materialId);
             }
             if (!m_geometry.flushUploads()) {
                 showError("Scene load: failed to upload mesh geometry");
             }
-
+            if (!m_resources.commitTextureDescriptors()) {
+                showError("Scene load: failed to commit texture descriptors");
+            }
             for (const std::string &w : loaded.warnings) {
                 std::cerr << "[scene warn] " << w << std::endl;
             }
-            if (loaded.ok) {
-                std::cout << "[scene] Loaded " << path << std::endl;
+
+            if (!loaded.ok) {
+                std::string message = "Could not open " + cmd.path.string();
+                for (const std::string &w : loaded.warnings) {
+                    message += "\n  " + w;
+                }
+                showError(message);
+                break;
             }
             break;
         }
@@ -627,6 +661,10 @@ void Application::applyEditorCommands()
             if (ec) {
                 showError("Failed to create folder: " + ec.message());
             }
+
+            m_scenePath = cmd.path;
+            m_history.markSaved();
+            std::cout << "[scene] Loaded " << cmd.path << std::endl;
             break;
         }
 
@@ -708,6 +746,41 @@ void Application::applyEditorCommands()
         showError("Failed to upload generated geometry");
     }
     m_editor.clearCommands();
+}
+
+void Application::clearScene()
+{
+    m_history.clear();
+    m_editor.clearSelection();
+
+    // Destroying the roots frees every node; the returned meshes are the ones
+    // no live node references any more.
+    std::vector<uint32_t> orphans;
+    for (const uint32_t root : m_scene.rootNodes()) {
+        m_scene.destroyNode(root, orphans);
+    }
+    for (const uint32_t meshId : orphans) {
+        m_geometry.removeMesh(meshId);
+    }
+
+    // Meshes of deleted nodes were kept alive for undo. With the history and
+    // the scene both empty nothing can need them
+    m_world.collectGarbage(m_history);
+    m_world.resetOrphanedMeshes();
+}
+
+void Application::updateWindowTitle()
+{
+    std::string title = m_scenePath.empty() ? std::string("Untitled") : m_scenePath.stem().string();
+    if (m_history.isDirty()) {
+        title += "*";
+    }
+    title += " - Learning Vulkan";
+
+    if (title != m_windowTitle) {
+        m_windowTitle = std::move(title);
+        SDL_SetWindowTitle(m_window, m_windowTitle.c_str());
+    }
 }
 
 void Application::applyHistoryStep(const UndoHistory::Outcome &outcome, const char *verb)

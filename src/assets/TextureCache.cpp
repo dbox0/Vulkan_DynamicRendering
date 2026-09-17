@@ -42,9 +42,19 @@ std::string TextureCache::imageKey(std::string_view relativePath, bool srgb)
 
 std::string TextureCache::toRelative(const std::filesystem::path &absolute) const
 {
+    // Empty means "no file" (an in-editor or glTF-embedded material). The
+    // throwing overload of absolute() rejects an empty path, so both calls
+    // take an error_code: nothing on this path may throw.
+    if (absolute.empty()) {
+        return {};
+    }
+
     std::error_code ec;
-    const std::filesystem::path rel =
-        std::filesystem::relative(std::filesystem::absolute(absolute), m_root, ec);
+    const std::filesystem::path full = std::filesystem::absolute(absolute, ec);
+    if (ec) {
+        return {};
+    }
+    const std::filesystem::path rel = std::filesystem::relative(full, m_root, ec);
 
     // Outside the asset root. Writing an absolute path here would produce a
     // .mat that only loads on this machine, so refuse instead.
@@ -99,9 +109,7 @@ uint32_t TextureCache::acquireImage(VulkanContext &ctx, ResourceStore &resources
         return 0;
     }
 
-    // The slot decides the colour space, not the file -- a PNG carries no such
-    // information, which is the same reason GltfLoader has to infer it from
-    // the material referencing the image.
+    // The slot decides the colour space, not the file
     const VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
 
     const uint32_t imageId = resources.addImage(cmd, pixels,
