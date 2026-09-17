@@ -225,6 +225,11 @@ private:
     const UndoHistory *m_history = nullptr;
 
     void drawEditMenu();
+
+    void submitSaveScene();
+
+    void submitLoadScene();
+
     void submitUndo();
     void submitRedo();
 

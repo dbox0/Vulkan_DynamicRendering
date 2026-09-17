@@ -54,5 +54,4 @@ private:
 
     uint64_t m_hash       = 0;
     bool     m_hadState   = false;  // whether m_hash was captured
-    bool     m_wasOpen    = false;  // whether a transaction was open at beginFrame
 };

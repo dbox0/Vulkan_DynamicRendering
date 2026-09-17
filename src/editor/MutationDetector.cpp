@@ -104,26 +104,14 @@ uint64_t MutationDetector::hashState() const
 
 void MutationDetector::beginFrame()
 {
-    if (!isEnabled()) {
-        return;
-    }
-
-    m_wasOpen = m_history->isOpen();
-    if (!m_hadState && hashState() != m_hash) {
-        fatalError("FATAL ERROR: Untracked mutation detected. Reflected state cha");
-    }
+    if (!isEnabled()) return;
+    if (m_hadState && hashState() != m_hash)
+        fatalError("Untracked mutation: reflected state changed outside the command queue");
 }
 
 void MutationDetector::endFrame()
 {
-    if (!isEnabled()) {
-        return;
-    }
-
-    m_hash = hashState();
+    if (!isEnabled()) return;
+    m_hash     = hashState();
     m_hadState = true;
-    // After a transaction closes, recapture for the next frame.
-    if (!isOpen) {
-        m_hadState = false;
-    }
 }
