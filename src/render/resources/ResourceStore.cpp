@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "stb_image.h"
-#include "VulkanContext.h"
-#include "../common/errors.h"
-#include "../common/constants.h"
+#include "../core/VulkanContext.h"
+#include "../../common/errors.h"
+#include "../../common/constants.h"
 
 uint16_t floatToHalf(float value)
 {

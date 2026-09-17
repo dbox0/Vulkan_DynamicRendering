@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include "../../common/gpu_types.h"
 #include <cstdint>
 
 class VulkanContext;
@@ -12,10 +13,10 @@ class Camera;
 struct ShadowSettings
 {
     float distance     = 15.0;    // how far from the camera shadows are fitted
-    float normalBias   = .0f;     // lookup offset along the normal, in texels
+    float normalBias   = 3.0f;     // lookup offset along the normal, in texels
     float depthBias    = .0f;  // constant bias in light-space depth
     float constantBias = .0f;    // rasteriser depth bias, negated for reverse Z
-    float slopeBias    = 1.0f;     // rasteriser slope-scaled bias, likewise
+    float slopeBias    = 2.0f;     // rasteriser slope-scaled bias, likewise
     bool  enabled      = true;
 };
 
@@ -49,8 +50,8 @@ public:
     Fit fit(const Camera &camera, float aspect,
             const glm::vec3 &sunDirection, float distance) const;
 
-    VkImage               image()           const { return m_image; }
-    VkImageView           imageView()       const { return m_imageView; }
+    VkImage               image()           const { return m_target.image; }
+    VkImageView           imageView()       const { return m_target.imageView; }
     VkDescriptorSet       descriptorSet()   const { return m_set; }
     VkDescriptorSetLayout descriptorLayout()const { return m_setLayout; }
     uint32_t              resolution()      const { return m_resolution; }
@@ -59,9 +60,7 @@ private:
     VulkanContext &m_ctx;
 
     uint32_t      m_resolution = 0;
-    VkImage       m_image      = nullptr;
-    VkImageView   m_imageView  = nullptr;
-    VmaAllocation m_allocation = nullptr;
+    GPUImage      m_target;
     VkSampler     m_sampler    = nullptr;
 
     VkDescriptorSetLayout m_setLayout = nullptr;

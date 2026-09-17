@@ -7,8 +7,8 @@
 
 #include "Material.h"
 #include "TextureCache.h"
-#include "../render/ResourceStore.h"
-#include "../render/VulkanContext.h"
+#include "../render/resources/ResourceStore.h"
+#include "../render/core/VulkanContext.h"
 #include "../common/errors.h"
 
 using nlohmann::json;

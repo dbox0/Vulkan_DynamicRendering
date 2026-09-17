@@ -5,8 +5,8 @@
 #include "../common/Fatal.h"
 #include "../editor/UndoHistory.h"
 #include "../reflect/BinaryArchive.h"
-#include "../render/GeometryStore.h"
-#include "../render/ResourceStore.h"
+#include "../render/resources/GeometryStore.h"
+#include "../render/resources/ResourceStore.h"
 #include "../scene/Scene.h"
 
 // FNV-1a over arbitrary bytes.

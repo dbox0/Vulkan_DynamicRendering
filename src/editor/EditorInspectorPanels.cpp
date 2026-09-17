@@ -19,8 +19,8 @@
 #include <cstdio>
 
 #include "../assets/Material.h"
-#include "../render/GeometryStore.h"
-#include "../render/ResourceStore.h"
+#include "../render/resources/GeometryStore.h"
+#include "../render/resources/ResourceStore.h"
 
 
 using Texture   = ResourceStore::Texture;

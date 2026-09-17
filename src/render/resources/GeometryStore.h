@@ -4,18 +4,16 @@
 #include <vector>
 #include <cstdint>
 #include <limits>
-#include "../assets/Mesh.h"
-#include "GpuShared.h"
+#include "../../assets/Mesh.h"
+#include "../GpuShared.h"
 #include "RangeAllocator.h"
-#include "../common/gpu_types.h"
+#include "../../common/gpu_types.h"
 
 class VulkanContext;
 
 // One device-local vertex buffer and one index buffer, allocated once at the
 // full budget and suballocated with a coalescing free list. Models can be
 // loaded and unloaded in any order; freed space is reused.
-
-// The CPU-side mirrorgrows to the mark of what has been allocated,
 
 // OFFSETS: a CPU element index and its offset into the GPU buffer are the
 // same number.

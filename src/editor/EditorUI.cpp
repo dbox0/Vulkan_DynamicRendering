@@ -13,10 +13,10 @@
 #include <glm/trigonometric.hpp>
 #include <string>
 
-#include "../render/VulkanContext.h"
-#include "../render/GeometryStore.h"
-#include "../render/ResourceStore.h"
-#include "../render/ShadowMap.h"      // ShadowSettings
+#include "../render/core/VulkanContext.h"
+#include "../render/resources/GeometryStore.h"
+#include "../render/resources/ResourceStore.h"
+#include "../render/passes/ShadowMap.h"      // ShadowSettings
 #include "../common/constants.h"
 #include "../scene/Scene.h"
 #include "../reflect/BinaryArchive.h"

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <vector>
-#include "../common/gpu_types.h"
+#include "../../common/gpu_types.h"
 #include "Uploader.h"
 
 struct SDL_Window;
@@ -66,6 +66,16 @@ public:
     bool supportsLinearFilter(VkFormat format);
 
     void destroyImage(GPUImage &image) const;
+
+    // --- render targets --------------------------------------------------
+    // An image a pass draws into (and usually a later pass samples): one mip,
+    // one layer, dedicated memory, nothing uploaded. The view's aspect is
+    // derived from the format, so colour and depth targets use the same call.
+    // Released with destroyImage().
+    bool createRenderTarget(uint32_t width, uint32_t height, VkFormat format,
+                            VkImageUsageFlags usage, GPUImage &outImage) const;
+
+    static bool isDepthFormat(VkFormat format);
 
     // --- load-time / streaming uploads -----------------------------------
     // begin -> record -> submit. submit() does not wait: it returns a ticket

@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <vk_mem_alloc.h>
+#include "../../common/gpu_types.h"
 
 class VulkanContext;
 
@@ -35,10 +36,10 @@ public:
     VkImage        image(uint32_t i)     const { return m_images[i]; }
     VkImageView    imageView(uint32_t i) const { return m_imageViews[i]; }
     VkSemaphore    renderCompleteSemaphore(uint32_t i) const { return m_renderCompleteSemaphores[i]; }
-    VkImage        depthImage()     const { return m_depthImage; }
-    VkImageView    depthImageView() const { return m_depthImageView; }
-    VkImage        selectionMaskImage()     const { return m_maskImage; }
-    VkImageView    selectionMaskImageView() const { return m_maskImageView; }
+    VkImage        depthImage()     const { return m_depth.image; }
+    VkImageView    depthImageView() const { return m_depth.imageView; }
+    VkImage        selectionMaskImage()     const { return m_selectionMask.image; }
+    VkImageView    selectionMaskImageView() const { return m_selectionMask.imageView; }
 
     // Acquire wraps the OUT_OF_DATE / SUBOPTIMAL handling so the renderer
     // doesn't have to. Returns false when the caller should skip the frame.
@@ -51,7 +52,7 @@ public:
 private:
     bool createDepthBuffer(uint32_t width, uint32_t height);
     bool createSelectionMask(uint32_t width, uint32_t height);
-
+    bool createHdrTarget(uint32_t width, uint32_t height);
     VulkanContext &m_ctx;
 
     VkSwapchainKHR           m_swapchain = nullptr;
@@ -62,11 +63,8 @@ private:
     uint32_t m_height = 0;
     bool     m_needsRecreate = false;
 
-    VkImage       m_depthImage           = nullptr;
-    VkImageView   m_depthImageView       = nullptr;
-    VmaAllocation m_depthImageAllocation = nullptr;
-
-    VkImage       m_maskImage      = nullptr;
-    VkImageView   m_maskImageView  = nullptr;
-    VmaAllocation m_maskAllocation = nullptr;
+    // Screen-sized render targets, rebuilt with the swapchain.
+    GPUImage m_depth;
+    GPUImage m_selectionMask;
+    GPUImage m_hdrTarget;
 };

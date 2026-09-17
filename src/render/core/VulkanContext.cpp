@@ -17,7 +17,7 @@
 #include <iostream>
 #include <vector>
 
-#include "../common/errors.h"
+#include "../../common/errors.h"
 
 
 
@@ -732,6 +732,82 @@ void VulkanContext::destroyImage(GPUImage &image) const
         vmaDestroyImage(m_allocator, image.image, image.allocation);
     }
     image = GPUImage{};
+}
+
+// ============================================================================
+// render targets
+// ============================================================================
+
+bool VulkanContext::isDepthFormat(VkFormat format)
+{
+    switch (format) {
+        case VK_FORMAT_D16_UNORM:
+        case VK_FORMAT_X8_D24_UNORM_PACK32:
+        case VK_FORMAT_D32_SFLOAT:
+        case VK_FORMAT_D16_UNORM_S8_UINT:
+        case VK_FORMAT_D24_UNORM_S8_UINT:
+        case VK_FORMAT_D32_SFLOAT_S8_UINT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool VulkanContext::createRenderTarget(uint32_t width, uint32_t height, VkFormat format,
+                                       VkImageUsageFlags usage, GPUImage &outImage) const
+{
+    outImage = GPUImage{};
+
+    VkImageCreateInfo imageInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent{ .width = width, .height = height, .depth = 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = usage,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+
+    // Large, long-lived and never mapped: its own allocation rather than a
+    // slice of a shared block.
+    VmaAllocationCreateInfo allocInfo
+    {
+        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO
+    };
+
+    if (vmaCreateImage(m_allocator, &imageInfo, &allocInfo,
+                       &outImage.image, &outImage.allocation, nullptr) != VK_SUCCESS)
+    {
+        outImage = GPUImage{};
+        return false;
+    }
+
+    // Stencil formats would need their own view for sampling; nothing here
+    // uses one, so depth-only is enough.
+    const VkImageAspectFlags aspect = isDepthFormat(format) ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                            : VK_IMAGE_ASPECT_COLOR_BIT;
+    VkImageViewCreateInfo viewInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = outImage.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .subresourceRange{ .aspectMask = aspect, .levelCount = 1, .layerCount = 1 }
+    };
+
+    if (vkCreateImageView(m_device, &viewInfo, nullptr, &outImage.imageView) != VK_SUCCESS) {
+        // Same rule as createImage2D: never hand back a half-built image.
+        destroyImage(outImage);
+        return false;
+    }
+
+    outImage.mipLevels = 1;
+    return true;
 }
 
 // ============================================================================

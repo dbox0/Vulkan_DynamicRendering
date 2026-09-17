@@ -1,7 +1,6 @@
 #pragma once
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
-#include <shaderc/shaderc.hpp>
 #include <array>
 #include <functional>   // std::function, used by render()/recordCommandBuffer()
 #include <memory>
@@ -11,22 +10,18 @@
 #include "../common/gpu_types.h"
 #include "../scene/Scene.h"
 #include "GpuShared.h"
-#include "ShadowMap.h"
-#include "ShaderWatcher.h"
+#include "passes/DebugLinePass.h"
+#include "passes/ScenePass.h"
+#include "passes/SelectionOutlinePass.h"
+#include "passes/ShadowPass.h"
+#include "shaders/ShaderProgram.h"
+#include "shaders/ShaderWatcher.h"
 
 class VulkanContext;
 class Swapchain;
 class ResourceStore;
 class GeometryStore;
 class Camera;
-
-struct DrawBatch
-{
-    uint32_t        first    = 0;
-    uint32_t        count    = 0;
-    VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
-    bool            blend    = false;
-};
 
 struct SortedDraw { uint32_t bucket; float depth; uint32_t index; };
 
@@ -61,19 +56,21 @@ struct RenderView
 };
 
 
+// Owns the frame: per-frame buffers, frame pacing, the draw list, and the
+// order the passes run in.
+
+// What each pass draws, and the pipelines it draws
+// with, lives in render/passes.
 class Renderer
 {
 public:
     static constexpr uint32_t MaxFramesInFlight = 2;
     static constexpr uint32_t ShadowResolution   = 4096;
 
-    // Two vertices per line. Overlays only, so a few thousand is generous.
-    static constexpr uint32_t MaxDebugVertices   = 8192;
-
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
              ResourceStore &resources, GeometryStore &geometry)
         : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry),
-          m_shadowMap(ctx) {}
+          m_scenePass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -90,73 +87,21 @@ public:
     void setSelection(uint32_t nodeId) { m_selectedNode = nodeId; }
 
     // Colour and pixel width, live-editable from the inspector.
-    OutlineConstants &outlineSettings() { return m_outline; }
+    OutlineConstants &outlineSettings() { return m_outlinePass.settings(); }
 
     // Bias and range knobs for the sun shadow, same idea.
     ShadowSettings &shadowSettings() { return m_shadow; }
     glm::vec3      &sunDirection()   { return m_sunDirection; }
 
 private:
-    bool createShaders();
-
-    struct ShaderPass
-    {
-        const char              *vertFile;
-        const char              *fragFile;
-        VkShaderModule          *vertModule;
-        VkShaderModule          *fragModule;
-        std::vector<VkPipeline*> pipelines;
-        std::function<bool()>    build;
-    };
-    std::vector<ShaderPass> shaderPasses();
-
-    // Recompiles and rebuilds only the passes that use one of these files.
-    // A pass that fails to compile keeps running on its old pipeline.
-    void reloadShaders(const std::vector<std::string> &changedFiles);
-    bool createPipeline(bool blendEnabled, VkPipeline &outPipeline);
-    bool createMaskPipeline();
-    bool createShadowPipeline();
-    bool createDebugLinePipeline();
-    bool createOutlinePipeline();
-    bool createOutlineDescriptors();
-
-    // The mask view changes identity on every swapchain recreate, so the
-    // descriptor has to be rewritten with it.
-    void updateSelectionMaskDescriptor();
-
-    // Draws the selected submeshes into the mask image and leaves it in
-    // SHADER_READ_ONLY_OPTIMAL.
-    void recordSelectionMask(FrameResources &res);
-
-    // Screen-space box around the selection, padded by the outline width.
-    // Scissoring the composite to this is what keeps a fullscreen dilate from
-    // costing a fullscreen dilate.
-    VkRect2D selectionScissor() const;
-    void accumulateSelectionBounds(const glm::mat4 &viewProj, const glm::mat4 &worldMatrix,
-                                   const SubMesh &subMesh);
-
-
-    // Depth-only pass from the sun's point of view, into the shadow map.
-    // Opaque and alpha-masked buckets only
-    void recordShadowPass(FrameResources &res);
-
-    // --- debug lines ------------------------------------------------------
-    void addDebugLine(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &color);
-
-    // Line gizmo for every directional light in the scene: a handle at the
-    // node and an arrow down its -Z
-    void collectLightGizmos(Scene &scene);
-
-    // Copies m_debugVertices into this frame's buffer, clamped.
-    uint32_t writeDebugVertices(FrameResources &res);
+    // The layout shared by the scene, shadow, mask and debug-line pipelines:
+    // FrameConstants push constants, set 0 = bindless textures + materials,
+    // set 1 = the shadow map. Bound once per frame, before any of them draw.
+    bool createSceneLayout();
 
     bool createSyncResources();
     bool createCommandBuffers();
     bool createFrameBuffers(uint32_t maxDrawsPerFrame);
-    // With error set, failures are written there instead of popping a modal
-    // box -- hot reload must never block the frame loop on a typo.
-    VkShaderModule createShaderModule(const std::string &fileName, shaderc_shader_kind kind,
-                                      std::string *error = nullptr) const;
 
     // Fills this frame's indirect + render-item buffers from the draw list.
     // Returns the draw count actually written (clamped to m_maxDraws).
@@ -168,53 +113,26 @@ private:
     ResourceStore &m_resources;
     GeometryStore &m_geometry;
 
-    VkPipelineLayout m_pipelineLayout = nullptr;
-    VkPipeline m_pipelineOpaque = nullptr;
-    VkPipeline m_pipelineBlend  = nullptr;
-    std::array<DrawBatch, 4> m_batches{};
+    VkPipelineLayout m_sceneLayout = nullptr;
+    DrawBatches      m_batches{};
 
-    VkShaderModule   m_vertexShader   = nullptr;
-    VkShaderModule   m_fragmentShader = nullptr;
+    // --- passes -----------------------------------------------------------
+    ScenePass            m_scenePass;
+    ShadowPass           m_shadowPass;
+    SelectionOutlinePass m_outlinePass;
+    DebugLinePass        m_debugLines;
 
-    // --- selection outline ------------------------------------------------
-    // The mask pipeline shares m_pipelineLayout: it reads the same push
-    // constants and the same RenderItem buffer, so the descriptor set and
-    // constants bound for the scene pass already cover it.
-    VkPipeline     m_pipelineMask         = nullptr;
-    VkShaderModule m_maskVertexShader     = nullptr;
-    VkShaderModule m_maskFragmentShader   = nullptr;
-
-    // The composite needs a sampler, which the bindless global layout has no
-    // free slot for, so it gets a one-binding layout of its own.
-    VkPipeline            m_pipelineOutline    = nullptr;
-    VkShaderModule        m_outlineVertexShader   = nullptr;
-    VkShaderModule        m_outlineFragmentShader = nullptr;
-    VkPipelineLayout      m_outlineLayout      = nullptr;
-    VkDescriptorSetLayout m_outlineSetLayout   = nullptr;
-    VkDescriptorPool      m_outlinePool        = nullptr;
-    VkDescriptorSet       m_outlineSet         = nullptr;
-    VkSampler             m_maskSampler        = nullptr;
+    // Every pass's shaders, for startup compilation and hot reload. Points
+    // into the passes above, which live exactly as long as this does.
+    std::vector<ShaderProgram> m_shaderPrograms;
 
     // --- sun shadow -------------------------------------------------------
-    // Shares m_pipelineLayout with the scene pass: same push constants
-    // RenderItem buffer, bindless set for the alpha-mask lookup.
-    ShadowMap      m_shadowMap;
-    VkPipeline     m_pipelineShadow       = nullptr;
-    VkShaderModule m_shadowVertexShader   = nullptr;
-    VkShaderModule m_shadowFragmentShader = nullptr;
     ShadowSettings m_shadow{};
     // m_shadow.enabled AND the active light's castsShadows, resolved per frame.
     bool           m_shadowActive = true;
     glm::vec3      m_sunDirection{ glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)) };
 
-    uint32_t         m_selectedNode = 0;
-    OutlineConstants m_outline{};
-
-    // Slots in this frame's indirect buffer that belong to the selection.
-    std::vector<uint32_t> m_selectedSlots;
-    glm::vec2 m_selectionMin{ 0.0f };
-    glm::vec2 m_selectionMax{ 0.0f };
-    bool      m_selectionBoundsValid = true;
+    uint32_t m_selectedNode = 0;
 
     // Null in release builds.
     std::unique_ptr<ShaderWatcher> m_shaderWatcher;
@@ -227,13 +145,6 @@ private:
 
     uint32_t m_envSlot   = 0;
     float    m_envMaxLod = 0.0f;
-
-    // --- debug lines ------------------------------------------------------
-    VkPipeline     m_pipelineDebugLine       = nullptr;
-    VkShaderModule m_debugLineVertexShader   = nullptr;
-    VkShaderModule m_debugLineFragmentShader = nullptr;
-    std::vector<DebugVertex> m_debugVertices;
-    uint32_t                 m_debugVertexCount = 0;
 
     // Reused across frames so traversal doesn't allocate per frame.
     const std::vector<DrawItem> *m_drawItems = nullptr;

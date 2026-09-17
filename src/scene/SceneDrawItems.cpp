@@ -1,5 +1,5 @@
 #include "Scene.h"
-#include "../render/GeometryStore.h"
+#include "../render/resources/GeometryStore.h"
 
 #include <limits>
 

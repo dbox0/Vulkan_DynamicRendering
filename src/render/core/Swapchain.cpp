@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "VulkanContext.h"
-#include "../common/errors.h"
+#include "../../common/errors.h"
 
 bool Swapchain::create(uint32_t width, uint32_t height)
 {
@@ -121,44 +121,9 @@ bool Swapchain::create(uint32_t width, uint32_t height)
 
 bool Swapchain::createDepthBuffer(uint32_t width, uint32_t height)
 {
-    VkImageCreateInfo depthCreateInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = DepthFormat,
-        .extent{ .width = width, .height = height, .depth = 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-
-    VmaAllocationCreateInfo allocInfo
-    {
-        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO
-    };
-
-    if (vmaCreateImage(m_ctx.allocator(), &depthCreateInfo, &allocInfo,
-                       &m_depthImage, &m_depthImageAllocation, nullptr) != VK_SUCCESS)
-    {
-        showError("Error creating depth buffer image");
-        return false;
-    }
-
-    VkImageViewCreateInfo depthImgViewInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = m_depthImage,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = DepthFormat,
-        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
-    };
-
-    if (vkCreateImageView(m_ctx.device(), &depthImgViewInfo, nullptr, &m_depthImageView) != VK_SUCCESS) {
-        showError("Error creating depth image view");
+    if (!m_ctx.createRenderTarget(width, height, DepthFormat,
+                                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, m_depth)) {
+        showError("Error creating the depth buffer");
         return false;
     }
     return true;
@@ -166,46 +131,22 @@ bool Swapchain::createDepthBuffer(uint32_t width, uint32_t height)
 
 bool Swapchain::createSelectionMask(uint32_t width, uint32_t height)
 {
-    VkImageCreateInfo maskCreateInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = SelectionMaskFormat,
-        .extent{ .width = width, .height = height, .depth = 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        // Written as an attachment by the mask pass, read as a texture by the
-        // composite pass in the same frame.
-        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-
-    VmaAllocationCreateInfo allocInfo
-    {
-        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO
-    };
-
-    if (vmaCreateImage(m_ctx.allocator(), &maskCreateInfo, &allocInfo,
-                       &m_maskImage, &m_maskAllocation, nullptr) != VK_SUCCESS)
-    {
-        showError("Error creating the selection mask image");
+    // Written as an attachment by the mask pass, read as a texture by the
+    // composite pass in the same frame.
+    if (!m_ctx.createRenderTarget(width, height, SelectionMaskFormat,
+                                  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                  m_selectionMask)) {
+        showError("Error creating the selection mask");
         return false;
     }
+    return true;
+}
 
-    VkImageViewCreateInfo maskViewInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = m_maskImage,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = SelectionMaskFormat,
-        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
-    };
-
-    if (vkCreateImageView(m_ctx.device(), &maskViewInfo, nullptr, &m_maskImageView) != VK_SUCCESS) {
-        showError("Error creating the selection mask image view");
+bool Swapchain::createHdrTarget(uint32_t width, uint32_t height) {
+    if (!m_ctx.createRenderTarget(width, height, SelectionMaskFormat,
+                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                   m_hdrTarget)) {
+        showError("Error creating the hdr target");
         return false;
     }
     return true;
@@ -234,25 +175,8 @@ void Swapchain::destroy()
         m_swapchain = nullptr;
     }
 
-    if (m_depthImageView) {
-        vkDestroyImageView(m_ctx.device(), m_depthImageView, nullptr);
-        m_depthImageView = nullptr;
-    }
-    if (m_depthImage) {
-        vmaDestroyImage(m_ctx.allocator(), m_depthImage, m_depthImageAllocation);
-        m_depthImage = nullptr;
-        m_depthImageAllocation = nullptr;
-    }
-
-    if (m_maskImageView) {
-        vkDestroyImageView(m_ctx.device(), m_maskImageView, nullptr);
-        m_maskImageView = nullptr;
-    }
-    if (m_maskImage) {
-        vmaDestroyImage(m_ctx.allocator(), m_maskImage, m_maskAllocation);
-        m_maskImage = nullptr;
-        m_maskAllocation = nullptr;
-    }
+    m_ctx.destroyImage(m_depth);
+    m_ctx.destroyImage(m_selectionMask);
 }
 
 bool Swapchain::recreate(uint32_t width, uint32_t height)

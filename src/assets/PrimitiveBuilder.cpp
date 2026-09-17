@@ -1,7 +1,7 @@
 #include "PrimitiveBuilder.h"
 
 #include "Mesh.h"
-#include "../render/GeometryStore.h"
+#include "../render/resources/GeometryStore.h"
 #include "../render/GpuShared.h"
 
 #include <algorithm>

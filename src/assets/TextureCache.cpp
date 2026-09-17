@@ -4,8 +4,8 @@
 #include "../external/stb_image.h"
 #include <system_error>
 
-#include "../render/VulkanContext.h"
-#include "../render/ResourceStore.h"
+#include "../render/core/VulkanContext.h"
+#include "../render/resources/ResourceStore.h"
 #include "../common/errors.h"
 
 namespace

@@ -5,7 +5,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
-#include "../render/GeometryStore.h"
+#include "../render/resources/GeometryStore.h"
 #include "../scene/Camera.h"
 
 Ray screenPointToRay(const Camera &camera, float mouseX, float mouseY,

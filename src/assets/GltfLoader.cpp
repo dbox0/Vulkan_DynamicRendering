@@ -15,9 +15,9 @@
 #include "../external/stb_image.h"
 
 #include "../common/errors.h"
-#include "../render/GeometryStore.h"
-#include "../render/ResourceStore.h"
-#include "../render/VulkanContext.h"
+#include "../render/resources/GeometryStore.h"
+#include "../render/resources/ResourceStore.h"
+#include "../render/core/VulkanContext.h"
 #include "../scene/Scene.h"
 #include "../render/GpuShared.h"
 struct Image

@@ -80,20 +80,36 @@ add_executable(vulkanapp
         src/scene/Camera.h
         src/assets/GltfLoader.cpp
         src/assets/GltfLoader.h
-        src/render/VulkanContext.cpp
-        src/render/VulkanContext.h
         src/render/Renderer.cpp
         src/render/Renderer.h
-        src/render/Swapchain.cpp
-        src/render/Swapchain.h
-        src/render/ShaderWatcher.cpp
-        src/render/ShaderWatcher.h
-        src/render/ShadowMap.cpp
-        src/render/ShadowMap.h
-        src/render/ResourceStore.cpp
-        src/render/ResourceStore.h
-        src/render/GeometryStore.cpp
-        src/render/GeometryStore.h
+        src/render/GpuShared.h
+        src/render/core/VulkanContext.cpp
+        src/render/core/VulkanContext.h
+        src/render/core/Swapchain.cpp
+        src/render/core/Swapchain.h
+        src/render/core/Uploader.cpp
+        src/render/core/Uploader.h
+        src/render/resources/ResourceStore.cpp
+        src/render/resources/ResourceStore.h
+        src/render/resources/GeometryStore.cpp
+        src/render/resources/GeometryStore.h
+        src/render/resources/RangeAllocator.h
+        src/render/shaders/ShaderCompiler.cpp
+        src/render/shaders/ShaderCompiler.h
+        src/render/shaders/ShaderProgram.cpp
+        src/render/shaders/ShaderProgram.h
+        src/render/shaders/ShaderWatcher.cpp
+        src/render/shaders/ShaderWatcher.h
+        src/render/passes/ScenePass.cpp
+        src/render/passes/ScenePass.h
+        src/render/passes/ShadowMap.cpp
+        src/render/passes/ShadowMap.h
+        src/render/passes/ShadowPass.cpp
+        src/render/passes/ShadowPass.h
+        src/render/passes/SelectionOutlinePass.cpp
+        src/render/passes/SelectionOutlinePass.h
+        src/render/passes/DebugLinePass.cpp
+        src/render/passes/DebugLinePass.h
         src/engine/Component.cpp
         src/engine/Component.h
         src/engine/Entity.cpp
@@ -101,12 +117,8 @@ add_executable(vulkanapp
         src/engine/components/TransformComponent.h
         src/engine/components/MeshComponent.cpp
         src/engine/components/MeshComponent.h
-        src/render/GpuShared.h
         src/assets/Material.h
         src/assets/Mesh.h
-        src/render/Uploader.h
-        src/render/Uploader.cpp
-        src/render/RangeAllocator.h
         src/assets/TextureCache.h
         src/assets/TextureCache.cpp
         src/assets/MaterialSerializer.h
@@ -140,6 +152,8 @@ add_executable(vulkanapp
         src/editor/EditorWorld.cpp
         src/scene/SceneSnapshot.h
         src/scene/SceneDrawItems.cpp
+        src/render/passes/TonemapPass.cpp
+        src/render/passes/TonemapPass.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically

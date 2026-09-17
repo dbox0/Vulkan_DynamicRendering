@@ -7,8 +7,8 @@
 #include <iostream>
 #include <string>
 
-#include "VulkanContext.h"
-#include "../common/errors.h"
+#include "../core/VulkanContext.h"
+#include "../../common/errors.h"
 
 namespace {
     // Empty Mesh that mesh() can hand back for a stale handle instead of

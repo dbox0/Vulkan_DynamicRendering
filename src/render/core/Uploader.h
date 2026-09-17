@@ -5,7 +5,7 @@
 #include <array>
 #include <vector>
 #include <cstdint>
-#include "../common/gpu_types.h"
+#include "../../common/gpu_types.h"
 
 // Load-time and streaming uploads that do not stall the queue.
 //

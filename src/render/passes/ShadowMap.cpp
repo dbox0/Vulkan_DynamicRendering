@@ -5,48 +5,18 @@
 #include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "VulkanContext.h"
-#include "../common/errors.h"
-#include "../scene/Camera.h"
+#include "../core/VulkanContext.h"
+#include "../../common/errors.h"
+#include "../../scene/Camera.h"
 
 bool ShadowMap::create(uint32_t resolution)
 {
     m_resolution = resolution;
 
-    VkImageCreateInfo imageInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = Format,
-        .extent{ .width = resolution, .height = resolution, .depth = 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-    VmaAllocationCreateInfo allocInfo
-    {
-        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO
-    };
-    if (vmaCreateImage(m_ctx.allocator(), &imageInfo, &allocInfo,
-                       &m_image, &m_allocation, nullptr) != VK_SUCCESS) {
+    if (!m_ctx.createRenderTarget(resolution, resolution, Format,
+                                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                  m_target)) {
         showError("Error creating the shadow map image");
-        return false;
-    }
-
-    VkImageViewCreateInfo viewInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = m_image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = Format,
-        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
-    };
-    if (vkCreateImageView(m_ctx.device(), &viewInfo, nullptr, &m_imageView) != VK_SUCCESS) {
-        showError("Error creating the shadow map image view");
         return false;
     }
 
@@ -123,7 +93,7 @@ bool ShadowMap::create(uint32_t resolution)
     VkDescriptorImageInfo descImageInfo
     {
         .sampler = m_sampler,
-        .imageView = m_imageView,
+        .imageView = m_target.imageView,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
     VkWriteDescriptorSet write
@@ -157,15 +127,7 @@ void ShadowMap::destroy()
         vkDestroySampler(m_ctx.device(), m_sampler, nullptr);
         m_sampler = nullptr;
     }
-    if (m_imageView) {
-        vkDestroyImageView(m_ctx.device(), m_imageView, nullptr);
-        m_imageView = nullptr;
-    }
-    if (m_image) {
-        vmaDestroyImage(m_ctx.allocator(), m_image, m_allocation);
-        m_image = nullptr;
-        m_allocation = nullptr;
-    }
+    m_ctx.destroyImage(m_target);
 }
 
 ShadowMap::Fit ShadowMap::fit(const Camera &camera, float aspect,

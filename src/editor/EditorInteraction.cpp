@@ -21,8 +21,8 @@
 
 #include "../scene/Scene.h"
 #include "../scene/Camera.h"
-#include "../render/GeometryStore.h"
-#include "../render/ResourceStore.h"
+#include "../render/resources/GeometryStore.h"
+#include "../render/resources/ResourceStore.h"
 
 namespace
 {
