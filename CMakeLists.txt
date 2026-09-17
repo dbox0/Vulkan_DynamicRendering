@@ -43,9 +43,7 @@ FetchContent_MakeAvailable(imguizmo)
 # along with it -- ImGuizmo.cpp includes that directly.
 target_link_libraries(imguizmo PUBLIC imgui)
 
-# Set BEFORE add_executable: CXX_STANDARD is copied onto a target when the
-# target is created, so the old placement below the target did nothing and
-# vulkanapp was building at the compiler default.
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -88,6 +86,8 @@ add_executable(vulkanapp
         src/render/Renderer.h
         src/render/Swapchain.cpp
         src/render/Swapchain.h
+        src/render/ShaderWatcher.cpp
+        src/render/ShaderWatcher.h
         src/render/ShadowMap.cpp
         src/render/ShadowMap.h
         src/render/ResourceStore.cpp

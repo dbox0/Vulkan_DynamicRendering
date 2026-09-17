@@ -4,6 +4,7 @@
 #include <shaderc/shaderc.hpp>
 #include <array>
 #include <functional>   // std::function, used by render()/recordCommandBuffer()
+#include <memory>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -11,6 +12,7 @@
 #include "../scene/Scene.h"
 #include "GpuShared.h"
 #include "ShadowMap.h"
+#include "ShaderWatcher.h"
 
 class VulkanContext;
 class Swapchain;
@@ -96,6 +98,21 @@ public:
 
 private:
     bool createShaders();
+
+    struct ShaderPass
+    {
+        const char              *vertFile;
+        const char              *fragFile;
+        VkShaderModule          *vertModule;
+        VkShaderModule          *fragModule;
+        std::vector<VkPipeline*> pipelines;
+        std::function<bool()>    build;
+    };
+    std::vector<ShaderPass> shaderPasses();
+
+    // Recompiles and rebuilds only the passes that use one of these files.
+    // A pass that fails to compile keeps running on its old pipeline.
+    void reloadShaders(const std::vector<std::string> &changedFiles);
     bool createPipeline(bool blendEnabled, VkPipeline &outPipeline);
     bool createMaskPipeline();
     bool createShadowPipeline();
@@ -136,7 +153,10 @@ private:
     bool createSyncResources();
     bool createCommandBuffers();
     bool createFrameBuffers(uint32_t maxDrawsPerFrame);
-    VkShaderModule createShaderModule(const std::string &fileName, shaderc_shader_kind kind) const;
+    // With error set, failures are written there instead of popping a modal
+    // box -- hot reload must never block the frame loop on a typo.
+    VkShaderModule createShaderModule(const std::string &fileName, shaderc_shader_kind kind,
+                                      std::string *error = nullptr) const;
 
     // Fills this frame's indirect + render-item buffers from the draw list.
     // Returns the draw count actually written (clamped to m_maxDraws).
@@ -195,6 +215,9 @@ private:
     glm::vec2 m_selectionMin{ 0.0f };
     glm::vec2 m_selectionMax{ 0.0f };
     bool      m_selectionBoundsValid = true;
+
+    // Null in release builds.
+    std::unique_ptr<ShaderWatcher> m_shaderWatcher;
 
     VkSemaphore m_timelineSemaphore = nullptr;
     std::array<FrameResources, MaxFramesInFlight> m_frameResources;

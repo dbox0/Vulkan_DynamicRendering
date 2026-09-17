@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 #include "GeometryStore.h"
@@ -81,6 +82,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     // The swapchain (and therefore the mask image) already exists by the time
     // the renderer is initialised, so the descriptor can be pointed at it now.
     updateSelectionMaskDescriptor();
+
+#ifndef NDEBUG
+    m_shaderWatcher = std::make_unique<ShaderWatcher>(SHADER_DIR);
+#endif
     return true;
 }
 
@@ -194,12 +199,14 @@ namespace {
     }
 }
 
-VkShaderModule Renderer::createShaderModule(const std::string &fileName, shaderc_shader_kind kind) const
+VkShaderModule Renderer::createShaderModule(const std::string &fileName, shaderc_shader_kind kind,
+                                           std::string *error) const
 {
     const std::string shaderPath = SHADER_DIR + fileName;
     const std::string src = readTextFile(shaderPath);
     if (src.empty()) {
-        showError("Shader file does not exist or is empty: " + shaderPath);
+        const std::string msg = "Shader file does not exist or is empty: " + shaderPath;
+        if (error) { *error = msg; } else { showError(msg); }
         return nullptr;
     }
 
@@ -215,7 +222,11 @@ VkShaderModule Renderer::createShaderModule(const std::string &fileName, shaderc
         compiler.CompileGlslToSpv(src, kind, fileName.c_str(), opts);
 
     if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-        std::cerr << "Shader compilation error: " << result.GetErrorMessage() << std::endl;
+        if (error) {
+            *error = result.GetErrorMessage();
+        } else {
+            std::cerr << "Shader compilation error: " << result.GetErrorMessage() << std::endl;
+        }
         return nullptr;
     }
 
@@ -230,38 +241,107 @@ VkShaderModule Renderer::createShaderModule(const std::string &fileName, shaderc
 
     VkShaderModule shaderModule = nullptr;
     if (vkCreateShaderModule(m_ctx.device(), &shaderModuleCreateInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        showError("Failed to create shader module");
+        const std::string msg = "Failed to create shader module for " + fileName;
+        if (error) { *error = msg; } else { showError(msg); }
         return nullptr;
     }
     return shaderModule;
 }
 
+std::vector<Renderer::ShaderPass> Renderer::shaderPasses()
+{
+    return {
+        { "pbr.vert", "pbr.frag", &m_vertexShader, &m_fragmentShader,
+          { &m_pipelineOpaque, &m_pipelineBlend },
+          [this] { return createPipeline(false, m_pipelineOpaque) &&
+                          createPipeline(true,  m_pipelineBlend); } },
+        { "selection_mask.vert", "selection_mask.frag", &m_maskVertexShader, &m_maskFragmentShader,
+          { &m_pipelineMask }, [this] { return createMaskPipeline(); } },
+        { "outline.vert", "outline.frag", &m_outlineVertexShader, &m_outlineFragmentShader,
+          { &m_pipelineOutline }, [this] { return createOutlinePipeline(); } },
+        { "shadow.vert", "shadow.frag", &m_shadowVertexShader, &m_shadowFragmentShader,
+          { &m_pipelineShadow }, [this] { return createShadowPipeline(); } },
+        { "debug_line.vert", "debug_line.frag", &m_debugLineVertexShader, &m_debugLineFragmentShader,
+          { &m_pipelineDebugLine }, [this] { return createDebugLinePipeline(); } },
+    };
+}
+
 bool Renderer::createShaders()
 {
-    m_vertexShader = createShaderModule("pbr.vert", shaderc_vertex_shader);
-    if (!m_vertexShader) {
-        return false;
+    // Compiles everything instead of stopping at the first failure, so one
+    // run reports every broken shader.
+    bool ok = true;
+    for (ShaderPass &pass : shaderPasses()) {
+        *pass.vertModule = createShaderModule(pass.vertFile, shaderc_vertex_shader);
+        *pass.fragModule = createShaderModule(pass.fragFile, shaderc_fragment_shader);
+        ok = ok && *pass.vertModule && *pass.fragModule;
     }
-    m_fragmentShader = createShaderModule("pbr.frag", shaderc_fragment_shader);
-    if (!m_fragmentShader) {
-        return false;
+    return ok;
+}
+
+void Renderer::reloadShaders(const std::vector<std::string> &changedFiles)
+{
+    if (changedFiles.empty()) {
+        return;
     }
+    const VkDevice device = m_ctx.device();
 
-    m_maskVertexShader   = createShaderModule("selection_mask.vert", shaderc_vertex_shader);
-    m_maskFragmentShader = createShaderModule("selection_mask.frag", shaderc_fragment_shader);
-    m_outlineVertexShader   = createShaderModule("outline.vert", shaderc_vertex_shader);
-    m_outlineFragmentShader = createShaderModule("outline.frag", shaderc_fragment_shader);
+    for (ShaderPass &pass : shaderPasses()) {
+        const bool touched = std::ranges::any_of(changedFiles, [&](const std::string &f) {
+            return f == pass.vertFile || f == pass.fragFile;
+        });
+        if (!touched) {
+            continue;
+        }
 
-    m_shadowVertexShader   = createShaderModule("shadow.vert", shaderc_vertex_shader);
-    m_shadowFragmentShader = createShaderModule("shadow.frag", shaderc_fragment_shader);
+        // Compile both stages before touching anything live
+        std::string error;
+        VkShaderModule vert = createShaderModule(pass.vertFile, shaderc_vertex_shader, &error);
+        VkShaderModule frag = vert ? createShaderModule(pass.fragFile, shaderc_fragment_shader, &error)
+                                   : nullptr;
+        if (!vert || !frag) {
+            std::cerr << "[hot reload] " << pass.vertFile << " / " << pass.fragFile
+                      << " failed, keeping the old pipeline:\n" << error << std::endl;
+            if (vert) {
+                vkDestroyShaderModule(device, vert, nullptr);
+            }
+            continue;
+        }
 
-    m_debugLineVertexShader   = createShaderModule("debug_line.vert", shaderc_vertex_shader);
-    m_debugLineFragmentShader = createShaderModule("debug_line.frag", shaderc_fragment_shader);
+        // Both in-flight frames may still reference the old pipelines.
+        vkDeviceWaitIdle(device);
 
-    return m_maskVertexShader && m_maskFragmentShader &&
-           m_outlineVertexShader && m_outlineFragmentShader &&
-           m_shadowVertexShader && m_shadowFragmentShader &&
-           m_debugLineVertexShader && m_debugLineFragmentShader;
+        // After the swap, vert/frag hold the OLD modules.
+        std::swap(*pass.vertModule, vert);
+        std::swap(*pass.fragModule, frag);
+
+        std::vector<VkPipeline> oldPipelines;
+        for (VkPipeline *p : pass.pipelines) {
+            oldPipelines.push_back(std::exchange(*p, nullptr));
+        }
+
+        const bool built = pass.build();
+
+        // Whichever set lost gets destroyed: the old one on success, the
+        // (possibly partial) new one on failure, with the old one put back.
+        for (size_t i = 0; i < pass.pipelines.size(); ++i) {
+            VkPipeline &live = *pass.pipelines[i];
+            const VkPipeline dead = built ? oldPipelines[i] : std::exchange(live, oldPipelines[i]);
+            if (dead) {
+                vkDestroyPipeline(device, dead, nullptr);
+            }
+        }
+        if (!built) {
+            // Swap back: vert/frag now hold the NEW modules, which lost.
+            std::swap(*pass.vertModule, vert);
+            std::swap(*pass.fragModule, frag);
+        }
+        vkDestroyShaderModule(device, vert, nullptr);
+        vkDestroyShaderModule(device, frag, nullptr);
+
+        std::cout << "[hot reload] " << (built ? "rebuilt " : "pipeline build failed, rolled back ")
+                  << pass.vertFile << " / " << pass.fragFile << std::endl;
+    }
 }
 
 // ============================================================================
@@ -898,7 +978,10 @@ bool Renderer::createOutlinePipeline()
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange
     };
-    if (vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_outlineLayout) != VK_SUCCESS) {
+    // Guarded like m_pipelineLayout: hot reload calls this again, and the
+    // layout doesn't depend on the shader, so it's kept rather than leaked.
+    if (!m_outlineLayout &&
+        vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_outlineLayout) != VK_SUCCESS) {
         showError("Failed to create the outline pipeline layout");
         return false;
     }
@@ -1864,6 +1947,12 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         // New image, new view: the outline's descriptor still points at the
         // destroyed one. recreate() waits idle, so rewriting here is safe.
         updateSelectionMaskDescriptor();
+    }
+
+    // Between frames and before anything is recorded, so a rebuilt pipeline
+    // is used by this very frame.
+    if (m_shaderWatcher) {
+        reloadShaders(m_shaderWatcher->poll());
     }
 
     const uint32_t frameResIndex = m_frameIndex++ % MaxFramesInFlight;
