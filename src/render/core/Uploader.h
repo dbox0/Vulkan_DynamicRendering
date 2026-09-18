@@ -10,14 +10,14 @@
 // Load-time and streaming uploads that do not stall the queue.
 //
 // Every submit gets a ticket (a value on a private timeline semaphore).
-// Staging buffers -- and anything else handed to trackBuffer/trackImage --
+// Staging buffers and anything else handed to trackBuffer/trackImage
 // are held by the slot that recorded them and destroyed only once the GPU has
 // passed that ticket. Nothing is freed while a copy is still in flight, and
 // the CPU never blocks waiting for one.
 //
 // SlotCount submissions can be in flight at once. begin() blocks only when
-// every slot is still busy, which at load time means "you are uploading
-// faster than the GPU can copy" -- the right thing to wait on.
+// every slot is still busy, which at load time means we are uploading
+// faster than the GPU can copy (which we want to wait on)
 //
 // ORDERING: everything goes to the graphics queue. Submissions on one queue
 // start in submission order, and the barriers recorded inside the upload
