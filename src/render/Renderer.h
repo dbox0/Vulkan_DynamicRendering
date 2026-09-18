@@ -62,6 +62,12 @@ struct RenderView
 
 // What each pass draws, and the pipelines it draws
 // with, lives in render/passes.
+struct EnvironmentSettings
+{
+    float ambientIntensity = .5f;
+    float envIntensity     = 0.5f;
+};
+
 class Renderer
 {
 public:
@@ -93,6 +99,10 @@ public:
     // Bias and range knobs for the sun shadow, same idea.
     ShadowSettings &shadowSettings() { return m_shadow; }
     glm::vec3      &sunDirection()   { return m_sunDirection; }
+
+    TonemapConstants &tonemapSettings() { return m_tonemapPass.settings(); }
+
+    EnvironmentSettings &environmentSettings() { return m_environment; }
 
 private:
     // The layout shared by the scene, shadow, mask and debug-line pipelines:
@@ -133,6 +143,8 @@ private:
     // m_shadow.enabled AND the active light's castsShadows, resolved per frame.
     bool           m_shadowActive = true;
     glm::vec3      m_sunDirection{ glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)) };
+
+    EnvironmentSettings m_environment{};
 
     uint32_t m_selectedNode = 0;
 

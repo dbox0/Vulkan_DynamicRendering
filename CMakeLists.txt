@@ -71,6 +71,12 @@ add_executable(vulkanapp
         src/editor/EditorUI.cpp
         src/editor/EditorUI.h
         src/editor/EditorInspectorPanels.cpp
+        src/editor/EditorProjectPanels.cpp
+        src/editor/EditorRenderPanels.cpp
+        src/editor/EditorTheme.cpp
+        src/editor/EditorTheme.h
+        src/editor/EditorWidgets.cpp
+        src/editor/EditorWidgets.h
         src/editor/EditorInteraction.cpp
         src/editor/EditorScenePanels.cpp
         src/editor/EditorCommands.h

@@ -27,6 +27,8 @@ class GeometryStore;
 class ResourceStore;
 struct Mesh;
 struct ShadowSettings;
+struct TonemapConstants;
+struct EnvironmentSettings;
 class Node;
 class UndoHistory;
 
@@ -44,21 +46,10 @@ public:
     void processEvent(const SDL_Event &event);
     bool wantsMouse() const;
     bool wantsKeyboard() const;
-
-    // Per frame: beginFrame() -> build() -> (renderer records) -> record().
     void beginFrame();
-    //
-    // Everything is const: the editor reads the world and describes changes
-    // as commands. A panel that writes to the scene directly would be an edit
-    // undo never hears about, so it is made not to compile.
-
     void build(const Scene &scene, const GeometryStore &geometry, const ResourceStore &resources,
                const Camera &camera, uint32_t width, uint32_t height);
     void record(VkCommandBuffer cmd);
-
-    // Edits recorded during build(), drained by Application afterwards. Nothing
-    // in this class mutates the scene or the stores directly -- see
-    // EditorCommands.h for why.
     const std::vector<EditorCommand> &commands() const { return m_commands; }
     void clearCommands() { m_commands.clear(); }
 
@@ -79,6 +70,9 @@ public:
         m_sunDirection   = &sunDirection;
     }
 
+    void bindTonemapSettings(TonemapConstants &settings) { m_tonemapSettings = &settings; }
+    void bindEnvironmentSettings(EnvironmentSettings &settings) { m_environmentSettings = &settings; }
+
     // By Guid: the selection outlives frames, so it must not be a slot. A
     // selected node that dies simply stops resolving and the selection clears
     // itself on the next build().
@@ -98,12 +92,6 @@ public:
 
 
     void invalidateTexturePreview(uint32_t textureId);
-
-    void applyTheme();
-    static bool vec3Control(const char *label, glm::vec3 &values,
-                            float resetValue = 0.0f, float speed = 0.05f);
-    static void beginProperties(const char *id);
-    static void endProperties();
 
 private:
 
@@ -220,6 +208,8 @@ private:
     void deleteNode(Guid node);
 
     void drawShadowWindow();
+    void drawPostProcessWindow();
+    void drawEnvironmentWindow();
 
     // Colour / intensity / shadow toggle for a light node
     bool drawLightSection(Node &edited);
@@ -269,9 +259,15 @@ private:
     void submitUndo();
     void submitRedo();
 
-    ShadowSettings *m_shadowSettings   = nullptr;
-    glm::vec3      *m_sunDirection     = nullptr;
-    bool            m_showShadowWindow = false;
+    ShadowSettings   *m_shadowSettings   = nullptr;
+    glm::vec3        *m_sunDirection     = nullptr;
+    TonemapConstants *m_tonemapSettings  = nullptr;
+
+    EnvironmentSettings *m_environmentSettings = nullptr;
+
+    bool m_showShadowWindow      = false;
+    bool m_showPostProcessWindow = false;
+    bool m_showEnvironmentWindow = false;
 
     void drawGizmo(const Scene &scene, const Camera &camera, uint32_t width, uint32_t height);
     void drawGizmoToolbar();

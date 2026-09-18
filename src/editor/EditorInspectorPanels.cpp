@@ -8,6 +8,7 @@
 
 #include "EditorUI.h"
 #include "EditorCommands.h"
+#include "EditorWidgets.h"
 #include "../reflect/BinaryArchive.h"
 
 #include <volk.h>
@@ -21,6 +22,11 @@
 #include "../assets/Material.h"
 #include "../render/resources/GeometryStore.h"
 #include "../render/resources/ResourceStore.h"
+#include "../scene/Geometry/Node.h"
+
+#include <glm/geometric.hpp>
+
+using namespace editor::ui;
 
 
 using Texture   = ResourceStore::Texture;
@@ -514,4 +520,45 @@ void EditorUI::drawMaterialSection(const ResourceStore &resources, uint32_t mate
     if (changed) {
         submitModify(EditTarget::forMaterial(id), reflect::toBlob(mat), "Edit Material");
     }
+}
+
+bool EditorUI::drawLightSection(Node &node)
+{
+    if (node.lightType != LightType::Directional) {
+        return false;
+    }
+
+    if (!ImGui::CollapsingHeader("Directional Light", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return false;
+    }
+
+    bool changed = false;
+
+    beginProperties("light_props");
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Color");
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    changed |= ImGui::ColorEdit3("##lightcolor", &node.lightColor.x);
+
+    changed |= sliderRow("Intensity", node.lightIntensity, 0.0f, 20.0f, "%.2f");
+
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Shadows");
+    ImGui::TableSetColumnIndex(1);
+    changed |= ImGui::Checkbox("##lightshadows", &node.lightCastsShadows);
+
+    endProperties();
+
+    // Read-only: aiming happens through the rotation above or the gizmo, and a
+    // second way to set the same thing would fight it.
+    const glm::vec3 direction = glm::normalize(node.getRotation() * glm::vec3(0.0f, 0.0f, -1.0f));
+    ImGui::TextDisabled("Direction  %.2f, %.2f, %.2f", direction.x, direction.y, direction.z);
+    ImGui::TextDisabled("Rotate the node to aim it.");
+    return changed;
 }

@@ -13,10 +13,10 @@ class Camera;
 struct ShadowSettings
 {
     float distance     = 15.0;    // how far from the camera shadows are fitted
-    float normalBias   = 3.0f;     // lookup offset along the normal, in texels
+    float normalBias   = .80f;     // lookup offset along the normal, in texels
     float depthBias    = .0f;  // constant bias in light-space depth
     float constantBias = .0f;    // rasteriser depth bias, negated for reverse Z
-    float slopeBias    = 2.0f;     // rasteriser slope-scaled bias, likewise
+    float slopeBias    = 0.0f;     // rasteriser slope-scaled bias, likewise
     bool  enabled      = true;
 };
 
