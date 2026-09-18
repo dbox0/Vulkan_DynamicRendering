@@ -14,6 +14,7 @@
 #include "passes/ScenePass.h"
 #include "passes/SelectionOutlinePass.h"
 #include "passes/ShadowPass.h"
+#include "passes/TonemapPass.h"
 #include "shaders/ShaderProgram.h"
 #include "shaders/ShaderWatcher.h"
 
@@ -70,7 +71,7 @@ public:
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
              ResourceStore &resources, GeometryStore &geometry)
         : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry),
-          m_scenePass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx) {}
+          m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -119,6 +120,7 @@ private:
     // --- passes -----------------------------------------------------------
     ScenePass            m_scenePass;
     ShadowPass           m_shadowPass;
+    TonemapPass          m_tonemapPass;
     SelectionOutlinePass m_outlinePass;
     DebugLinePass        m_debugLines;
 

@@ -154,6 +154,7 @@ add_executable(vulkanapp
         src/scene/SceneDrawItems.cpp
         src/render/passes/TonemapPass.cpp
         src/render/passes/TonemapPass.h
+        src/Math/Plane.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically

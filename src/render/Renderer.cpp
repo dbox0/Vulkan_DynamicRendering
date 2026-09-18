@@ -25,8 +25,11 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 {
     m_maxDraws = maxDrawsPerFrame;
 
-    // Before the scene layout: it takes the shadow map's descriptor set
-    // layout as set 1.
+    if (!m_tonemapPass.createResources()) {
+        showError("Unable to initialize the tonemap resources");
+        return false;
+    }
+
     if (!m_shadowPass.createTarget(ShadowResolution)) {
         showError("Unable to create the shadow map");
         return false;
@@ -39,7 +42,9 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         return false;
     }
 
+
     m_scenePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
+    m_tonemapPass.appendShaderPrograms(m_shaderPrograms);
     m_outlinePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_shadowPass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_debugLines.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
@@ -53,6 +58,12 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Unable to initialize the graphics pipeline");
         return false;
     }
+
+    if (!m_tonemapPass.createPipelines()) {
+        showError("Unable to initialize the tonemap pipeline");
+        return false;
+    }
+
     if (!m_shadowPass.createPipelines(m_sceneLayout)) {
         showError("Unable to initialize the shadow pipeline");
         return false;
@@ -90,6 +101,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     // The swapchain (and therefore the mask image) already exists by the time
     // the renderer is initialised, so the descriptor can be pointed at it now.
     m_outlinePass.setMaskView(m_swapchain.selectionMaskImageView());
+    m_tonemapPass.setSourceView(m_swapchain.hdrImageView());
 
 #ifndef NDEBUG
     m_shaderWatcher = std::make_unique<ShaderWatcher>(SHADER_DIR);
@@ -146,6 +158,7 @@ void Renderer::shutdown()
     }
 
     m_scenePass.destroy();
+    m_tonemapPass.destroy();
     m_outlinePass.destroy();
     m_debugLines.destroy();
     m_shadowPass.destroy();
@@ -422,8 +435,9 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     vkBeginCommandBuffer(res.commandBuffer, &cmdBeginInfo);
 
     // UNDEFINED -> attachment layouts for colour and depth.
-    const std::array<VkImageMemoryBarrier2, 2> layoutBarriers
+    const std::array<VkImageMemoryBarrier2, 3> layoutBarriers
     {
+        // Swapchain Color
         VkImageMemoryBarrier2
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -436,6 +450,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
             .image = m_swapchain.image(imageIndex),
             .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
         },
+
+        //Depth
         VkImageMemoryBarrier2
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -448,7 +464,27 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
             .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             .image = m_swapchain.depthImage(),
             .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
+        },
+
+        //HDR
+        VkImageMemoryBarrier2
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .image = m_swapchain.hdrImage(),
+            .subresourceRange
+            {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = 1,
+                .layerCount = 1
+            }
         }
+
     };
     VkDependencyInfo depInfo
     {
@@ -460,10 +496,28 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     const VkExtent2D extent{ m_swapchain.width(), m_swapchain.height() };
 
+
+    // Negative height flips Y so the glTF/glm convention lands right side up.
+    VkViewport viewport
+    {
+        .x = 0,
+        .y = static_cast<float>(extent.height),
+        .width  =  static_cast<float>(extent.width),
+        .height = -static_cast<float>(extent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+
+    vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{ .offset{ .x = 0, .y = 0 }, .extent = extent };
+    vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
+
+
     VkRenderingAttachmentInfo colorAttachInfo
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain.imageView(imageIndex),
+        .imageView = m_swapchain.hdrImageView(),
         .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -475,7 +529,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .imageView = m_swapchain.depthImageView(),
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue{ .depthStencil{ 0.0f, 0 } }     // reverse Z: 0 is the far plane
     };
     VkRenderingInfo renderingInfo
@@ -506,6 +560,10 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     vkCmdBindIndexBuffer(res.commandBuffer, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
+
+
+    // ======================== PASSES ============================ ///
+
     // Before everything else: the scene pass samples what it writes.
     m_shadowPass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches,
                         m_shadow, m_shadowActive);
@@ -525,41 +583,67 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
                                  m_swapchain.selectionMaskImageView(), extent);
     }
 
-    vkCmdBeginRendering(res.commandBuffer, &renderingInfo);
+    vkCmdBeginRendering(res.commandBuffer, &renderingInfo); // hdr color clear/store, depth clear/store
     {
-        // Negative height flips Y so the glTF/glm convention lands right side up.
-        VkViewport viewport
-        {
-            .x = 0,
-            .y = static_cast<float>(extent.height),
-            .width  =  static_cast<float>(extent.width),
-            .height = -static_cast<float>(extent.height),
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f
-        };
         vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
+        vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
+        m_scenePass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches);
+        }
+    vkCmdEndRendering(res.commandBuffer);
 
-        VkRect2D scissor{ .offset{ .x = 0, .y = 0 }, .extent = extent };
+
+
+    //  ====================  Tonemapping ======================
+
+    m_tonemapPass.transitionSource(res.commandBuffer, m_swapchain.hdrImage());
+    VkRenderingAttachmentInfo swapColorAttachInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_swapchain.imageView(imageIndex),
+        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE
+    };
+    VkRenderingAttachmentInfo swapDepthAttachInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_swapchain.depthImageView(),
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE
+    };
+    VkRenderingInfo swapRenderingInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea{ .offset{ .x = 0, .y = 0 }, .extent = extent },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &swapColorAttachInfo,
+        .pDepthAttachment = &swapDepthAttachInfo
+    };
+
+
+    vkCmdBeginRendering(res.commandBuffer, &swapRenderingInfo);
+    {
+        m_tonemapPass.record(res.commandBuffer, extent);
+
+        // The tonemap pass left a positive-height viewport behind.
+        vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
         vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
-        m_scenePass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches);
-
-        // Over the geometry, under the outline and the UI.
         m_debugLines.record(res.commandBuffer, m_sceneLayout, frameConsts,
                             res.debugLineBuffer.deviceAddress);
 
-        // Over the finished scene, under the UI.
         if (hasSelection) {
             m_outlinePass.recordComposite(res.commandBuffer, extent);
         }
 
-        // ImGui sets its own viewport and scissor per draw command, so the
-        // narrowed scissor above does not leak into the overlay.
         if (overlay) {
             overlay(res.commandBuffer);
         }
     }
     vkCmdEndRendering(res.commandBuffer);
+
 
     // COLOR_ATTACHMENT -> PRESENT_SRC.
     VkImageMemoryBarrier2 presentLayoutBarrier
@@ -574,6 +658,10 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .image = m_swapchain.image(imageIndex),
         .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
     };
+
+
+
+
     VkDependencyInfo presentDepInfo
     {
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -597,6 +685,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         }
         // New image, new view: the outline's descriptor still points at the
         // destroyed one. recreate() waits idle, so rewriting here is safe.
+        m_tonemapPass.setSourceView(m_swapchain.hdrImageView());
         m_outlinePass.setMaskView(m_swapchain.selectionMaskImageView());
     }
 

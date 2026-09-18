@@ -78,7 +78,9 @@ bool TonemapPass::createResources() {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
         .pSetLayouts = &m_setLayout,
+        .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange
+
     };
     if (vkCreatePipelineLayout(m_ctx.device(), &pipelineLayoutInfo, nullptr, &m_layout) != VK_SUCCESS) {
         showError("Failed to create the Tonemap pipeline layout");
@@ -170,6 +172,7 @@ bool TonemapPass::createPipelines() {
         .attachmentCount = 1,
         .pAttachments = &colorBlendAttachmentState
     };
+
     const std::array<VkDynamicState, 2> dynamicStates
     {
         VK_DYNAMIC_STATE_VIEWPORT , VK_DYNAMIC_STATE_SCISSOR
@@ -203,6 +206,7 @@ bool TonemapPass::createPipelines() {
         .pRasterizationState = &rasterInfo,
         .pMultisampleState = &multiSampleInfo,
         .pDepthStencilState = &depthStencilInfo,
+        .pColorBlendState = &colorBlendInfo,
         .pDynamicState = &dynamicStateInfo,
         .layout = m_layout,
         .renderPass = VK_NULL_HANDLE

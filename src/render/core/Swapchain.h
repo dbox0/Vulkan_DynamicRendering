@@ -15,6 +15,7 @@ class Swapchain
 public:
     static constexpr VkFormat ColorFormat = VK_FORMAT_B8G8R8A8_SRGB;
     static constexpr VkFormat DepthFormat = VK_FORMAT_D32_SFLOAT;
+    static constexpr VkFormat HDRFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
     // Coverage of the editor's selection, one byte per pixel. Lives here
     // rather than in Renderer because it is screen-sized: it has to be
@@ -30,16 +31,20 @@ public:
     void destroy();
     bool recreate(uint32_t width, uint32_t height);   // waits idle, destroy + create
 
-    VkSwapchainKHR handle()      const { return m_swapchain; }
-    uint32_t       width()       const { return m_width; }
-    uint32_t       height()      const { return m_height; }
-    VkImage        image(uint32_t i)     const { return m_images[i]; }
-    VkImageView    imageView(uint32_t i) const { return m_imageViews[i]; }
+    VkSwapchainKHR handle()                 const { return m_swapchain; }
     VkSemaphore    renderCompleteSemaphore(uint32_t i) const { return m_renderCompleteSemaphores[i]; }
-    VkImage        depthImage()     const { return m_depth.image; }
-    VkImageView    depthImageView() const { return m_depth.imageView; }
+
+    uint32_t       width()                  const { return m_width; }
+    uint32_t       height()                 const { return m_height; }
+
+    VkImage        image(uint32_t i)        const { return m_images[i]; }
+    VkImageView    imageView(uint32_t i)    const { return m_imageViews[i]; }
+    VkImage        depthImage()             const { return m_depth.image; }
+    VkImageView    depthImageView()         const { return m_depth.imageView; }
     VkImage        selectionMaskImage()     const { return m_selectionMask.image; }
     VkImageView    selectionMaskImageView() const { return m_selectionMask.imageView; }
+    VkImage        hdrImage()               const { return m_hdrTarget.image; }
+    VkImageView    hdrImageView()           const { return m_hdrTarget.imageView; }
 
     // Acquire wraps the OUT_OF_DATE / SUBOPTIMAL handling so the renderer
     // doesn't have to. Returns false when the caller should skip the frame.

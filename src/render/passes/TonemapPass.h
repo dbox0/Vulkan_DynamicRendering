@@ -13,12 +13,13 @@ enum class Tonemapper : uint32_t
 {
     None     = 0,   // exposure only, clipped at 1.0 -- useful for comparison
     Reinhard = 1,
+    ACES     = 2
 };
 
 struct TonemapConstants
 {
     float      exposure   = 1.0f;
-    Tonemapper tonemapper = Tonemapper::Reinhard;
+    Tonemapper tonemapper = Tonemapper::ACES;
 };
 
 // HDR scene colour -> display.

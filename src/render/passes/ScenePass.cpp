@@ -165,7 +165,7 @@ bool ScenePass::createPipeline(VkPipelineLayout layout, bool blendEnabled, VkPip
     };
 
     // Dynamic rendering: no VkRenderPass.
-    constexpr VkFormat colorFormat = Swapchain::ColorFormat;
+    constexpr VkFormat colorFormat = Swapchain::HDRFormat;
     VkPipelineRenderingCreateInfo renderInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,

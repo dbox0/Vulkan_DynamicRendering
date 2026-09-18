@@ -305,9 +305,6 @@ void main()
 
     if (any(isnan(hdr)) || any(isinf(hdr))) hdr = vec3(0.0);
 
-    vec3 color = hdr * frame.exposure;
-
     //fragColor = vec4(PBRNeutralToneMapping(hdr * frame.exposure), baseColor.a);
-    fragColor = vec4(color, baseColor.a);
-
+    fragColor = vec4(hdr, baseColor.a);
 }

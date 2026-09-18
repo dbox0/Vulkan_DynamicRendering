@@ -114,6 +114,9 @@ bool Swapchain::create(uint32_t width, uint32_t height)
     if (!createSelectionMask(m_width, m_height)) {
         return false;
     }
+    if (!createHdrTarget(m_width, m_height)) {
+        return false;
+    }
 
     m_needsRecreate = false;
     return true;
@@ -143,7 +146,7 @@ bool Swapchain::createSelectionMask(uint32_t width, uint32_t height)
 }
 
 bool Swapchain::createHdrTarget(uint32_t width, uint32_t height) {
-    if (!m_ctx.createRenderTarget(width, height, SelectionMaskFormat,
+    if (!m_ctx.createRenderTarget(width, height, HDRFormat,
                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                    m_hdrTarget)) {
         showError("Error creating the hdr target");
@@ -177,6 +180,7 @@ void Swapchain::destroy()
 
     m_ctx.destroyImage(m_depth);
     m_ctx.destroyImage(m_selectionMask);
+    m_ctx.destroyImage(m_hdrTarget);
 }
 
 bool Swapchain::recreate(uint32_t width, uint32_t height)
