@@ -428,8 +428,6 @@ bool SelectionOutlinePass::createMaskPipeline(VkPipelineLayout sceneLayout)
         .scissorCount = 1
     };
 
-    // No culling: a mask is coverage, and back faces of an open or
-    // double-sided mesh are just as much part of the silhouette.
     VkPipelineRasterizationStateCreateInfo rasterInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -444,10 +442,6 @@ bool SelectionOutlinePass::createMaskPipeline(VkPipelineLayout sceneLayout)
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
     };
 
-    // No depth attachment at all, hence no depth state. The selection is
-    // marked whether or not it is occluded, which is what makes the outline
-    // visible through walls -- useful in an editor, and it avoids the mess of
-    // a half-occluded object outlining its own visible fragment boundaries.
     VkPipelineDepthStencilStateCreateInfo depthStencilInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
@@ -564,9 +558,6 @@ bool SelectionOutlinePass::createCompositePipeline()
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
     };
 
-    // Depth is off but the format still has to be declared: a dynamic
-    // rendering pipeline must describe the same attachments as the
-    // VkRenderingInfo it is used inside, and this draws in the scene pass.
     VkPipelineDepthStencilStateCreateInfo depthStencilInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
