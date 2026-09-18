@@ -140,15 +140,3 @@ struct FrameConstants
 static_assert(sizeof(FrameConstants) == 32);
 
 
-// Push constants for the selection-outline composite. A separate block from
-// FrameConstants because that pass has its own layout: it samples the mask
-// through a plain descriptor rather than the bindless set.
-// ----------------------------------------------------------------------------
-struct OutlineConstants
-{
-    glm::vec4 color{ 1.0f, 0.55f, 0.10f, 1.0f };
-    int32_t   thickness = 3;            // radius in pixels
-};
-
-static_assert(sizeof(OutlineConstants) == 20);
-static_assert(offsetof(OutlineConstants, thickness) == 16);

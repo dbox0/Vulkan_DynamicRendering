@@ -20,6 +20,17 @@ struct SubMesh;
 // push constants and RenderItem buffer, so what is already bound covers it.
 // The composite needs a sampler, which the bindless global layout has no
 // free slot for, so it gets a one-binding layout of its own.
+
+struct OutlineConstants
+{
+    glm::vec4 color{ 1.0f, 0.55f, 0.10f, 1.0f };
+    int32_t   thickness = 3;            // radius in pixels
+};
+
+static_assert(sizeof(OutlineConstants) == 20);
+static_assert(offsetof(OutlineConstants, thickness) == 16);
+
+
 class SelectionOutlinePass
 {
 public:
