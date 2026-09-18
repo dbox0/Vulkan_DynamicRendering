@@ -165,6 +165,8 @@ add_executable(vulkanapp
         src/render/ibl/HdrLoader.cpp
         src/render/ibl/HdrLoader.h
         src/render/passes/SkyboxPass.cpp
+        src/common/vkbarrier.cpp
+        src/common/vkbarrier.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically
@@ -213,7 +215,8 @@ add_executable(engine_tests
         src/editor/SceneUndoWorld.cpp
         src/scene/Scene.cpp
         src/render/ibl/EnvironmentMap.cpp
-        src/render/ibl/EnvironmentMap.h)
+        src/render/ibl/EnvironmentMap.h
+)
 
 target_link_libraries(engine_tests PRIVATE
         glm::glm
