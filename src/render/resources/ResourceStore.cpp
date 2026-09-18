@@ -181,10 +181,6 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
 
     const size_t componentCount = static_cast<size_t>(width) * height * 4;
     std::vector<uint16_t> halfPixels(componentCount);
-    for (size_t i = 0; i < componentCount; ++i) {
-        halfPixels[i] = floatToHalf(pixels[i]);
-    }
-    stbi_image_free(pixels);
 
     VkCommandBuffer cmd = m_ctx.beginUpload();
     if (!cmd) {
@@ -194,10 +190,10 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
     // 16F is exactly the format most likely to come back without
     // SAMPLED_IMAGE_FILTER_LINEAR, in which case this lands as a single
     // level and environmentMaxLod() follows it down.
-    const uint32_t imageId = addImage(cmd, halfPixels.data(),
+    const uint32_t imageId = addImage(cmd, pixels,
                                       static_cast<uint32_t>(width),
                                       static_cast<uint32_t>(height),
-                                      VK_FORMAT_R16G16B16A16_SFLOAT,
+                                      VK_FORMAT_R32G32B32A32_SFLOAT,
                                       AssetOrigin::Builtin);
     m_ctx.submitUpload();
 
