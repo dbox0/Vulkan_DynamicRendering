@@ -5,15 +5,51 @@
 #include <iostream>
 #include <ostream>
 
-void Camera::handleInput(const SDL_Event& e, float deltaTime)
-{
-    if (e.type == SDL_EVENT_KEY_DOWN) {
-        if (e.key.key == SDLK_W) velocity.z = -1.0f;
-        if (e.key.key == SDLK_S) velocity.z =  1.0f;
-        if (e.key.key == SDLK_A) velocity.x = -1.0f;
-        if (e.key.key == SDLK_D) velocity.x =  1.0f;
-        if (e.key.key == SDLK_E) velocity.y =  1.0f;
-        if (e.key.key == SDLK_Q) velocity.y = -1.0f;
+void Camera::handleInput(const SDL_Event& e, float deltaTime) {
+    if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (e.button.button == SDL_BUTTON_RIGHT)  rightMouseHeld = true;
+        if (e.button.button == SDL_BUTTON_MIDDLE) middleMouseHeld = true;
+    }
+
+    if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        if (e.button.button == SDL_BUTTON_RIGHT)  rightMouseHeld = false;
+        if (e.button.button == SDL_BUTTON_MIDDLE) middleMouseHeld = false;
+    }
+
+    if (rightMouseHeld) {
+
+        if (e.type == SDL_EVENT_KEY_DOWN) {
+            if (e.key.key == SDLK_W) velocity.z = -1.0f;
+            if (e.key.key == SDLK_S) velocity.z =  1.0f;
+            if (e.key.key == SDLK_A) velocity.x = -1.0f;
+            if (e.key.key == SDLK_D) velocity.x =  1.0f;
+            if (e.key.key == SDLK_E) velocity.y =  1.0f;
+            if (e.key.key == SDLK_Q) velocity.y = -1.0f;
+        }
+
+        if (e.type == SDL_EVENT_MOUSE_MOTION) {
+            // Right-click look / rotation
+
+            yaw   += static_cast<float>(e.motion.xrel) / 200.0f;
+            pitch -= static_cast<float>(e.motion.yrel) / 200.0f;
+
+
+            // Middle-click pan
+            if (middleMouseHeld) {
+                constexpr float panSensitivity = 0.005f;
+
+                glm::mat4 rotation = getRotationMatrix();
+                glm::vec3 right = glm::vec3(rotation[0]); // Local X-axis (Right)
+                glm::vec3 up    = glm::vec3(rotation[1]); // Local Y-axis (Up)
+
+                float dx = static_cast<float>(e.motion.xrel);
+                float dy = static_cast<float>(e.motion.yrel);
+
+                // Dragging left moves camera right, dragging down moves camera up
+                position -= right * dx * panSensitivity;
+                position += up    * dy * panSensitivity;
+            }
+        }
     }
 
     if (e.type == SDL_EVENT_KEY_UP) {
@@ -25,39 +61,6 @@ void Camera::handleInput(const SDL_Event& e, float deltaTime)
         if (e.key.key == SDLK_E) velocity.y = 0.0f;
     }
 
-    if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-        if (e.button.button == SDL_BUTTON_RIGHT)  rightMouseHeld = true;
-        if (e.button.button == SDL_BUTTON_MIDDLE) middleMouseHeld = true;
-    }
-
-    if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-        if (e.button.button == SDL_BUTTON_RIGHT)  rightMouseHeld = false;
-        if (e.button.button == SDL_BUTTON_MIDDLE) middleMouseHeld = false;
-    }
-
-    if (e.type == SDL_EVENT_MOUSE_MOTION) {
-        // Right-click look / rotation
-        if (rightMouseHeld) {
-            yaw   += static_cast<float>(e.motion.xrel) / 200.0f;
-            pitch -= static_cast<float>(e.motion.yrel) / 200.0f;
-        }
-
-        // Middle-click pan
-        if (middleMouseHeld) {
-            constexpr float panSensitivity = 0.005f;
-
-            glm::mat4 rotation = getRotationMatrix();
-            glm::vec3 right = glm::vec3(rotation[0]); // Local X-axis (Right)
-            glm::vec3 up    = glm::vec3(rotation[1]); // Local Y-axis (Up)
-
-            float dx = static_cast<float>(e.motion.xrel);
-            float dy = static_cast<float>(e.motion.yrel);
-
-            // Dragging left moves camera right, dragging down moves camera up
-            position -= right * dx * panSensitivity;
-            position += up    * dy * panSensitivity;
-        }
-    }
 }
 
 
