@@ -162,6 +162,7 @@ bool Application::initialize()
     m_editor.bindTonemapSettings(m_renderer.tonemapSettings());
     m_editor.bindEnvironmentSettings(m_renderer.environmentSettings());
     m_editor.bindSkyboxSettings(m_renderer.skyboxSettings());
+    m_editor.bindBloomSettings(m_renderer.bloomSettings());
     m_editor.bindHistory(m_history);
     m_editor.bindScenePath(m_scenePath);
     m_detector.initialize(m_scene, m_resources, m_geometry, m_history);
@@ -278,6 +279,7 @@ void Application::run()
         // asserts if NewFrame is called twice without a Render in between.
 
         m_editor.beginFrame();
+        m_editor.setBloomMipCount(m_renderer.bloomMipCount());
         m_editor.build(m_scene, m_geometry, m_resources, m_camera, m_width, m_height);
 
         m_detector.beginFrame();

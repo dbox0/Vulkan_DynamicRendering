@@ -15,8 +15,13 @@ namespace editor::ui
     bool sliderRow(const char *label, float &value, float min, float max,
                    const char *format = "%.3f");
 
+
+    bool sliderIntRow(const char *label, int &value, int min, int max, const char *format = "%d");
+
     bool dragRow(const char *label, float &value, float speed,
                  float min, float max, const char *format = "%.3f", int flags = 0);
 
     bool comboRow(const char *label, int &index, const char *const *items, int count);
+
+    
 }

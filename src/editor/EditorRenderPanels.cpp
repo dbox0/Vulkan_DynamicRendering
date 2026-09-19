@@ -10,6 +10,7 @@
 #include "../render/passes/TonemapPass.h"
 #include "../render/passes/SkyboxPass.h"
 #include "../render/Renderer.h"
+#include "../render/passes/BloomPass.h"
 
 using namespace editor::ui;
 
@@ -96,6 +97,37 @@ void EditorUI::drawPostProcessWindow()
             }
             endProperties();
 
+            ImGui::Spacing();
+        }
+
+        if (m_bloomSettings) {
+            ImGui::SeparatorText("Bloom");
+            BloomSettings &b = *m_bloomSettings;
+
+            ImGui::Checkbox("Enable bloom", &b.enabled);
+
+            ImGui::BeginDisabled(!b.enabled);
+            beginProperties("bloom_settings");
+            if (m_tonemapSettings) {
+                sliderRow("Strength", m_tonemapSettings->bloomStrength, 0.0f, 1.0f, "%.3f");
+            }
+            // Scene-referred, so it is not affected by Exposure above.
+            dragRow("Threshold", b.threshold, 0.01f, 0.0f, 20.0f, "%.2f");
+            sliderRow("Soft knee", b.softKnee, 0.0f, 1.0f, "%.2f");
+            dragRow("Radius", b.filterRadius, 0.0002f, 0.0005f, 0.02f, "%.4f");
+            endProperties();
+            ImGui::EndDisabled();
+
+            if (m_tonemapSettings && m_bloomMipCount > 0) {
+                const int maxMip = static_cast<int>(m_bloomMipCount) - 1;
+                int mip = std::min<int>(m_tonemapSettings->bloomDebugMip, maxMip);
+
+                beginProperties("bloom_debug");
+                sliderIntRow("Debug", mip, -1, maxMip, mip < 0 ? "Composite" : "Mip %d");
+                endProperties();
+
+                m_tonemapSettings->bloomDebugMip = mip;
+            }
             ImGui::Spacing();
         }
     }

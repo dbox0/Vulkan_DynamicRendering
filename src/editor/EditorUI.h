@@ -30,6 +30,7 @@ struct ShadowSettings;
 struct TonemapConstants;
 struct EnvironmentSettings;
 struct SkyboxSettings;
+struct BloomSettings;
 class Node;
 class UndoHistory;
 
@@ -74,7 +75,8 @@ public:
     void bindTonemapSettings(TonemapConstants &settings) { m_tonemapSettings = &settings; }
     void bindEnvironmentSettings(EnvironmentSettings &settings) { m_environmentSettings = &settings; }
     void bindSkyboxSettings(SkyboxSettings &settings) { m_skyboxSettings = &settings; }
-
+    void bindBloomSettings(BloomSettings &settings) { m_bloomSettings = &settings; }
+    void setBloomMipCount(uint32_t count) { m_bloomMipCount = count; }
     // By Guid: the selection outlives frames, so it must not be a slot. A
     // selected node that dies simply stops resolving and the selection clears
     // itself on the next build().
@@ -267,6 +269,8 @@ private:
 
     EnvironmentSettings *m_environmentSettings = nullptr;
     SkyboxSettings      *m_skyboxSettings      = nullptr;
+    BloomSettings       *m_bloomSettings       = nullptr;
+    uint32_t             m_bloomMipCount       = 0;
 
     bool m_showShadowWindow      = false;
     bool m_showPostProcessWindow = false;

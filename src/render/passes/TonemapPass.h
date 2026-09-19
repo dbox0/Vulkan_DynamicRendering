@@ -20,7 +20,7 @@ struct TonemapConstants
 {
     float      exposure   = 1.0f;
     Tonemapper tonemapper = Tonemapper::ACES;
-    float      bloomStrength = .2f;
+    float      bloomStrength = .035f;
     int32_t    bloomDebugMip = -1;   // -1 = composite normally
 };
 

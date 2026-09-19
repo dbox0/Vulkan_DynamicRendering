@@ -99,6 +99,17 @@ namespace editor::ui
         return changed;
     }
 
+    bool sliderIntRow(const char *label, int &value, int min, int max, const char *format){
+        propertyLabel(label);
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::PushID(label);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        const bool changed = ImGui::SliderInt("##v", &value, min, max, format);
+        ImGui::PopID();
+        return changed;
+    }
+
     bool dragRow(const char *label, float &value, float speed,
                  float min, float max, const char *format, int flags)
     {

@@ -23,9 +23,9 @@ struct BloomConstants
 {
     float    srcTexelSize[2]{};    // 1 / actual source extent, not dst * 2
     uint32_t dstSize[2]{};
-    float    threshold    = 1.0f;
-    float    softKnee     = 0.5f;
-    float    filterRadius = 0.005f;
+    float    threshold    = 1.5f;
+    float    softKnee     = 0.3f;
+    float    filterRadius = 0.002f;
     uint32_t prefilter    = 0;     // 1 only for the HDR -> mip 0 dispatch
 };
 
