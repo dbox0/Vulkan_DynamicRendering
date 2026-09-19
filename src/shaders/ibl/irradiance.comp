@@ -40,7 +40,7 @@ void main() {
             vec3 tanSample = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
             vec3 dir = tanSample.x * T + tanSample.y * B + tanSample.z * N;
 
-            sum += texture(uSkybox, dir).rgb * cos(theta) * sin(theta);
+            sum += textureLod(uSkybox, dir, 0.0).rgb * cos(theta) * sin(theta);
             n += 1.0;
         }
     }

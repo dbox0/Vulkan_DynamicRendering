@@ -2,8 +2,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0) uniform samplerCube source;
-layout(set = 0, binding = 1, rgba16f) uniform writeonly imageCube uDest;
+layout(set = 0, binding = 0) uniform samplerCube uSource;
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2DArray uDest;
 
 layout(push_constant) uniform Push {
     float roughness;
@@ -29,7 +29,7 @@ vec3 faceDirection(uint face, vec2 uv) {
 
 
 // https://learnopengl.com/PBR/IBL/Specular-IBL
-vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
+vec3 importanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 {
     float a = roughness*roughness;
 
@@ -70,7 +70,7 @@ float radicalInverse(uint bits)
     return float(bits) * 2.3283064365386963e-10;
 }
 
-vec2 Hemmersley(uint i, uint n)
+vec2 hammersley(uint i, uint n)
 {
     return vec2(float(i) / float(n), radicalInverse(i));
 }
@@ -98,7 +98,7 @@ void main(){
 
     for (uint i = 0u; i < pc.sampleCount; ++i) {
         vec2 Xi = hammersley(i, pc.sampleCount);
-        vec3 H  = importanceSampleGGX(Xi, N, alpha);
+        vec3 H  = importanceSampleGGX(Xi, N, pc.roughness);
         vec3 L  = normalize(2.0 * dot(V, H) * H - V);
 
         float NdotL = dot(N, L);
@@ -120,5 +120,5 @@ void main(){
     }
 
     color /= max(weight, 1e-4);
-    imageStore(uDest, ivec3(ivec2(coord), int(face)), vec4(color, 1.0));
+    imageStore(uDest, ivec3(ivec2(coord), int(gl_GlobalInvocationID.z)), vec4(color, 1.0));
 }

@@ -5,6 +5,7 @@
 #include <vk_mem_alloc.h>
 #include <array>
 #include <cstring>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -179,15 +180,17 @@ uint32_t ResourceStore::loadEnvironment(const std::filesystem::path &path)
         return 0;
     }
 
-    const size_t componentCount = static_cast<size_t>(width) * height * 4;
-    std::vector<uint16_t> halfPixels(componentCount);
+    // addImage copies into staging, so the stb buffer is ours to release as
+    // soon as it returns
+    const std::unique_ptr<float, decltype(&stbi_image_free)>
+        owned(pixels, &stbi_image_free);
 
     VkCommandBuffer cmd = m_ctx.beginUpload();
     if (!cmd) {
         return 0;
     }
 
-    // 16F is exactly the format most likely to come back without
+    // 16F is the format most likely to come back without
     // SAMPLED_IMAGE_FILTER_LINEAR, in which case this lands as a single
     // level and environmentMaxLod() follows it down.
     const uint32_t imageId = addImage(cmd, pixels,
@@ -602,7 +605,7 @@ bool ResourceStore::createDescriptorSets()
         },
         VkDescriptorSetLayoutBinding
         {
-            .binding = 0,
+            .binding = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = MaxCubes,
             .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT

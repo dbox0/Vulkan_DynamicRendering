@@ -160,8 +160,8 @@ add_executable(vulkanapp
         src/render/passes/TonemapPass.cpp
         src/render/passes/TonemapPass.h
         src/Math/Plane.h
-        src/render/ibl/EnvironmentMap.h
         src/render/ibl/EnvironmentMap.cpp
+        src/render/ibl/EnvironmentMap.h
         src/render/ibl/HdrLoader.cpp
         src/render/ibl/HdrLoader.h
         src/render/passes/SkyboxPass.cpp

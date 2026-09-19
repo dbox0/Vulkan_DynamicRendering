@@ -40,12 +40,13 @@ layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
     float sunIntensity;
     vec3  sunColor;
     float ambientIntensity;
-    vec3  skyColor;
-    vec3  groundColor;
-    uint  envTex;        // 0 = no environment, fall back to the hemisphere
-    float envIntensity;
-    float envMaxLod;     // mipLevels - 1 of the environment image
-    float shadowTexelSize;
+    vec3  skyColor;      // offset 176
+    vec3  groundColor;   // offset 188
+    uint  envIrradianceTex;  // offset 200. 1-based cube slot, 0 = none
+    uint  envPrefilterTex;   // offset 204. 1-based cube slot, 0 = none
+    float envIntensity;      // offset 208
+    float envMaxLod;         // offset 212. skybox mipLevels - 1
+    float shadowTexelSize;   // offset 216
     float shadowNormalBias;
     float shadowDepthBias;
     uint  shadowEnabled;
@@ -85,13 +86,17 @@ vec4 sampleTex(uint slot, vec2 uv)
     return texture(textures[nonuniformEXT(slot)], uv);
 }
 
-vec3 sampleEnv(uint slot, vec3 dir, float lod)
+// Cube slots arrive 1-based from ResourceStore::addCubeTexture
+// 0 "no environment"
+// the descriptor array is 0-based.
+vec3 sampleIrradiance(uint slot, vec3 N)
 {
-    vec2 uv = vec2(atan(dir.z, dir.x), asin(clamp(dir.y, -1.0, 1.0)));
-    uv *= vec2(0.1591, 0.3183);   // 1/(2pi), 1/pi
-    uv += 0.5;
-    uv.y = 1.0 - uv.y;
-    return textureLod(textures[nonuniformEXT(slot)], uv, lod).rgb;
+    return texture(cubes[nonuniformEXT(slot - 1u)], N).rgb;
+}
+
+vec3 samplePrefiltered(uint slot, vec3 R, float lod)
+{
+    return textureLod(cubes[nonuniformEXT(slot - 1u)], R, lod).rgb;
 }
 
 // ---- BRDF (glTF 2.0 spec, Appendix B) -------------------------------------
@@ -287,11 +292,10 @@ void main()
     vec3 irradiance;
     vec3 radiance;
 
-    if (frame.envTex != 0u) {
-        float lod = sqrt(roughness) * frame.envMaxLod;
-        float diffuseLod = max(frame.envMaxLod - 2.0, 0.0);
-        irradiance = sampleEnv(frame.envTex, N, diffuseLod) * frame.envIntensity;
-        radiance   = sampleEnv(frame.envTex, R, lod)             * frame.envIntensity;
+    if (frame.envIrradianceTex != 0u && frame.envPrefilterTex != 0u) {
+        float lod = roughness * frame.envMaxLod;
+        irradiance = sampleIrradiance(frame.envIrradianceTex, N) * frame.envIntensity;
+        radiance   = samplePrefiltered(frame.envPrefilterTex, R, lod) * frame.envIntensity;
     } else {
         irradiance = mix(frame.groundColor, frame.skyColor, N.y * 0.5 + 0.5);
         radiance   = mix(frame.groundColor, frame.skyColor, R.y * 0.5 + 0.5);

@@ -103,12 +103,14 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
             .cubeSize = 1024, .irradianceSize = 32, .generateMips = true,
         };
 
+        m_ctx.uploader().wait(m_ctx.uploader().lastSubmitted());
+
         if (m_env.load(bake, m_resources.imageView(tex.imageId),
                        m_resources.sampler(tex.samplerId), settings))
         {
             m_envIrradianceSlot = m_resources.addCubeTexture(m_env.irradianceView(), m_env.sampler());
             m_envPrefilterSlot  = m_resources.addCubeTexture(m_env.skyboxView(),     m_env.sampler());
-            m_envMaxLod = float(m_env.skyboxMips() - 1);
+            m_envMaxLod = std::min(static_cast<float>(m_env.skyboxMips() - 1),6.0f);
         }
     }
 
@@ -171,6 +173,8 @@ void Renderer::shutdown()
         m_timelineSemaphore = nullptr;
     }
 
+
+    m_env.destroy();
     m_scenePass.destroy();
     m_tonemapPass.destroy();
     m_outlinePass.destroy();

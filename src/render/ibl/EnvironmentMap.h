@@ -72,6 +72,11 @@ private:
     bool createCubemap(Cubemap& out, uint32_t size, uint32_t mips);
     bool createSampler();
     bool createPipelines();
+    bool createPipeline(const char* file,
+                        VkDescriptorSetLayout setLayout,
+                        uint32_t pushConstantSize,
+                        VkPipelineLayout& outLayout,
+                        VkPipeline& outPipeline);
 
     void recordEquirectToCube(VkCommandBuffer cmd, VkImageView src, VkSampler srcSampler);
     void recordIrradiance(VkCommandBuffer cmd);
