@@ -467,6 +467,20 @@ uint32_t ResourceStore::addCubeTexture(VkImageView cubeView,VkSampler sampler) {
     return slot + 1;   // 1-based
 }
 
+void ResourceStore::setBrdfLut(VkImageView view, VkSampler sampler)
+{
+    m_brdfLut = { sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+    const VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_globalDescSet,
+        .dstBinding = 2,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &m_brdfLut,
+    };
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &write, 0, nullptr);
+}
 
 // ============================================================================
 // bindless descriptors
@@ -564,9 +578,11 @@ bool ResourceStore::replaceTextureDescriptor(uint32_t textureId)
     return true;
 }
 
+
+
 bool ResourceStore::createDescriptorSets()
 {
-    std::array<VkDescriptorPoolSize, 2> poolSizes
+    std::array<VkDescriptorPoolSize, 3> poolSizes
     {
         VkDescriptorPoolSize
         {
@@ -576,6 +592,10 @@ bool ResourceStore::createDescriptorSets()
         VkDescriptorPoolSize{
             .type =VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = MaxCubes
+        },
+        VkDescriptorPoolSize{
+            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = MaxCubes + 1   // +1: the BRDF LUT at binding 2
         }
     };
 
@@ -594,7 +614,7 @@ bool ResourceStore::createDescriptorSets()
         return false;
     }
 
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings
     {
         VkDescriptorSetLayoutBinding
         {
@@ -609,11 +629,19 @@ bool ResourceStore::createDescriptorSets()
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = MaxCubes,
             .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+        },
+        VkDescriptorSetLayoutBinding
+        {
+            .binding = 2,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
         }
     };
 
-    std::array<VkDescriptorBindingFlags, 2> flags
+    std::array<VkDescriptorBindingFlags, 3> flags
     {
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
     };

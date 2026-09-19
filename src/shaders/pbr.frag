@@ -64,6 +64,7 @@ layout(push_constant, scalar) uniform FrameConstants
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];
 layout(set = 0, binding = 1) uniform samplerCube cubes[];
+layout(set = 0, binding = 2) uniform sampler2D brdfLut;
 
 // Comparison sampler: every tap is a depth test, and LINEAR filters the
 // results, so one lookup is already a 2x2 PCF.
@@ -97,6 +98,27 @@ vec3 sampleIrradiance(uint slot, vec3 N)
 vec3 samplePrefiltered(uint slot, vec3 R, float lod)
 {
     return textureLod(cubes[nonuniformEXT(slot - 1u)], R, lod).rgb;
+}
+
+
+vec3 envBRDF(vec3 f0, float roughness, float NdotV)
+{
+    vec2 ab = texture(brdfLut, vec2(NdotV, roughness)).rg;
+    return f0 * ab.x + ab.y;
+}
+
+// Lagarde, "Moving Frostbite to PBR".
+
+float specularOcclusion(float NdotV, float ao, float roughness)
+{
+    return clamp(pow(NdotV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao, 0.0, 1.0);
+}
+
+// Reflections that point below the geometric surface can't be real.
+float horizonOcclusion(vec3 R, vec3 Ng)
+{
+    float horizon = min(1.0 + dot(R, Ng), 1.0);
+    return horizon * horizon;
 }
 
 // ---- BRDF (glTF 2.0 spec, Appendix B) -------------------------------------
@@ -241,6 +263,8 @@ void main()
         flip = -1;
     }
 
+    vec3 Ng = N;
+
     if ((mat.flags & MAT_NORMAL_MAP) != 0u) {
         vec3 T, B;
         if (inTangent.w != 0.0) {
@@ -291,20 +315,25 @@ void main()
     vec3 R = reflect(-V, N);
     vec3 irradiance;
     vec3 radiance;
+    vec3 envSpec;
 
     if (frame.envIrradianceTex != 0u && frame.envPrefilterTex != 0u) {
         float lod = roughness * frame.envMaxLod;
         irradiance = sampleIrradiance(frame.envIrradianceTex, N) * frame.envIntensity;
         radiance   = samplePrefiltered(frame.envPrefilterTex, R, lod) * frame.envIntensity;
+        envSpec    = envBRDF(F0, roughness, NdotV);
     } else {
         irradiance = mix(frame.groundColor, frame.skyColor, N.y * 0.5 + 0.5);
         radiance   = mix(frame.groundColor, frame.skyColor, R.y * 0.5 + 0.5);
         radiance   = mix(radiance, irradiance, roughness);
+        envSpec    = EnvBRDFApprox(F0, roughness, NdotV);
     }
 
-    vec3 ambientDif = irradiance * cDiff;
-    vec3 ambientSpc = radiance * EnvBRDFApprox(F0, roughness, NdotV);
-    vec3 ambient    = (ambientDif + ambientSpc) * ao * frame.ambientIntensity;
+    float so = specularOcclusion(NdotV, ao, roughness) * horizonOcclusion(R, Ng);
+
+    vec3 ambientDif = irradiance * cDiff * ao;
+    vec3 ambientSpc = radiance * envSpec * so;
+    vec3 ambient    = (ambientDif + ambientSpc) * frame.ambientIntensity;
 
     vec3 hdr = direct + ambient + emissive;
 

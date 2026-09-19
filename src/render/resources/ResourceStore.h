@@ -164,6 +164,9 @@ public:
 
 
     uint32_t addCubeTexture(VkImageView cubeView, VkSampler sampler);
+
+    void setBrdfLut(VkImageView view, VkSampler sampler);
+
     int32_t irradianceTextureId() const { return m_irradianceCubeId; }
     uint32_t prefilterTextureId()  const { return m_prefilterCubeId;  }
 
@@ -259,6 +262,7 @@ private:
     std::vector<VkDescriptorImageInfo> m_cubes;   // not owned
     uint32_t m_irradianceCubeId = 0;
     uint32_t m_prefilterCubeId  = 0;
+    VkDescriptorImageInfo m_brdfLut{};
 
     // How many descriptor slots have actually been written. Everything below
     // this index is potentially in use by an in-flight frame!
@@ -267,7 +271,10 @@ private:
     GPUBuffer m_materialBuffer;
     GpuMaterial *m_materialPtr = nullptr;   // persistent map
 
+
+
     VkDescriptorPool      m_descriptorPool = nullptr;
     VkDescriptorSetLayout m_globalLayout   = nullptr;
     VkDescriptorSet       m_globalDescSet  = nullptr;
+
 };

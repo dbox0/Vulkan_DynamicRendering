@@ -122,6 +122,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
             m_envIrradianceSlot = m_resources.addCubeTexture(m_env.irradianceView(), m_env.sampler());
             m_envPrefilterSlot  = m_resources.addCubeTexture(m_env.skyboxView(),     m_env.sampler());
             m_envMaxLod = std::min(static_cast<float>(m_env.skyboxMips() - 1),6.0f);
+            m_resources.setBrdfLut(m_env.brdfLutView(), m_env.sampler());
         }
     }
 

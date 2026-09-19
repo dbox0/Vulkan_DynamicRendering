@@ -35,6 +35,7 @@ bool EnvironmentMap::load(const BakeContext& ctx,
     if (!createSampler())                                         return fail();
     if (!createCubemap(m_skybox, settings.cubeSize, skyMips))     return fail();
     if (!createCubemap(m_irradiance, settings.irradianceSize, 1)) return fail();
+    if (!createBrdfLut(settings.brdfLutSize)) return fail();
     if (!createPipelines())                                       return fail();
 
     VkCommandBuffer cmd = m_ctx.uploader->begin();
@@ -46,6 +47,7 @@ bool EnvironmentMap::load(const BakeContext& ctx,
     recordEquirectToCube(cmd, equirectView, equirectSampler);
     recordIrradiance(cmd);
     recordPrefilter(cmd);
+    recordBrdfLut(cmd);
 
     const Uploader::Ticket ticket = m_ctx.uploader->submit();
     if (!ticket) {
@@ -214,15 +216,102 @@ bool EnvironmentMap::createSampler() {
     return true;
 }
 
+bool EnvironmentMap::createBrdfLut(uint32_t size)
+{
+    m_brdfSize = size;
+
+    const VkImageCreateInfo imgInfo{
+        .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType     = VK_IMAGE_TYPE_2D,
+        .format        = VK_FORMAT_R16G16_SFLOAT,
+        .extent        = { size, size, 1 },
+        .mipLevels     = 1,
+        .arrayLayers   = 1,
+        .samples       = VK_SAMPLE_COUNT_1_BIT,
+        .tiling        = VK_IMAGE_TILING_OPTIMAL,
+        .usage         = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    const VmaAllocationCreateInfo alloc{ .usage = VMA_MEMORY_USAGE_AUTO };
+    if (vmaCreateImage(m_ctx.allocator, &imgInfo, &alloc,
+                       &m_brdfImage, &m_brdfAllocation, nullptr) != VK_SUCCESS) {
+        showError("Could not create the BRDF LUT image");
+        return false;
+    }
+
+    const VkImageViewCreateInfo viewInfo{
+        .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image            = m_brdfImage,
+        .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+        .format           = VK_FORMAT_R16G16_SFLOAT,
+        .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+    };
+    if (vkCreateImageView(m_ctx.device, &viewInfo, nullptr, &m_brdfView) != VK_SUCCESS) {
+        showError("Could not create the BRDF LUT view");
+        return false;
+    }
+    return true;
+}
+
+void EnvironmentMap::recordBrdfLut(VkCommandBuffer cmd)
+{
+    const VkImageSubresourceRange all{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+    vkutil::imageBarrier(cmd, {
+        .image     = m_brdfImage,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcStage  = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+        .dstStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        .dstAccess = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        .range     = all,
+    });
+
+    const VkDescriptorSet set = allocateSet(m_brdfSetLayout);
+    if (!set) return;
+
+    const VkDescriptorImageInfo dstInfo{ VK_NULL_HANDLE, m_brdfView, VK_IMAGE_LAYOUT_GENERAL };
+    const VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0,
+        .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        .pImageInfo = &dstInfo,
+    };
+    vkUpdateDescriptorSets(m_ctx.device, 1, &write, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_brdfPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_brdfPipeLayout,
+                            0, 1, &set, 0, nullptr);
+
+    const BrdfLutPush push{ .size = m_brdfSize, .sampleCount = 1024 };
+    vkCmdPushConstants(cmd, m_brdfPipeLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                       0, sizeof(push), &push);
+
+    const uint32_t groups = (m_brdfSize + 7) / 8;
+    vkCmdDispatch(cmd, groups, groups, 1);
+
+    vkutil::imageBarrier(cmd, {
+        .image     = m_brdfImage,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        .srcAccess = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+        .dstStage  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+        .range     = all,
+    });
+}
+
 bool EnvironmentMap::createPipelines() {
+
     // equirect (1) + irradiance (1) + one set per prefiltered mip.
     const uint32_t prefilterSets = m_skybox.mips > 1 ? m_skybox.mips - 1 : 0;
-    const uint32_t setCount      = 2 + prefilterSets;
+    const uint32_t setCount      = 3 + prefilterSets;
 
     const VkDescriptorPoolSize sizes[]{
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount },
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          setCount },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount - 1 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          setCount     },
     };
+
     const VkDescriptorPoolCreateInfo poolInfo{
         .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets       = setCount,
@@ -261,6 +350,24 @@ bool EnvironmentMap::createPipelines() {
                         m_prefilterPipeLayout, m_prefilterPipeline))
         return false;
 
+    const VkDescriptorSetLayoutBinding brdfBinding{
+        0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr
+    };
+    const VkDescriptorSetLayoutCreateInfo brdfLayoutInfo{
+        .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings    = &brdfBinding,
+    };
+    if (vkCreateDescriptorSetLayout(m_ctx.device, &brdfLayoutInfo, nullptr, &m_brdfSetLayout) != VK_SUCCESS) {
+        showError("Could not create the BRDF LUT descriptor set layout");
+        return false;
+    }
+    if (!createPipeline("ibl/brdf_lut.comp", m_brdfSetLayout, sizeof(BrdfLutPush),
+                        m_brdfPipeLayout, m_brdfPipeline)) {
+        return false;
+        return false;
+        showError("Could not create an BRDF pipeline with brdf_lut.comp shader");
+    }
     return true;
 }
 
@@ -504,5 +611,10 @@ EnvironmentMap& EnvironmentMap::operator=(EnvironmentMap&& other) noexcept {
     m_prefilterPipeLayout = std::exchange(other.m_prefilterPipeLayout, VK_NULL_HANDLE);
     m_prefilterPipeline   = std::exchange(other.m_prefilterPipeline, VK_NULL_HANDLE);
     m_skyboxMip0View      = std::exchange(other.m_skyboxMip0View, VK_NULL_HANDLE);
+
+    m_brdfSetLayout       = std::exchange(other.m_brdfSetLayout, VK_NULL_HANDLE);
+    m_brdfAllocation      = std::exchange(other.m_brdfAllocation, VK_NULL_HANDLE);
+    m_brdfPipeline        = std::exchange(other.m_brdfPipeline, VK_NULL_HANDLE);
+
     return *this;
 }

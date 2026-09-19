@@ -35,6 +35,7 @@ struct EnvironmentSettings {
     uint32_t cubeSize       = 1024;
     uint32_t irradianceSize = 32;
     bool     generateMips   = false;
+    uint32_t brdfLutSize = 512;
 };
 
 struct PrefilterPush {
@@ -42,6 +43,11 @@ struct PrefilterPush {
     uint32_t mipSize;
     uint32_t sampleCount;
     float    sourceSize;
+};
+
+struct BrdfLutPush {
+    uint32_t size;
+    uint32_t sampleCount;
 };
 
 class EnvironmentMap {
@@ -64,6 +70,7 @@ public:
     VkImageView skyboxView()     const { return m_skybox.cubeView; }
     VkImageView irradianceView() const { return m_irradiance.cubeView; }
     VkImageView prefilterView()  const { return m_skybox.cubeView; }
+    VkImageView brdfLutView()    const { return m_brdfView; }
     VkSampler   sampler()        const { return m_sampler; }
     uint32_t    skyboxMips()     const { return m_skybox.mips; }
     bool        ready()          const { return m_skybox.valid(); }
@@ -82,6 +89,9 @@ private:
     void recordIrradiance(VkCommandBuffer cmd);
     void recordPrefilter(VkCommandBuffer cmd);
 
+    bool createBrdfLut(uint32_t size);
+    void recordBrdfLut(VkCommandBuffer cmd);
+
     void destroyBakeOnly();
 
     VkDescriptorSet allocateSet(VkDescriptorSetLayout layout);
@@ -94,6 +104,7 @@ private:
     Cubemap   m_irradiance{};
     VkSampler m_sampler = VK_NULL_HANDLE;
 
+    //Equirect, Irradiance
     VkDescriptorPool       m_descriptorPool     = VK_NULL_HANDLE;
     VkDescriptorSetLayout  m_equirectSetLayout  = VK_NULL_HANDLE;
     VkDescriptorSetLayout  m_convolveSetLayout  = VK_NULL_HANDLE;
@@ -102,11 +113,21 @@ private:
     VkPipeline             m_equirectPipeline   = VK_NULL_HANDLE;
     VkPipeline             m_irradiancePipeline = VK_NULL_HANDLE;
 
-
+    //Prefilter , Skybox
     VkDescriptorSetLayout m_prefilterSetLayout  = VK_NULL_HANDLE;
     VkPipelineLayout      m_prefilterPipeLayout = VK_NULL_HANDLE;
     VkPipeline            m_prefilterPipeline   = VK_NULL_HANDLE;
     VkImageView           m_skyboxMip0View      = VK_NULL_HANDLE;  // cube view, mip 0 only
+
+    //BRDF
+    VkImage               m_brdfImage      = VK_NULL_HANDLE;
+    VmaAllocation         m_brdfAllocation = VK_NULL_HANDLE;
+    VkImageView           m_brdfView       = VK_NULL_HANDLE;
+    uint32_t              m_brdfSize       = 0;
+
+    VkDescriptorSetLayout m_brdfSetLayout  = VK_NULL_HANDLE;
+    VkPipelineLayout      m_brdfPipeLayout = VK_NULL_HANDLE;
+    VkPipeline            m_brdfPipeline   = VK_NULL_HANDLE;
 };
 
 }
