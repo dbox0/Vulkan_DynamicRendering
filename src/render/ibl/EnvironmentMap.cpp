@@ -173,7 +173,7 @@ void EnvironmentMap::recordPrefilter(VkCommandBuffer cmd)
         const PrefilterPush push{
             .roughness   = float(mip) / float(m_skybox.mips - 1),
             .mipSize     = mipSize,
-            .sampleCount = 128,
+            .sampleCount = 1028,
             .sourceSize  = float(m_skybox.size),
         };
         vkCmdPushConstants(cmd, m_prefilterPipeLayout, VK_SHADER_STAGE_COMPUTE_BIT,
