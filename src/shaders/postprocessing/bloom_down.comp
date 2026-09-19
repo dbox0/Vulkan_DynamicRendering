@@ -37,6 +37,9 @@ vec3 softThreshold(vec3 c)
 void main()
 {
     const ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(coord, ivec2(pc.dstSize)))) {
+        return;
+    }
 
     const vec2 uv = (vec2(coord) + 0.5) / vec2(pc.dstSize);
 

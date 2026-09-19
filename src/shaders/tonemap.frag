@@ -9,9 +9,12 @@ layout(push_constant) uniform TonemapConstants
 {
     float exposure;
     uint  tonemapper;
+    float bloomStrength;
+    int bloomDebugMip;
 } pc;
 
 layout(set = 0, binding = 0) uniform sampler2D hdrTexture;
+layout(set = 0, binding = 1) uniform sampler2D bloomTexture;
 
 layout(location = 0) in  vec2 inUV;
 layout(location = 0) out vec4 fragColor;
@@ -38,7 +41,12 @@ vec3 acesNarkowicz(vec3 color)
 }
 void main()
 {
-    vec3 hdr = texture(hdrTexture, inUV).rgb * pc.exposure;
+    vec3 bloom = textureLod(bloomTexture, inUV, 0.0).rgb;
+    if (pc.bloomDebugMip >= 0) {
+        fragColor = vec4(textureLod(bloomTexture, inUV, float(pc.bloomDebugMip)).rgb, 1.0);
+        return;
+    }
+    vec3 hdr = (texture(hdrTexture, inUV).rgb + bloom * pc.bloomStrength) * pc.exposure;
 
     vec3 color;
     switch (pc.tonemapper) {
