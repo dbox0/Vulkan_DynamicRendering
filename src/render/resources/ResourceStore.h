@@ -56,6 +56,9 @@ public:
     ResourceStore(const ResourceStore &) = delete;
     ResourceStore &operator=(const ResourceStore &) = delete;
 
+
+    static constexpr uint32_t MaxCubes = 8; // Cubemaps
+
     // Bookkeeping the editor needs to preview a texture. Parallel to m_images.
     struct ImageInfo
     {
@@ -76,7 +79,8 @@ public:
     // Where a material came from and whether it has been edited since. Kept
     // parallel to m_materials rather than folded into Material, because
     // Material is the authoring payload toGpu() packs and saveMaterial()
-    // writes -- where it came from is a different concern, and keeping it out
+    // writes.
+    // where it came from is a different concern, and keeping it out
     // means a Material value stays cheap to copy (the inspector edits one).
     struct MaterialInfo
     {
@@ -112,6 +116,9 @@ public:
     uint32_t errorImageId()      const { return m_errorImageId; }
     uint32_t defaultSamplerId()  const { return m_defaultSamplerId; }
     uint32_t defaultMaterialId() const { return m_defaultMaterialId; }
+
+
+
 
     const GPUBuffer &buffer(uint32_t bufferId) const { return m_buffers[bufferId - 1]; }
 
@@ -155,6 +162,11 @@ public:
     }
     size_t materialCount() const { return m_materials.size(); }
 
+
+    uint32_t addCubeTexture(VkImageView cubeView, VkSampler sampler);
+    int32_t irradianceTextureId() const { return m_irradianceCubeId; }
+    uint32_t prefilterTextureId()  const { return m_prefilterCubeId;  }
+
     const MaterialInfo &materialInfo(uint32_t materialId) const
     {
         return m_materialInfos[materialId - 1];
@@ -187,8 +199,6 @@ public:
     // --- environment -------------------------------------------------
 
     uint32_t loadEnvironment(const std::filesystem::__cxx11::path &path);
-
-    uint32_t environmentTextureId() const { return m_envTextureId; }
     uint32_t imageMipLevels(uint32_t imageId) const { return m_imageInfos[imageId - 1].mipLevels; }
 
 
@@ -244,6 +254,11 @@ private:
     uint32_t m_defaultMaterialId = 0;
     uint32_t m_envTextureId = 0;
     uint32_t m_envSamplerId = 0;
+
+    // Cubemaps
+    std::vector<VkDescriptorImageInfo> m_cubes;   // not owned
+    uint32_t m_irradianceCubeId = 0;
+    uint32_t m_prefilterCubeId  = 0;
 
     // How many descriptor slots have actually been written. Everything below
     // this index is potentially in use by an in-flight frame!

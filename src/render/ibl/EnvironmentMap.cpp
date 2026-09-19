@@ -108,6 +108,37 @@ bool EnvironmentMap::createCubemap(Cubemap& out, uint32_t size, uint32_t mips) {
     return true;
 }
 
+void EnvironmentMap::recordPrefilter(VkCommandBuffer cmd)
+{
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_prefilterPipeline);
+
+    for (uint32_t mip = 1; mip < m_skybox.mips; ++mip) {
+        const uint32_t mipSize = std::max(1u, m_skybox.size >> mip);
+
+        const VkDescriptorSet set = allocateSet(m_prefilterSetLayout);
+        if (!set) return;
+        // binding 0: { m_sampler, m_skyboxMip0View, SHADER_READ_ONLY_OPTIMAL }
+        // binding 1: { VK_NULL_HANDLE, m_skybox.mipStorageViews[mip], GENERAL }
+
+        const PrefilterPush push{
+            .roughness   = float(mip) / float(m_skybox.mips - 1),
+            .mipSize     = mipSize,
+            .sampleCount = 128,
+            .sourceSize  = float(m_skybox.size),
+        };
+        vkCmdPushConstants(cmd, m_prefilterPipeLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                           0, sizeof(push), &push);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                m_prefilterPipeLayout, 0, 1, &set, 0, nullptr);
+
+        const uint32_t groups = (mipSize + 7) / 8;
+        vkCmdDispatch(cmd, groups, groups, 6);
+    }
+
+    // mips 1..n-1 -> SHADER_READ_ONLY_OPTIMAL
+}
+
 bool EnvironmentMap::createSampler() {
     const VkSamplerCreateInfo cube{
         .sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,

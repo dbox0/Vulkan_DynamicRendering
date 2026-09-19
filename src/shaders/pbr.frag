@@ -62,6 +62,7 @@ layout(push_constant, scalar) uniform FrameConstants
 // ---------------------------------------------------------------------------
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];
+layout(set = 0, binding = 1) uniform samplerCube cubes[];
 
 // Comparison sampler: every tap is a depth test, and LINEAR filters the
 // results, so one lookup is already a 2x2 PCF.

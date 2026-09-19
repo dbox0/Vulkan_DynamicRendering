@@ -17,6 +17,7 @@
 #include "passes/TonemapPass.h"
 #include "shaders/ShaderProgram.h"
 #include "shaders/ShaderWatcher.h"
+#include "ibl/EnvironmentMap.h"
 
 class VulkanContext;
 class Swapchain;
@@ -157,8 +158,13 @@ private:
     uint64_t m_nextSignalValue  = MaxFramesInFlight + 1;
     uint32_t m_maxDraws         = 0;
 
-    uint32_t m_envSlot   = 0;
-    float    m_envMaxLod = 0.0f;
+    render::EnvironmentMap m_env;
+    uint32_t m_envIrradianceSlot = 0;   // 1-based cube ID, 0 = none
+    uint32_t m_envPrefilterSlot  = 0;
+    float    m_envMaxLod         = 0.0f;
+
+    
+
 
     // Reused across frames so traversal doesn't allocate per frame.
     const std::vector<DrawItem> *m_drawItems = nullptr;

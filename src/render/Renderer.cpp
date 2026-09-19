@@ -92,10 +92,24 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     // Optional: no file, or a broken one, just leaves m_envSlot at 0 and the
     // shader falls back to the hemisphere ambient. Not worth failing init over.
     if (const uint32_t envTextureId = m_resources.loadEnvironment(ASSET_DIR "env/env_test.hdr")) {
-        const uint32_t envImageId = m_resources.texture(envTextureId).imageId;
-        m_envSlot   = envTextureId - 1;
-        m_envMaxLod = static_cast<float>(m_resources.imageMipLevels(envImageId) - 1);
-        std::cout << "Environment map loaded into descriptor slot " << m_envSlot << std::endl;
+        const auto& tex = m_resources.texture(envTextureId);
+
+        const render::BakeContext bake{
+            .device    = m_ctx.device(),
+            .allocator = m_ctx.allocator(),
+            .uploader  = &m_ctx.uploader(),
+        };
+        const render::EnvironmentSettings settings{
+            .cubeSize = 1024, .irradianceSize = 32, .generateMips = true,
+        };
+
+        if (m_env.load(bake, m_resources.imageView(tex.imageId),
+                       m_resources.sampler(tex.samplerId), settings))
+        {
+            m_envIrradianceSlot = m_resources.addCubeTexture(m_env.irradianceView(), m_env.sampler());
+            m_envPrefilterSlot  = m_resources.addCubeTexture(m_env.skyboxView(),     m_env.sampler());
+            m_envMaxLod = float(m_env.skyboxMips() - 1);
+        }
     }
 
     // The swapchain (and therefore the mask image) already exists by the time
@@ -767,10 +781,10 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .sunIntensity   = sunIntensity,
         .sunColor       = sunColor,
         .ambientIntensity = m_environment.ambientIntensity,
-        .envTex       = m_resources.environmentTextureId()
-                            ? m_resources.environmentTextureId() - 1 : 0,
-        .envIntensity = m_environment.envIntensity,
-        .envMaxLod    = m_envMaxLod,
+        .envIrradianceTex = m_envIrradianceSlot,
+        .envPrefilterTex  = m_envPrefilterSlot,
+        .envIntensity     = m_environment.envIntensity,
+        .envMaxLod        = m_envMaxLod,
         .shadowTexelSize  = 1.0f / static_cast<float>(m_shadowPass.map().resolution()),
         .shadowNormalBias = shadow.worldTexelSize * m_shadow.normalBias,
         .shadowDepthBias  = m_shadow.depthBias,

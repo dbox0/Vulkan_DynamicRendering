@@ -51,7 +51,6 @@ add_executable(vulkanapp
         src/main.cpp
         src/application.h
         src/application.cpp
-        src/utils.h
         src/external/tinygltf.cpp
         src/Math/Transform.h
         src/common/constants.h

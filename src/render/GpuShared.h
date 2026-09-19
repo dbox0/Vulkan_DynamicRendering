@@ -109,9 +109,10 @@ struct FrameData
     glm::vec3 skyColor{ 0.15f, 0.18f, 0.25f };
     glm::vec3 groundColor{ 0.05f, 0.03f, 0.02f };
 
-    uint  envTex;        // 0 = no environment, fall back to the hemisphere
+    uint  envIrradianceTex;  // 0 = none, fall back to hemisphere
+    uint  envPrefilterTex;
     float envIntensity;
-    float envMaxLod;     // mipLevels - 1 of the environment image
+    float envMaxLod;
 
     float shadowTexelSize  = 0.0f;   // 1 / resolution, for PCF tap offsets
     float shadowNormalBias = 0.0f;   // world units, already scaled by texel size
