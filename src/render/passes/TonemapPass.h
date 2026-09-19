@@ -20,6 +20,8 @@ struct TonemapConstants
 {
     float      exposure   = 1.0f;
     Tonemapper tonemapper = Tonemapper::ACES;
+    float      bloomStrength = 0.04f;
+    int32_t    bloomDebugMip = -1;   // -1 = composite normally
 };
 
 // HDR scene colour -> display.
@@ -48,6 +50,7 @@ public:
     // The HDR view changes identity on every swapchain recreate, so the
     // descriptor has to be rewritten with it.
     void setSourceView(VkImageView hdrView);
+    void setBloomView(VkImageView bloomChainView);   // full chain, levels 0..N
 
     // Moves the HDR image COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL.
     // Call after the scene scope ends, before the swapchain scope begins.
@@ -70,6 +73,7 @@ private:
     VkDescriptorPool      m_pool           = nullptr;
     VkDescriptorSet       m_set            = nullptr;
     VkSampler             m_sampler        = nullptr;
+    VkSampler             m_bloomSampler   = nullptr;
 
     TonemapConstants m_settings{};
 };

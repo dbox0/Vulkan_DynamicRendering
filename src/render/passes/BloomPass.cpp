@@ -106,8 +106,8 @@ bool BloomPass::createPipelines() {
         }
         return true;
     };
-    return build("bloom_down.comp", m_downShader, m_downPipeline)
-      && build("bloom_up.comp",   m_upShader,   m_upPipeline);
+    return build("postprocessing/bloom_down.comp", m_downShader, m_downPipeline)
+      && build("postprocessing/bloom_up.comp",   m_upShader,   m_upPipeline);
 }
 void BloomPass::appendShaderPrograms(std::vector<ShaderProgram> &)
 {
@@ -260,12 +260,14 @@ bool BloomPass::createTargets(uint32_t width, uint32_t height)
     // Downsample: level i reads level i-1. Level 0's source is the HDR target,
     // which setSourceView fills in (not known here)
     for (uint32_t mip = 1; mip < m_mipCount; ++mip) {
-        writeSet(m_downSets[mip], m_sampleViews[mip - 1], m_storageViews[mip]);
+        writeSet(m_downSets[mip], m_sampleViews[mip - 1], VK_IMAGE_LAYOUT_GENERAL,
+         m_storageViews[mip]);
     }
 
     // Upsample: level i reads level i+1 and adds into itself.
     for (uint32_t mip = 0; mip + 1 < m_mipCount; ++mip) {
-        writeSet(m_upSets[mip], m_sampleViews[mip + 1], m_storageViews[mip]);
+        writeSet(m_upSets[mip], m_sampleViews[mip + 1], VK_IMAGE_LAYOUT_GENERAL,
+         m_storageViews[mip]);
     }
     return true;
 }
@@ -301,13 +303,15 @@ void BloomPass::destroyTargets()
 void BloomPass::setSourceView(VkImageView hdrView)
 {
     m_hdrView = hdrView;
-    writeSet(m_downSets[0], hdrView, m_storageViews[0]);
+    writeSet(m_downSets[0], hdrView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+         m_storageViews[0]);
 }
 
 
-void BloomPass::writeSet(VkDescriptorSet set, VkImageView srcView, VkImageView dstView) const
+void BloomPass::writeSet(VkDescriptorSet set, VkImageView srcView,
+              VkImageLayout srcLayout, VkImageView dstView) const
 {
-    const VkDescriptorImageInfo srcInfo{ m_sampler, srcView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    const VkDescriptorImageInfo srcInfo{ m_sampler, srcView, srcLayout };
     const VkDescriptorImageInfo dstInfo{ VK_NULL_HANDLE, dstView, VK_IMAGE_LAYOUT_GENERAL };
 
     const VkWriteDescriptorSet writes[]

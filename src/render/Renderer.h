@@ -19,6 +19,7 @@
 #include "shaders/ShaderWatcher.h"
 #include "ibl/EnvironmentMap.h"
 #include "passes/SkyboxPass.h"
+#include "passes/BloomPass.h"
 
 class VulkanContext;
 class Swapchain;
@@ -80,7 +81,7 @@ public:
              ResourceStore &resources, GeometryStore &geometry)
         : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry),
           m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx),
-          m_skyboxPass(ctx) {}
+          m_skyboxPass(ctx), m_bloomPass(ctx) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -107,6 +108,9 @@ public:
 
     EnvironmentSettings &environmentSettings() { return m_environment; }
     SkyboxSettings      &skyboxSettings()      { return m_skyboxPass.settings(); }
+
+    BloomSettings &bloomSettings() { return m_bloomPass.settings(); }
+    uint32_t bloomMipCount() const { return m_bloomPass.mipCount(); }
 
 private:
     // The layout shared by the scene, shadow, mask and debug-line pipelines:
@@ -169,6 +173,9 @@ private:
     // The skybox needs the inverse of the matrix render() already computed,
     // and recordCommandBuffer() runs too late to derive it from the camera.
     SkyboxPass m_skyboxPass;
+
+    BloomPass m_bloomPass;
+
     glm::mat4  m_invViewProj{ 1.0f };
     glm::vec3  m_cameraPosition{ 0.0f };
 

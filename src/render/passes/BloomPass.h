@@ -78,7 +78,8 @@ private:
 
     // Writes the two image descriptors of one dispatch's set. src is sampled,
     // dst is a storage image.
-    void writeSet(VkDescriptorSet set, VkImageView srcView, VkImageView dstView) const;
+    void writeSet(VkDescriptorSet set, VkImageView srcView,
+              VkImageLayout srcLayout, VkImageView dstView) const;
 
     // GENERAL -> GENERAL on the levels a dispatch touches: the previous
     // dispatch's storage writes have to be visible to this one's reads.

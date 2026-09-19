@@ -47,6 +47,13 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Unable to initialize the skybox resources");
         return false;
     }
+    if (!m_bloomPass.createResources() ||
+        !m_bloomPass.createTargets(m_swapchain.width(), m_swapchain.height()) ||
+        !m_bloomPass.createPipelines()) {
+        return false;
+        }
+    m_bloomPass.setSourceView(m_swapchain.hdrImageView());
+    m_tonemapPass.setBloomView(m_bloomPass.resultView());
 
 
     m_scenePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
@@ -55,6 +62,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     m_shadowPass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_debugLines.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_skyboxPass.appendShaderPrograms(m_shaderPrograms);
+    m_bloomPass.appendShaderPrograms(m_shaderPrograms);
 
     if (!compileShaderPrograms(m_ctx.device(), m_shaderPrograms)) {
         showError("Error creating shader modules");
@@ -193,6 +201,7 @@ void Renderer::shutdown()
     m_outlinePass.destroy();
     m_debugLines.destroy();
     m_shadowPass.destroy();
+    m_bloomPass.destroy();
     m_shaderPrograms.clear();
 
 
@@ -640,6 +649,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     //  ====================  Tonemapping ======================
 
     m_tonemapPass.transitionSource(res.commandBuffer, m_swapchain.hdrImage());
+    m_bloomPass.record(res.commandBuffer);
+
     VkRenderingAttachmentInfo swapColorAttachInfo
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -731,6 +742,12 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         // destroyed one. recreate() waits idle, so rewriting here is safe.
         m_tonemapPass.setSourceView(m_swapchain.hdrImageView());
         m_outlinePass.setMaskView(m_swapchain.selectionMaskImageView());
+        m_bloomPass.destroyTargets();
+        if (!m_bloomPass.createTargets(m_swapchain.width(), m_swapchain.height())) {
+            return;
+        }
+        m_bloomPass.setSourceView(m_swapchain.hdrImageView());
+        m_tonemapPass.setBloomView(m_bloomPass.resultView());
     }
 
     // Between frames and before anything is recorded, so a rebuilt pipeline

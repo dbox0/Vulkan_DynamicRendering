@@ -22,18 +22,34 @@ bool TonemapPass::createResources() {
         return false;
     }
 
-    VkDescriptorSetLayoutBinding binding
+    const VkSamplerCreateInfo bloomSamplerInfo
     {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .maxLod = VK_LOD_CLAMP_NONE
+    };
+    if (vkCreateSampler(m_ctx.device(), &bloomSamplerInfo, nullptr, &m_bloomSampler) != VK_SUCCESS) {
+        showError("Failed to create the bloom chain sampler");
+        return false;
+    }
+
+    const VkDescriptorSetLayoutBinding bindings[]
+    {
+        { .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT },
+        { .binding = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
     };
     VkDescriptorSetLayoutCreateInfo layoutInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &binding
+        .bindingCount = 2,
+        .pBindings = bindings
     };
     if (vkCreateDescriptorSetLayout(m_ctx.device(), &layoutInfo, nullptr, &m_setLayout) != VK_SUCCESS) {
         showError("Failed to create the Tonemap descriptor set layout");
@@ -43,7 +59,7 @@ bool TonemapPass::createResources() {
     VkDescriptorPoolSize poolSize
     {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1
+        .descriptorCount = 2
     };
     VkDescriptorPoolCreateInfo poolInfo
     {
@@ -88,6 +104,26 @@ bool TonemapPass::createResources() {
     }
 
     return true;
+}
+
+void TonemapPass::setBloomView(VkImageView bloomChainView)
+{
+    VkDescriptorImageInfo imageInfo
+    {
+        .sampler = m_bloomSampler,
+        .imageView = bloomChainView,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    VkWriteDescriptorSet writeDescriptorSet
+    {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_set,
+        .dstBinding = 1,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &imageInfo
+    };
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &writeDescriptorSet, 0, nullptr);
 }
 
 void TonemapPass::setSourceView(VkImageView hdrView) {
@@ -299,9 +335,11 @@ void TonemapPass::destroy() {
         vkDestroyDescriptorSetLayout(device, m_setLayout, nullptr);
         m_setLayout = nullptr;
     }
-    if (m_sampler) {
-        vkDestroySampler(device, m_sampler, nullptr);
-        m_sampler = nullptr;
+    for (VkSampler *s : { &m_sampler, &m_bloomSampler }) {
+        if (*s) {
+            vkDestroySampler(device, *s, nullptr);
+            *s = nullptr;
+        }
     }
 }
 
