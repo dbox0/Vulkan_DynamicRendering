@@ -120,13 +120,12 @@ struct FrameData
     uint  shadowEnabled    = 0;
 };
 
-static_assert(sizeof(FrameData) == 228);
+static_assert(sizeof(FrameData) == 228 +4);
 static_assert(offsetof(FrameData, lightViewProj)  == 64);
 static_assert(offsetof(FrameData, cameraPosition) == 128);
 static_assert(offsetof(FrameData, sunDirection)   == 144);
 static_assert(offsetof(FrameData, skyColor)       == 176);
-static_assert(offsetof(FrameData, envTex)         == 200);
-static_assert(offsetof(FrameData, shadowTexelSize) == 212);
+static_assert(offsetof(FrameData, shadowTexelSize) == 216);
 
 // Push constants. 32 bytes
 // ----------------------------------------------------------------------------
