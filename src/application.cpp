@@ -161,6 +161,7 @@ bool Application::initialize()
     m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
     m_editor.bindTonemapSettings(m_renderer.tonemapSettings());
     m_editor.bindEnvironmentSettings(m_renderer.environmentSettings());
+    m_editor.bindSkyboxSettings(m_renderer.skyboxSettings());
     m_editor.bindHistory(m_history);
     m_editor.bindScenePath(m_scenePath);
     m_detector.initialize(m_scene, m_resources, m_geometry, m_history);

@@ -165,6 +165,7 @@ add_executable(vulkanapp
         src/render/ibl/HdrLoader.cpp
         src/render/ibl/HdrLoader.h
         src/render/passes/SkyboxPass.cpp
+        src/render/passes/SkyboxPass.h
         src/common/vkbarrier.cpp
         src/common/vkbarrier.h
 )

@@ -426,7 +426,6 @@ void EditorUI::drawMaterialSection(const ResourceStore &resources, uint32_t mate
     if (isDefault) {
         ImGui::TextColored(DimText, "Engine default -- used by every submesh without a material");
     }
-    ImGui::TextColored(DimText, "Materials are shared: edits affect every mesh using this one.");
 
     // Factors are LINEAR (glTF). _Float shows 0..1 values and keeps hex
     // input from pretending to be sRGB.

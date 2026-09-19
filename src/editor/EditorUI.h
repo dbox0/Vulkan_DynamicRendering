@@ -29,6 +29,7 @@ struct Mesh;
 struct ShadowSettings;
 struct TonemapConstants;
 struct EnvironmentSettings;
+struct SkyboxSettings;
 class Node;
 class UndoHistory;
 
@@ -72,6 +73,7 @@ public:
 
     void bindTonemapSettings(TonemapConstants &settings) { m_tonemapSettings = &settings; }
     void bindEnvironmentSettings(EnvironmentSettings &settings) { m_environmentSettings = &settings; }
+    void bindSkyboxSettings(SkyboxSettings &settings) { m_skyboxSettings = &settings; }
 
     // By Guid: the selection outlives frames, so it must not be a slot. A
     // selected node that dies simply stops resolving and the selection clears
@@ -264,6 +266,7 @@ private:
     TonemapConstants *m_tonemapSettings  = nullptr;
 
     EnvironmentSettings *m_environmentSettings = nullptr;
+    SkyboxSettings      *m_skyboxSettings      = nullptr;
 
     bool m_showShadowWindow      = false;
     bool m_showPostProcessWindow = false;

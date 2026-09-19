@@ -15,6 +15,8 @@
 #include "resources/ResourceStore.h"
 #include "../common/errors.h"
 #include "../common/constants.h"
+#include <glm/glm.hpp>
+
 #include "../scene/Camera.h"
 
 // ============================================================================
@@ -41,6 +43,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Unable to initialize the selection outline resources");
         return false;
     }
+    if (!m_skyboxPass.createResources(m_resources.globalLayout())) {
+        showError("Unable to initialize the skybox resources");
+        return false;
+    }
 
 
     m_scenePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
@@ -48,6 +54,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     m_outlinePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_shadowPass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_debugLines.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
+    m_skyboxPass.appendShaderPrograms(m_shaderPrograms);
 
     if (!compileShaderPrograms(m_ctx.device(), m_shaderPrograms)) {
         showError("Error creating shader modules");
@@ -76,6 +83,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Unable to initialize the selection outline pipelines");
         return false;
     }
+    if (!m_skyboxPass.createPipelines()) {
+        showError("Unable to initialize the skybox pipeline");
+        return false;
+    }
     if (!createSyncResources()) {
         showError("Could not create the sync resources");
         return false;
@@ -91,7 +102,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 
     // Optional: no file, or a broken one, just leaves m_envSlot at 0 and the
     // shader falls back to the hemisphere ambient. Not worth failing init over.
-    if (const uint32_t envTextureId = m_resources.loadEnvironment(ASSET_DIR "env/env_test.hdr")) {
+    if (const uint32_t envTextureId = m_resources.loadEnvironment(ASSET_DIR "env/sky2k.hdr")) {
         const auto& tex = m_resources.texture(envTextureId);
 
         const render::BakeContext bake{
@@ -175,12 +186,14 @@ void Renderer::shutdown()
 
 
     m_env.destroy();
+    m_skyboxPass.destroy();
     m_scenePass.destroy();
     m_tonemapPass.destroy();
     m_outlinePass.destroy();
     m_debugLines.destroy();
     m_shadowPass.destroy();
     m_shaderPrograms.clear();
+
 
     if (m_sceneLayout) {
         vkDestroyPipelineLayout(m_ctx.device(), m_sceneLayout, nullptr);
@@ -605,6 +618,18 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     {
         vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
         vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
+
+        m_skyboxPass.record(res.commandBuffer, globalSet,
+                            m_invViewProj, m_cameraPosition, m_envPrefilterSlot);
+
+        vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_sceneLayout, 0, 1, &globalSet, 0, nullptr);
+        vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
+        vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(FrameConstants), &frameConsts);
+
         m_scenePass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches);
         }
     vkCmdEndRendering(res.commandBuffer);
@@ -749,6 +774,10 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
     const float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
     const glm::mat4 viewProj = camera.viewProjection(aspectRatio);
+
+    // recordCommandBuffer() reconstructs view rays from these.
+    m_invViewProj    = glm::inverse(viewProj);
+    m_cameraPosition = camera.position;
 
     // A Directional Light node in the scene drives the sun. Without one the
     // renderer's own m_sunDirection is the fallback, so a scene that has never

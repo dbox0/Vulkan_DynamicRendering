@@ -11,13 +11,18 @@ ShaderWatcher::StampMap ShaderWatcher::scan() const
 {
     StampMap stamps;
     std::error_code ec;
-    for (const auto &entry : std::filesystem::directory_iterator(m_dir, ec)) {
+
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(m_dir, ec)) {
         if (!entry.is_regular_file(ec)) {
             continue;
         }
         const Stamp stamp = entry.last_write_time(ec);
+        if (ec) {
+            continue;
+        }
+        const std::filesystem::path rel = std::filesystem::relative(entry.path(), m_dir, ec);
         if (!ec) {
-            stamps.emplace(entry.path().filename().string(), stamp);
+            stamps.emplace(rel.generic_string(), stamp);
         }
     }
     return stamps;

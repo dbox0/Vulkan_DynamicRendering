@@ -18,6 +18,7 @@
 #include "shaders/ShaderProgram.h"
 #include "shaders/ShaderWatcher.h"
 #include "ibl/EnvironmentMap.h"
+#include "passes/SkyboxPass.h"
 
 class VulkanContext;
 class Swapchain;
@@ -78,7 +79,8 @@ public:
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
              ResourceStore &resources, GeometryStore &geometry)
         : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry),
-          m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx) {}
+          m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx),
+          m_skyboxPass(ctx) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -104,6 +106,7 @@ public:
     TonemapConstants &tonemapSettings() { return m_tonemapPass.settings(); }
 
     EnvironmentSettings &environmentSettings() { return m_environment; }
+    SkyboxSettings      &skyboxSettings()      { return m_skyboxPass.settings(); }
 
 private:
     // The layout shared by the scene, shadow, mask and debug-line pipelines:
@@ -162,6 +165,12 @@ private:
     uint32_t m_envIrradianceSlot = 0;   // 1-based cube ID, 0 = none
     uint32_t m_envPrefilterSlot  = 0;
     float    m_envMaxLod         = 0.0f;
+
+    // The skybox needs the inverse of the matrix render() already computed,
+    // and recordCommandBuffer() runs too late to derive it from the camera.
+    SkyboxPass m_skyboxPass;
+    glm::mat4  m_invViewProj{ 1.0f };
+    glm::vec3  m_cameraPosition{ 0.0f };
 
     
 

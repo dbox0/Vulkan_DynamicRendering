@@ -8,6 +8,7 @@
 
 #include "../render/passes/ShadowMap.h"
 #include "../render/passes/TonemapPass.h"
+#include "../render/passes/SkyboxPass.h"
 #include "../render/Renderer.h"
 
 using namespace editor::ui;
@@ -55,9 +56,6 @@ void EditorUI::drawShadowWindow()
             endProperties();
 
             ImGui::Spacing();
-            ImGui::TextDisabled("Raise Slope first if acne appears.");
-            ImGui::TextDisabled("Sun dir is the fallback -- a Directional\n"
-                                "Light node overrides it.");
         }
     }
     ImGui::End();
@@ -120,6 +118,21 @@ void EditorUI::drawEnvironmentWindow()
             beginProperties("environment_intensity");
             sliderRow("Environment", e.envIntensity, 0.0f, MaxIntensity, "%.2f");
             sliderRow("Ambient", e.ambientIntensity, 0.0f, MaxIntensity, "%.2f");
+            endProperties();
+
+            ImGui::Spacing();
+        }
+
+        if (m_skyboxSettings) {
+            ImGui::SeparatorText("Skybox");
+            SkyboxSettings &s = *m_skyboxSettings;
+
+            ImGui::Checkbox("Draw skybox", &s.enabled);
+
+            beginProperties("skybox_settings");
+            sliderRow("Intensity", s.intensity, 0.0f, MaxIntensity, "%.2f");
+            // Reuses the prefiltered chain
+            sliderRow("Blur (LOD)", s.lod, 0.0f, 10.0f, "%.1f");
             endProperties();
 
             ImGui::Spacing();
