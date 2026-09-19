@@ -161,6 +161,7 @@ add_executable(vulkanapp
         src/render/passes/TonemapPass.h
         src/Math/Plane.h
         src/render/ibl/EnvironmentMap.h
+        src/render/ibl/EnvironmentMap.cpp
         src/render/ibl/HdrLoader.cpp
         src/render/ibl/HdrLoader.h
         src/render/passes/SkyboxPass.cpp
@@ -213,8 +214,6 @@ add_executable(engine_tests
         src/editor/UndoHistory.cpp
         src/editor/SceneUndoWorld.cpp
         src/scene/Scene.cpp
-        src/render/ibl/EnvironmentMap.cpp
-        src/render/ibl/EnvironmentMap.h
 )
 
 target_link_libraries(engine_tests PRIVATE
