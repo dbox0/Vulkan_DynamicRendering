@@ -168,6 +168,8 @@ add_executable(vulkanapp
         src/render/passes/SkyboxPass.h
         src/common/vkbarrier.cpp
         src/common/vkbarrier.h
+        src/render/passes/BloomPass.cpp
+        src/render/passes/BloomPass.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically

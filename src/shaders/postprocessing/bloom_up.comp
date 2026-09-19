@@ -1,0 +1,48 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D uSrc;
+layout(set = 0, binding = 1, rgba16f) uniform image2D uDst;
+
+layout(push_constant) uniform Push
+{
+    vec2  srcTexelSize;   // unused here; the block is shared with bloom_down
+    uvec2 dstSize;
+    float threshold;
+    float softKnee;
+    float filterRadius;
+    uint  prefilter;
+} pc;
+
+void main()
+{
+    const ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(coord, ivec2(pc.dstSize)))) {
+        return;
+    }
+
+    const vec2 uv = (vec2(coord) + 0.5) / vec2(pc.dstSize);
+
+    // Offsets in UV units, not texels: the blur width then survives a resize.
+    const float r = pc.filterRadius;
+
+    vec3 a = textureLod(uSrc, uv + vec2(-r,  r), 0.0).rgb;
+    vec3 b = textureLod(uSrc, uv + vec2(0.0, r), 0.0).rgb;
+    vec3 c = textureLod(uSrc, uv + vec2( r,  r), 0.0).rgb;
+    vec3 d = textureLod(uSrc, uv + vec2(-r, 0.0), 0.0).rgb;
+    vec3 e = textureLod(uSrc, uv,                 0.0).rgb;
+    vec3 f = textureLod(uSrc, uv + vec2( r, 0.0), 0.0).rgb;
+    vec3 g = textureLod(uSrc, uv + vec2(-r, -r), 0.0).rgb;
+    vec3 h = textureLod(uSrc, uv + vec2(0.0, -r), 0.0).rgb;
+    vec3 i = textureLod(uSrc, uv + vec2( r, -r), 0.0).rgb;
+
+    // 1 2 1 / 2 4 2 / 1 2 1, over 16.
+    vec3 tent = e * 4.0
+    + (b + d + f + h) * 2.0
+    + (a + c + g + i);
+    tent *= (1.0 / 16.0);
+
+    vec3 dst = imageLoad(uDst, coord).rgb;
+    imageStore(uDst, coord, vec4(dst + tent, 1.0));
+}

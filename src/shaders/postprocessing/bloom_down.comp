@@ -1,0 +1,110 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D srcTexture;
+layout(set = 0, binding = 1, rgba16f) uniform image2D uDst;
+
+layout(push_constant) uniform Push
+{
+    vec2  srcTexelSize;
+    uvec2 dstSize;
+    float threshold;
+    float softKnee;
+    float filterRadius;
+    uint  prefilter;
+} pc;
+
+
+
+float luminance(vec3 c)
+{
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 softThreshold(vec3 c)
+{
+    float knee = max(pc.softKnee * pc.threshold, 1e-5);
+    float brightness = max(c.r, max(c.g, c.b));
+
+    float soft = clamp(brightness - pc.threshold + knee, 0.0, 2.0 * knee);
+    soft = soft * soft / (4.0 * knee);
+
+    float contribution = max(soft, brightness - pc.threshold) / max(brightness, 1e-5);
+    return c * contribution;
+}
+
+void main()
+{
+    const ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    // ... bounds check against pc.dstSize, return early ...
+
+    const vec2 uv = (vec2(coord) + 0.5) / vec2(pc.dstSize);
+
+    const float x = pc.srcTexelSize.x;
+    const float y = pc.srcTexelSize.y;
+
+    // 13 taps, same layout as the LearnOpenGL sample:
+    //   a - b - c
+    //   - j - k -
+    //   d - e - f
+    //   - l - m -
+    //   g - h - i
+    // Outer ring at +/-2 texels, inner four at +/-1, e at centre.
+    // ... vec3 a .. m, via textureLod(uSrc, uv + offset, 0.0).rgb ...
+
+
+    vec3 a = textureLod(uSrc, uv + vec2(-2.0 * x,  2.0 * y), 0.0).rgb;
+    vec3 b = textureLod(uSrc, uv + vec2(uv.x,  uv.y + 2*y), 0.0).rgb;
+    vec3 c = textureLod(uSrc, uv + vec2(uv.x + 2*x, uv.y + 2*y), 0.0).rgb;
+    vec3 d = textureLod(uSrc, uv + vec2(uv.x - 2*x, uv.y), 0.0).rgb;
+    vec3 e = textureLod(uSrc, uv + vec2(uv.x,  uv.y), 0.0).rgb;
+    vec3 f = textureLod(uSrc, uv + vec2(uv.x + 2*x, uv.y), 0.0).rgb;
+    vec3 g = textureLod(uSrc, uv + vec2(uv.x - 2*x, uv.y - 2*y), 0.0).rgb;
+    vec3 h = textureLod(uSrc, uv + vec2(uv.x,  uv.y - 2*y), 0.0).rgb;
+    vec3 i = textureLod(uSrc, uv + vec2(uv.x + 2*x, uv.y - 2*y), 0.0).rgb;
+    vec3 j = textureLod(uSrc, uv + vec2(uv.x - x, uv.y + y), 0.0).rgb;
+    vec3 k = textureLod(uSrc, uv + vec2(uv.x + x, uv.y + y), 0.0).rgb;
+    vec3 l = textureLod(uSrc, uv + vec2(uv.x - x, uv.y - y), 0.0).rgb;
+    vec3 m = textureLod(uSrc, uv + vec2(uv.x + x, uv.y - y), 0.0).rgb;
+
+
+
+
+    // Five overlapping 2x2 boxes. Collapsing them into per-sample weights is
+    // cheaper but leaves nothing for Karis to weight.
+    vec3 boxes[5];
+    boxes[0] = (a + b + d + e) * 0.25;
+    boxes[1] = (b + c + e + f) * 0.25;
+    boxes[2] = (d + e + g + h) * 0.25;
+    boxes[3] = (e + f + h + i) * 0.25;
+    boxes[4] = (j + k + l + m) * 0.25;
+
+    const float weights[5] = float[5](0.125, 0.125, 0.125, 0.125, 0.5);
+
+    vec3 result;
+
+
+    if (pc.prefilter != 0u) {
+        float weightSum = 0.0;
+        result = vec3(0.0);
+        for (int n = 0; n < 5; ++n) {
+            float w = weights[n] / (1.0 + luminance(boxes[n]));
+            result += boxes[n] * w;
+            weightSum += w;
+        }
+        result /= max(weightSum, 1e-6);
+
+        result = max(result, vec3(0.0));
+        result = mix(result, vec3(0.0), vec3(isnan(result)) + vec3(isinf(result)));
+        result = min(result, vec3(65504.0));   // largest finite half
+
+        result = softThreshold(result);
+    } else {
+        result = boxes[0] * weights[0] + boxes[1] * weights[1]
+        + boxes[2] * weights[2] + boxes[3] * weights[3]
+        + boxes[4] * weights[4];
+    }
+
+    imageStore(uDst, coord, vec4(result, 1.0));
+}
