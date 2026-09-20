@@ -170,6 +170,8 @@ add_executable(vulkanapp
         src/common/vkbarrier.h
         src/render/passes/BloomPass.cpp
         src/render/passes/BloomPass.h
+        src/render/core/GPUProfiler.cpp
+        src/render/core/GPUProfiler.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically

@@ -22,6 +22,14 @@
 // ============================================================================
 // lifetime
 // ============================================================================
+struct GpuScope
+{
+    GpuScope(GpuProfiler &p, VkCommandBuffer c, const char *n) : profiler(p), cmd(c)
+    { profiler.beginScope(cmd, n); }
+    ~GpuScope() { profiler.endScope(cmd); }
+    GpuProfiler    &profiler;
+    VkCommandBuffer cmd;
+};
 
 bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 {
@@ -141,6 +149,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 
 #ifndef NDEBUG
     m_shaderWatcher = std::make_unique<ShaderWatcher>(SHADER_DIR);
+    m_profiler.initialize(m_ctx, MaxFramesInFlight);
 #endif
     return true;
 }
@@ -151,6 +160,7 @@ void Renderer::shutdown()
         return;
     }
 
+    m_profiler.destroy();
     // Exactly one destroy per handle. The old shutdown() ran this loop twice.
     for (FrameResources &res : m_frameResources) {
         if (res.imageAcquiredSemaphore) {
@@ -474,6 +484,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
     };
     vkBeginCommandBuffer(res.commandBuffer, &cmdBeginInfo);
+    m_profiler.beginFrame(res.commandBuffer);
+
 
     // UNDEFINED -> attachment layouts for colour and depth.
     const std::array<VkImageMemoryBarrier2, 3> layoutBarriers
@@ -606,50 +618,60 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     // ======================== PASSES ============================ ///
 
     // Before everything else: the scene pass samples what it writes.
+
+    m_profiler.beginScope(res.commandBuffer,"Shadow");
+
     m_shadowPass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches,
-                        m_shadow, m_shadowActive);
+    m_shadow, m_shadowActive);
 
     // Bound after the shadow pass, not before
     VkDescriptorSet shadowSet = m_shadowPass.map().descriptorSet();
     vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
+    m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
 
+    m_profiler.endScope(res.commandBuffer);
+
+    m_profiler.beginScope(res.commandBuffer,"Outline Pass");
     // Its own rendering scope, before the scene pass, so the composite inside
     // that pass can sample a finished mask. Skipped entirely when nothing is
     // selected: no barriers, no clear, no cost.
     const bool hasSelection = m_outlinePass.hasSelection();
-    if (hasSelection) {
-        m_outlinePass.recordMask(res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
-                                 m_swapchain.selectionMaskImage(),
-                                 m_swapchain.selectionMaskImageView(), extent);
+    if (hasSelection) {m_outlinePass.recordMask(res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
+    m_swapchain.selectionMaskImage(),
+    m_swapchain.selectionMaskImageView(), extent);
     }
+    m_profiler.endScope(res.commandBuffer);
 
-    vkCmdBeginRendering(res.commandBuffer, &renderingInfo); // hdr color clear/store, depth clear/store
     {
-        vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
-        vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
+        GpuScope sceneScope(m_profiler,res.commandBuffer,"Scene");
+        vkCmdBeginRendering(res.commandBuffer, &renderingInfo); // hdr color clear/store, depth clear/store
+        {
+            vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
-        m_skyboxPass.record(res.commandBuffer, globalSet,
-                            m_invViewProj, m_cameraPosition, m_envPrefilterSlot);
+            m_skyboxPass.record(res.commandBuffer, globalSet,
+                                m_invViewProj, m_cameraPosition, m_envPrefilterSlot);
 
-        vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_sceneLayout, 0, 1, &globalSet, 0, nullptr);
-        vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
-        vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(FrameConstants), &frameConsts);
+            vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_sceneLayout, 0, 1, &globalSet, 0, nullptr);
+            vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
+            vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(FrameConstants), &frameConsts);
 
-        m_scenePass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches);
+            m_scenePass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches);
         }
-    vkCmdEndRendering(res.commandBuffer);
-
-
+        vkCmdEndRendering(res.commandBuffer);
+    }
 
     //  ====================  Tonemapping ======================
 
+    m_profiler.beginScope(res.commandBuffer,"PostProcessing");
     m_tonemapPass.transitionSource(res.commandBuffer, m_swapchain.hdrImage());
+    m_profiler.beginScope(res.commandBuffer,"Bloom");
     m_bloomPass.record(res.commandBuffer);
+    m_profiler.endScope(res.commandBuffer);
 
     VkRenderingAttachmentInfo swapColorAttachInfo
     {
@@ -680,12 +702,15 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     vkCmdBeginRendering(res.commandBuffer, &swapRenderingInfo);
     {
+        m_profiler.beginScope(res.commandBuffer,"Tonemap");
         m_tonemapPass.record(res.commandBuffer, extent);
+        m_profiler.endScope(res.commandBuffer);
 
         // The tonemap pass left a positive-height viewport behind.
         vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
         vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
+        m_profiler.beginScope(res.commandBuffer,"ImGui");
         m_debugLines.record(res.commandBuffer, m_sceneLayout, frameConsts,
                             res.debugLineBuffer.deviceAddress);
 
@@ -696,8 +721,10 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         if (overlay) {
             overlay(res.commandBuffer);
         }
+        m_profiler.endScope(res.commandBuffer);
     }
     vkCmdEndRendering(res.commandBuffer);
+    m_profiler.endScope(res.commandBuffer); // Postprocessing
 
 
     // COLOR_ATTACHMENT -> PRESENT_SRC.

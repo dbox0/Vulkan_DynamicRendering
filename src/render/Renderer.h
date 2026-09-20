@@ -10,6 +10,7 @@
 #include "../common/gpu_types.h"
 #include "../scene/Scene.h"
 #include "GpuShared.h"
+#include "core/GPUProfiler.h"
 #include "passes/DebugLinePass.h"
 #include "passes/ScenePass.h"
 #include "passes/SelectionOutlinePass.h"
@@ -179,10 +180,9 @@ private:
     glm::mat4  m_invViewProj{ 1.0f };
     glm::vec3  m_cameraPosition{ 0.0f };
 
-    
-
-
     // Reused across frames so traversal doesn't allocate per frame.
     const std::vector<DrawItem> *m_drawItems = nullptr;
     std::vector<SortedDraw> m_sorted;
+
+    GpuProfiler m_profiler;
 };
