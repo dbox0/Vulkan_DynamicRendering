@@ -364,9 +364,9 @@ bool EnvironmentMap::createPipelines() {
     }
     if (!createPipeline("ibl/brdf_lut.comp", m_brdfSetLayout, sizeof(BrdfLutPush),
                         m_brdfPipeLayout, m_brdfPipeline)) {
-        return false;
-        return false;
         showError("Could not create an BRDF pipeline with brdf_lut.comp shader");
+        return false;
+
     }
     return true;
 }
@@ -554,6 +554,9 @@ void EnvironmentMap::destroyBakeOnly() {
     vkDestroyDescriptorSetLayout(m_ctx.device, m_prefilterSetLayout, nullptr);
     vkDestroyDescriptorPool(m_ctx.device, m_descriptorPool, nullptr);
     vkDestroyImageView(m_ctx.device, m_skyboxMip0View, nullptr);
+    vkDestroyPipeline(m_ctx.device, m_brdfPipeline, nullptr);
+    vkDestroyPipelineLayout(m_ctx.device, m_brdfPipeLayout, nullptr);
+    vkDestroyDescriptorSetLayout(m_ctx.device, m_brdfSetLayout,nullptr);
 
     m_equirectPipeline    = VK_NULL_HANDLE;
     m_irradiancePipeline  = VK_NULL_HANDLE;
@@ -566,6 +569,9 @@ void EnvironmentMap::destroyBakeOnly() {
     m_prefilterSetLayout  = VK_NULL_HANDLE;
     m_descriptorPool      = VK_NULL_HANDLE;
     m_skyboxMip0View      = VK_NULL_HANDLE;
+    m_brdfPipeline   = VK_NULL_HANDLE;
+    m_brdfPipeLayout = VK_NULL_HANDLE;
+    m_brdfSetLayout  = VK_NULL_HANDLE;
 }
 
 void EnvironmentMap::destroy() {
@@ -574,6 +580,14 @@ void EnvironmentMap::destroy() {
 
     destroyCubemap(m_skybox);
     destroyCubemap(m_irradiance);
+
+    vkDestroyImageView(m_ctx.device, m_brdfView, nullptr);
+    m_brdfView = VK_NULL_HANDLE;
+    if (m_brdfImage) {
+        vmaDestroyImage(m_ctx.allocator, m_brdfImage, m_brdfAllocation);
+        m_brdfImage      = VK_NULL_HANDLE;
+        m_brdfAllocation = VK_NULL_HANDLE;
+    }
 
     vkDestroySampler(m_ctx.device, m_sampler, nullptr);
     m_sampler = VK_NULL_HANDLE;
