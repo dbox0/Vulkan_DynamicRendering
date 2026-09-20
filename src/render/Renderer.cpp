@@ -393,46 +393,58 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         batch = DrawBatch{};
     }
 
-    const uint32_t drawCount = static_cast<uint32_t>(std::min<size_t>((*m_drawItems).size(), m_maxDraws));
-
-    if ((*m_drawItems).size() > m_maxDraws) {
-        std::cerr << "[warn] Draw list of " << (*m_drawItems).size()
-                  << " exceeds the per-frame limit of " << m_maxDraws
-                  << "; clamping" << std::endl;
-    }
-
-    // Bucket 0/1 = opaque single/double sided, 2/3 = blended single/double.
-    // Each bucket is one contiguous indirect draw with its own cull mode and
-    // pipeline, which is why the sort has to happen before anything is written.
     m_outlinePass.beginFrame();
 
-    m_sorted.clear();
-    m_sorted.reserve(drawCount);
+    if (!m_freezeCull) {
+        m_cullFrustum    = Frustum::fromViewProj(viewProj);
+        m_frozenViewProj = viewProj;
+    }
+    const Frustum &cull = m_freezeCull ? m_frozenFrustum : m_cullFrustum;
 
-    for (uint32_t i = 0; i < drawCount; ++i) {
-        const SubMesh &subMesh = *(*m_drawItems)[i].subMesh;
+    const size_t itemCount = (*m_drawItems).size();
+
+    m_sorted.clear();
+    m_sorted.reserve(std::min<size_t>(itemCount, m_maxDraws));
+    bool clamped = false;
+
+    for (uint32_t i = 0; i < itemCount; ++i) {
+        const DrawItem &item = (*m_drawItems)[i];
+
+        if (m_cullEnabled && !cull.intersectsAABB(item.worldBoundsMin, item.worldBoundsMax)){
+            continue;
+        }
+        if (m_sorted.size() >= m_maxDraws) {
+           clamped = true;
+           break;
+       }
+        const SubMesh &subMesh = *item.subMesh;
         const uint32_t materialId = subMesh.materialId ? subMesh.materialId
-                                                       : m_resources.defaultMaterialId();
+                                                     : m_resources.defaultMaterialId();
         const Material &material = m_resources.material(materialId);
 
         const uint32_t bucket = (material.alphaMode == AlphaMode::Blend ? 2u : 0u)
                               + (material.doubleSided ? 1u : 0u);
 
-        // w of the clip-space origin is the view depth. Crude -- per-object,
-        // not per-triangle -- but it is what makes blended geometry stack in
-        // the right order without a real sorted transparency pass.
-        const glm::vec4 clip = viewProj * glm::vec4(glm::vec3((*m_drawItems)[i].worldMatrix[3]), 1.0f);
+        const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(item.worldMatrix[3]), 1.0f);
         m_sorted.push_back(SortedDraw{ bucket, clip.w, i });
     }
+    const uint32_t drawCount = static_cast<uint32_t>(m_sorted.size());
+
+    if (clamped) {
+        std::cerr << "[warn] Visible draws exceed the per-frame limit of "
+                  << m_maxDraws << "; clamping" << std::endl;
+    }
+    m_cullStats = { static_cast<uint32_t>(itemCount), drawCount };
 
     std::stable_sort(m_sorted.begin(), m_sorted.end(),
         [](const SortedDraw &a, const SortedDraw &b)
         {
             if (a.bucket != b.bucket) return a.bucket < b.bucket;
-            if (a.bucket < 2)         return false;        // opaque: submission order
-            return a.depth > b.depth;                      // blended: far to near
+            if (a.bucket < 2)         return a.depth < b.depth;   // opaque: near to far
+            return a.depth > b.depth;                             // blended: far to near
         });
 
+    // Write slots
     for (uint32_t slot = 0; slot < drawCount; ++slot) {
         const SortedDraw &sorted = m_sorted[slot];
         const DrawItem &item = (*m_drawItems)[sorted.index];
@@ -440,10 +452,10 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
 
         res.indirectDrawPtr[slot] = VkDrawIndexedIndirectCommand
         {
-            .indexCount = static_cast<uint32_t>(subMesh.indexCount),
+            .indexCount    = static_cast<uint32_t>(subMesh.indexCount),
             .instanceCount = 1,
-            .firstIndex = static_cast<uint32_t>(subMesh.indexStart),
-            .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
+            .firstIndex    = static_cast<uint32_t>(subMesh.indexStart),
+            .vertexOffset  = static_cast<int32_t>(subMesh.vertexStart),
             .firstInstance = slot
         };
 
@@ -455,8 +467,6 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
             .materialIndex = materialIndex
         };
 
-        // Recorded after the sort, because the mask pass replays these exact
-        // slots out of the indirect buffer.
         if (m_selectedNode != 0 && item.nodeId == m_selectedNode) {
             m_outlinePass.addSelectedDraw(slot, viewProj, item.worldMatrix, subMesh);
         }
@@ -467,7 +477,6 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         }
         ++batch.count;
     }
-
     for (uint32_t b = 0; b < m_batches.size(); ++b) {
         m_batches[b].cullMode = (b & 1u) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
         m_batches[b].blend    = b >= 2;

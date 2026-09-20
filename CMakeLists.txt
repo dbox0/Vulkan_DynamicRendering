@@ -52,12 +52,8 @@ add_executable(vulkanapp
         src/application.h
         src/application.cpp
         src/external/tinygltf.cpp
-        src/Math/Transform.h
         src/common/constants.h
         src/common/constants.h
-        src/Math/Transform.h
-        src/Math/Transform.cpp
-        src/Math/LocalFrame.h
         src/scene/Geometry/Node.h
         src/scene/Geometry/NodeWorld.h
         src/common/errors.cpp
@@ -172,6 +168,9 @@ add_executable(vulkanapp
         src/render/passes/BloomPass.h
         src/render/core/GPUProfiler.cpp
         src/render/core/GPUProfiler.h
+        src/Math/Frustum.h
+        src/Math/Frustum.cpp
+        src/render/CullSettings.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically

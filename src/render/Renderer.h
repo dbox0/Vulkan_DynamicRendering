@@ -21,6 +21,7 @@
 #include "ibl/EnvironmentMap.h"
 #include "passes/SkyboxPass.h"
 #include "passes/BloomPass.h"
+#include "../Math/Frustum.h"
 
 class VulkanContext;
 class Swapchain;
@@ -174,11 +175,19 @@ private:
     // The skybox needs the inverse of the matrix render() already computed,
     // and recordCommandBuffer() runs too late to derive it from the camera.
     SkyboxPass m_skyboxPass;
-
     BloomPass m_bloomPass;
 
     glm::mat4  m_invViewProj{ 1.0f };
     glm::vec3  m_cameraPosition{ 0.0f };
+
+    Frustum m_cullFrustum{};
+    Frustum m_frozenFrustum{};
+    glm::mat4 m_frozenViewProj{ 1.0f };
+    bool m_freezeCull = false;
+    bool m_cullEnabled = true;
+
+    struct CullStats { uint32_t total = 0, submitted = 0, clamped = 0; };
+    CullStats m_cullStats{};
 
     // Reused across frames so traversal doesn't allocate per frame.
     const std::vector<DrawItem> *m_drawItems = nullptr;

@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <ostream>
+#include "../Math/Frustum.h"
 
 void Camera::handleInput(const SDL_Event& e, float deltaTime) {
     if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
@@ -120,19 +121,9 @@ glm::mat4 Camera::projection(float aspectRatio) const
 void Camera::frustumCornersWorld(float aspectRatio, float nearDist, float farDist,
                                  glm::vec3 (&out)[8]) const
 {
-    const glm::mat4 inverseViewProj = glm::inverse(
+    Frustum::cornersWorld(
         glm::perspectiveRH_ZO(glm::radians(fovDegrees), aspectRatio, nearDist, farDist)
-        * getViewMatrix());
-
-    int i = 0;
-    for (float z : { 0.0f, 1.0f }) {
-        for (float y : { -1.0f, 1.0f }) {
-            for (float x : { -1.0f, 1.0f }) {
-                const glm::vec4 corner = inverseViewProj * glm::vec4(x, y, z, 1.0f);
-                out[i++] = glm::vec3(corner) / corner.w;
-            }
-        }
-    }
+        * getViewMatrix(), out);
 }
 
 glm::mat4 Camera::viewProjection(float aspectRatio) const

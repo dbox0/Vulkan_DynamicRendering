@@ -48,6 +48,21 @@ void DebugLinePass::addLine(const glm::vec3 &a, const glm::vec3 &b, const glm::v
     m_vertices.push_back(DebugVertex{ b, color });
 }
 
+void DebugLinePass::addBox(const glm::vec3 &lo, const glm::vec3 &hi, const glm::vec3 &color)
+{
+    glm::vec3 c[8];
+    for (int i = 0; i < 8; ++i) {
+        c[i] = { (i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z };
+    }
+    static constexpr int edges[12][2] = {
+        {0,1},{2,3},{4,5},{6,7},
+        {0,2},{1,3},{4,6},{5,7},
+        {0,4},{1,5},{2,6},{3,7}
+    };
+    for (const auto &e : edges) {
+        addLine(c[e[0]], c[e[1]], color);
+    }
+}
 void DebugLinePass::collectLightGizmos(Scene &scene)
 {
     const NodeWorld &nodes = scene.nodes();
