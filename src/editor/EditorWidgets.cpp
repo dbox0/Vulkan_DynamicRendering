@@ -7,12 +7,16 @@
 
 namespace editor::ui
 {
-    void beginProperties(const char *id)
+    bool beginProperties(const char *id)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.0f, 4.0f));
-        ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp);
+        if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::PopStyleVar();
+            return false;
+        }
         ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, 76.0f);
         ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
+        return true;
     }
 
     void endProperties()

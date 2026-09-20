@@ -25,6 +25,7 @@
 #include "UndoHistory.h"
 #include "../scene/Camera.h"
 #include "../common/errors.h"
+#include "../render/CullSettings.h"
 #include <ImGuizmo.h>
 #include <glm/gtx/euler_angles.hpp>
 
@@ -35,11 +36,20 @@
 #include <imgui_internal.h>     // for PushMultiItemsWidths
 #include <glm/vec3.hpp>
 
+
 using namespace editor::ui;
 
 void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const ResourceStore &resources,
                      const Camera &camera, uint32_t width, uint32_t height)
 {
+
+    if (m_cullWasFrozen && m_cullSettings) {
+        m_cullSettings->fovDegrees = camera.fov();
+        m_cullSettings->nearClip   = camera.nearClip();
+        m_cullSettings->farClip    = camera.farClip();
+        m_cullWasFrozen = false;
+    }
+
     resolveSelection(scene);
 
     // Submitted before anything reads WorkPos: the main menu bar is what
@@ -51,6 +61,7 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
             ImGui::MenuItem("Shadows", nullptr, &m_showShadowWindow);
             ImGui::MenuItem("Post Process", nullptr, &m_showPostProcessWindow);
             ImGui::MenuItem("Environment", nullptr, &m_showEnvironmentWindow);
+            ImGui::MenuItem("Culling", nullptr, &m_showCullWindow);
             ImGui::EndMenu();
         }
 
@@ -83,7 +94,7 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
     // If there is no layout loaded from INI, build the default layout
     if (ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {
         ImGui::DockBuilderRemoveNode(dockspaceId);
-        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_PassthruCentralNode || ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
 
         ImGuiID dockMain = dockspaceId;
@@ -123,6 +134,7 @@ void EditorUI::build(const Scene &scene, const GeometryStore &geometry, const Re
     drawShadowWindow();
     drawPostProcessWindow();
     drawEnvironmentWindow();
+    drawCullWindow();
 
     handleShortcuts(scene, resources);
     drawSaveMaterialPopup(resources);
@@ -159,6 +171,7 @@ void EditorUI::drawEditMenu()
         ImGui::EndMenu();
     }
 }
+
 
 void EditorUI::submitUndo()
 {
@@ -356,34 +369,35 @@ void EditorUI::drawInspector(const Scene &scene, const GeometryStore &geometry, 
         ImGui::Dummy(ImVec2(0.0f, 2.0f));
 
         if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-            beginProperties("transform_props");
 
-            glm::vec3 translation = edited.getTranslation();
-            if (vec3Control("Position", translation, 0.0f, 0.05f)) {
-                edited.setTranslation(translation);
-                changed  = true;
-                editName = "Move";
+            if (beginProperties("transform_props")) {
+                glm::vec3 translation = edited.getTranslation();
+                if (vec3Control("Position", translation, 0.0f, 0.05f)) {
+                    edited.setTranslation(translation);
+                    changed  = true;
+                    editName = "Move";
+                }
+
+                if (vec3Control("Rotation", m_eulerDegrees, 0.0f, 0.5f)) {
+                    const glm::vec3 r = glm::radians(m_eulerDegrees);
+                    const glm::quat q = glm::quat_cast(glm::eulerAngleYXZ(r.y, r.x, r.z));
+                    edited.setRotation(q);
+                    // What the node will hold once this applies -- so next frame
+                    // the cache recognises its own write and keeps the angles.
+                    m_eulerSource = q;
+                    changed  = true;
+                    editName = "Rotate";
+                }
+
+                glm::vec3 scale = edited.getScale();
+                if (vec3Control("Scale", scale, 1.0f, 0.01f)) {
+                    edited.setScale(scale);
+                    changed  = true;
+                    editName = "Scale";
+                }
+
+                endProperties();
             }
-
-            if (vec3Control("Rotation", m_eulerDegrees, 0.0f, 0.5f)) {
-                const glm::vec3 r = glm::radians(m_eulerDegrees);
-                const glm::quat q = glm::quat_cast(glm::eulerAngleYXZ(r.y, r.x, r.z));
-                edited.setRotation(q);
-                // What the node will hold once this applies -- so next frame
-                // the cache recognises its own write and keeps the angles.
-                m_eulerSource = q;
-                changed  = true;
-                editName = "Rotate";
-            }
-
-            glm::vec3 scale = edited.getScale();
-            if (vec3Control("Scale", scale, 1.0f, 0.01f)) {
-                edited.setScale(scale);
-                changed  = true;
-                editName = "Scale";
-            }
-
-            endProperties();
         }
 
         // Before the mesh early-out below: a light node has no mesh, and

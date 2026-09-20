@@ -22,6 +22,7 @@
 #include "passes/SkyboxPass.h"
 #include "passes/BloomPass.h"
 #include "../Math/Frustum.h"
+#include "CullSettings.h"
 
 class VulkanContext;
 class Swapchain;
@@ -99,6 +100,13 @@ public:
     // rendering stays independent of whether there is an editor at all.
     void setSelection(uint32_t nodeId) { m_selectedNode = nodeId; }
 
+    void updateCullView(const glm::mat4 &view, const glm::mat4 &viewProj, float aspect);
+    void collectCullDebugLines();
+    CullSettings &cullSettings()      { return m_cull; }
+    const CullStats &cullStats() const { return m_cullStats; }
+
+
+
     // Colour and pixel width, live-editable from the inspector.
     OutlineConstants &outlineSettings() { return m_outlinePass.settings(); }
 
@@ -113,6 +121,9 @@ public:
 
     BloomSettings &bloomSettings() { return m_bloomPass.settings(); }
     uint32_t bloomMipCount() const { return m_bloomPass.mipCount(); }
+
+
+
 
 private:
     // The layout shared by the scene, shadow, mask and debug-line pipelines:
@@ -181,12 +192,12 @@ private:
     glm::vec3  m_cameraPosition{ 0.0f };
 
     Frustum m_cullFrustum{};
-    Frustum m_frozenFrustum{};
     glm::mat4 m_frozenViewProj{ 1.0f };
-    bool m_freezeCull = false;
+    glm::mat4    m_cullViewProj{ 1.0f };
     bool m_cullEnabled = true;
+    float m_frozenAspect = 1.0f;
 
-    struct CullStats { uint32_t total = 0, submitted = 0, clamped = 0; };
+    CullSettings m_cull{};
     CullStats m_cullStats{};
 
     // Reused across frames so traversal doesn't allocate per frame.

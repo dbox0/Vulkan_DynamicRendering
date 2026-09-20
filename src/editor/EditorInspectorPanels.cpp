@@ -1,11 +1,3 @@
-
-// The mesh / material half of EditorUI's inspector,
-// EditorUI.cpp stays about lifetime, theme and the hierarchy.
-//
-// Written against the authoring Material (assets/Material.h). Every edit goes
-// through ResourceStore::updateMaterial(), which re-packs the GpuMaterial and
-// writes it through the persistent map. Next frame shows change
-
 #include "EditorUI.h"
 #include "EditorCommands.h"
 #include "EditorWidgets.h"
@@ -289,8 +281,7 @@ void EditorUI::drawTextureSection(const ResourceStore &resources, uint32_t textu
     }
 
     ImGui::SeparatorText("Image");
-    beginProperties("tex_props");
-    {
+    if (beginProperties("tex_props")) {
         propertyRow("Size");
         ImGui::Text("%u x %u", info.width, info.height);
 
@@ -309,8 +300,8 @@ void EditorUI::drawTextureSection(const ResourceStore &resources, uint32_t textu
 
         propertyRow("Image");
         ImGui::Text("%u", texture.imageId);
+        endProperties();
     }
-    endProperties();
 
     ImGui::SeparatorText("Used by");
 
@@ -434,8 +425,7 @@ void EditorUI::drawMaterialSection(const ResourceStore &resources, uint32_t mate
     // ---- surface ------------------------------------------------------------
     ImGui::SeparatorText("Surface");
     ImGui::BeginDisabled(isDefault);
-    beginProperties("mat_surface");
-    {
+    if (beginProperties("mat_surface")) {
         propertyRow("Alpha");
         const char *modes[] = { "Opaque", "Mask", "Blend" };
         int mode = static_cast<int>(mat.alphaMode);
@@ -451,24 +441,22 @@ void EditorUI::drawMaterialSection(const ResourceStore &resources, uint32_t mate
 
         propertyRow("Two-sided");
         changed |= ImGui::Checkbox("##doublesided", &mat.doubleSided);
+        endProperties();
     }
-    endProperties();
 
     // ---- base colour
     ImGui::SeparatorText("Base Color");
-    beginProperties("mat_base");
-    {
+    if (beginProperties("mat_base")) {
         textureSlot("Texture", TextureSlot::BaseColor, id, mat.baseColorTexture, resources);
         propertyRow("Factor");
         changed |= ImGui::ColorEdit4("##basecolor", &mat.baseColorFactor.x,
                                      colorFlags | ImGuiColorEditFlags_AlphaBar);
+        endProperties();
     }
-    endProperties();
 
     // ---- metallic / roughness
     ImGui::SeparatorText("Metallic / Roughness");
-    beginProperties("mat_mr");
-    {
+    if (beginProperties("mat_mr")) {
         textureSlot("Texture", TextureSlot::MetallicRoughness, id, mat.metallicRoughnessTexture, resources);
         if (mat.metallicRoughnessTexture) {
             ImGui::TableNextRow();
@@ -479,41 +467,38 @@ void EditorUI::drawMaterialSection(const ResourceStore &resources, uint32_t mate
         changed |= ImGui::SliderFloat("##metallic", &mat.metallicFactor, 0.0f, 1.0f);
         propertyRow("Roughness");
         changed |= ImGui::SliderFloat("##roughness", &mat.roughnessFactor, 0.0f, 1.0f);
+        endProperties();
     }
-    endProperties();
     if (!isEngineDefault) {
     // ---- normal
     ImGui::SeparatorText("Normal");
-    beginProperties("mat_normal");
-    {
+    if (beginProperties("mat_normal")) {
         textureSlot("Texture", TextureSlot::Normal, id, mat.normalTexture, resources);
         propertyRow("Scale");
         changed |= ImGui::DragFloat("##normalscale", &mat.normalScale, 0.01f, -4.0f, 4.0f, "%.2f");
+        endProperties();
     }
-    endProperties();
 
     // ---- occlusion
     ImGui::SeparatorText("Occlusion");
-    beginProperties("mat_ao");
-    {
+    if (beginProperties("mat_ao")) {
         textureSlot("Texture", TextureSlot::Occlusion, id, mat.occlusionTexture, resources);
         propertyRow("Strength");
         changed |= ImGui::SliderFloat("##aostrength", &mat.occlusionStrength, 0.0f, 1.0f);
+        endProperties();
     }
-    endProperties();
 
     // ---- emissive
     ImGui::SeparatorText("Emissive");
-    beginProperties("mat_emissive");
-    {
+    if (beginProperties("mat_emissive")) {
         textureSlot("Texture", TextureSlot::Emissive, id, mat.emissiveTexture, resources);
         propertyRow("Color");
         changed |= ImGui::ColorEdit3("##emissive", &mat.emissiveFactor.x, colorFlags);
         propertyRow("Strength");
         changed |= ImGui::DragFloat("##emissivestrength", &mat.emissiveStrength,
                                     0.05f, 0.0f, 1000.0f, "%.2f");
+        endProperties();
     }
-    endProperties();
     }
     ImGui::EndDisabled();
     if (changed) {
@@ -533,26 +518,17 @@ bool EditorUI::drawLightSection(Node &node)
 
     bool changed = false;
 
-    beginProperties("light_props");
+    if (beginProperties("light_props")) {
+        propertyRow("Color");
+        changed |= ImGui::ColorEdit3("##lightcolor", &node.lightColor.x);
 
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Color");
-    ImGui::TableSetColumnIndex(1);
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    changed |= ImGui::ColorEdit3("##lightcolor", &node.lightColor.x);
+        changed |= sliderRow("Intensity", node.lightIntensity, 0.0f, 20.0f, "%.2f");
 
-    changed |= sliderRow("Intensity", node.lightIntensity, 0.0f, 20.0f, "%.2f");
+        propertyRow("Shadows", false);
+        changed |= ImGui::Checkbox("##lightshadows", &node.lightCastsShadows);
 
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Shadows");
-    ImGui::TableSetColumnIndex(1);
-    changed |= ImGui::Checkbox("##lightshadows", &node.lightCastsShadows);
-
-    endProperties();
+        endProperties();
+    }
 
     // Read-only: aiming happens through the rotation above or the gizmo, and a
     // second way to set the same thing would fight it.

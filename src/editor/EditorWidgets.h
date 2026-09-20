@@ -4,7 +4,7 @@
 
 namespace editor::ui
 {
-    void beginProperties(const char *id);
+    bool beginProperties(const char *id);
     void endProperties();
 
     void propertyLabel(const char *label);

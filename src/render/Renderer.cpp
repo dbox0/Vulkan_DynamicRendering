@@ -154,6 +154,20 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     return true;
 }
 
+// Renderer.cpp
+void Renderer::updateCullView(const glm::mat4 &view, const glm::mat4 &viewProj, float aspect)
+{
+    if (!m_cull.freeze) {
+        m_frozenViewProj   = view;
+        m_frozenAspect = aspect;
+        m_cullViewProj = viewProj;
+    } else if (m_cull.overrideProjection) {
+        m_cullViewProj = glm::perspectiveRH_ZO(glm::radians(m_cull.fovDegrees),
+                                               m_frozenAspect,
+                                               m_cull.nearClip, m_cull.farClip) * m_frozenViewProj;
+    }
+    m_cullFrustum = Frustum::fromViewProj(m_cullViewProj);
+}
 void Renderer::shutdown()
 {
     if (!m_ctx.device()) {
@@ -395,11 +409,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
 
     m_outlinePass.beginFrame();
 
-    if (!m_freezeCull) {
-        m_cullFrustum    = Frustum::fromViewProj(viewProj);
-        m_frozenViewProj = viewProj;
-    }
-    const Frustum &cull = m_freezeCull ? m_frozenFrustum : m_cullFrustum;
+    const Frustum &cull = m_cullFrustum;
 
     const size_t itemCount = (*m_drawItems).size();
 
@@ -767,6 +777,45 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 // ============================================================================
 // frame
 // ============================================================================
+void Renderer::collectCullDebugLines()
+{
+    m_cullStats.boxesDrawn = 0;
+
+    if (m_cull.drawFrustum && m_cull.freeze) {
+        glm::vec3 c[8];
+        Frustum::cornersWorld(m_cullViewProj, c);
+
+        static constexpr int edges[12][2] = {
+            {0,1},{1,3},{3,2},{2,0},
+            {4,5},{5,7},{7,6},{6,4},
+            {0,4},{1,5},{2,6},{3,7}
+        };
+        const glm::vec3 color{ 1.0f, 0.85f, 0.2f };
+        for (const auto &e : edges) {
+            m_debugLines.addLine(c[e[0]], c[e[1]], color);
+        }
+    }
+
+    if (!m_cull.drawVisible && !m_cull.drawCulled) {
+        return;
+    }
+
+    static constexpr glm::vec3 kVisible{ 0.25f, 0.9f, 0.35f };
+    static constexpr glm::vec3 kCulled { 0.95f, 0.25f, 0.25f };
+
+    for (const DrawItem &item : *m_drawItems) {
+        if (m_cullStats.boxesDrawn >= static_cast<uint32_t>(m_cull.boxBudget)) {
+            break;
+        }
+        const bool visible = m_cullFrustum.intersectsAABB(item.worldBoundsMin, item.worldBoundsMax);
+        if (visible ? !m_cull.drawVisible : !m_cull.drawCulled) {
+            continue;
+        }
+        m_debugLines.addBox(item.worldBoundsMin, item.worldBoundsMax,
+                            visible ? kVisible : kCulled);
+        ++m_cullStats.boxesDrawn;
+    }
+}
 
 void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, uint32_t windowHeight,const std::function<void(VkCommandBuffer)> &overlay)
 {
@@ -832,6 +881,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     // recordCommandBuffer() reconstructs view rays from these.
     m_invViewProj    = glm::inverse(viewProj);
     m_cameraPosition = camera.position;
+    updateCullView(camera.getViewMatrix(), viewProj, aspectRatio);
 
     // A Directional Light node in the scene drives the sun. Without one the
     // renderer's own m_sunDirection is the fallback, so a scene that has never

@@ -31,9 +31,11 @@ struct TonemapConstants;
 struct EnvironmentSettings;
 struct SkyboxSettings;
 struct BloomSettings;
+struct CullSettings;
+struct CullStats;
+
 class Node;
 class UndoHistory;
-
 
 class EditorUI
 {
@@ -93,6 +95,11 @@ public:
     void selectMaterial(uint32_t materialId);
     void clearSelection();
 
+    void bindCullSettings(CullSettings &settings, const CullStats &stats)
+    {
+        m_cullSettings = &settings;
+        m_cullStats    = &stats;
+    }
 
 
     void invalidateTexturePreview(uint32_t textureId);
@@ -259,6 +266,14 @@ private:
     void drawSaveScenePopup();
     void drawOpenScenePopup();
     void drawDiscardChangesPopup();
+
+    //Culling
+    void drawCullWindow();
+
+    CullSettings    *m_cullSettings = nullptr;
+    const CullStats *m_cullStats    = nullptr;
+    bool m_showCullWindow = false;
+    bool m_cullWasFrozen  = false;
 
     void submitUndo();
     void submitRedo();
