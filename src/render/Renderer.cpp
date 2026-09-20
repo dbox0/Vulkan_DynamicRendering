@@ -928,11 +928,14 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .shadowEnabled    = m_shadowActive ? 1u : 0u,
     };
 
-    m_debugLines.beginFrame();
-    m_debugLines.collectLightGizmos(scene);
-    m_debugLines.upload(res.debugLinePtr);
 
     m_drawItems = &scene.drawItems(m_geometry);
+
+    m_debugLines.beginFrame();
+    m_debugLines.collectLightGizmos(scene);
+    collectCullDebugLines();
+    m_debugLines.upload(res.debugLinePtr);
+
     const uint32_t drawCount = writeDrawCommands(res, viewProj);
 
     recordCommandBuffer(res, imageIndex, drawCount,overlay);
