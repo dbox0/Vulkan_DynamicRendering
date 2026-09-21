@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "../../common/errors.h"
+#include "../../common/vkbarrier.h"
 
 
 
@@ -639,100 +640,13 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *ima
     vkCmdCopyBufferToImage(commandBuffer, staging.vkBuffer, outImage.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &buffImageCopy);
 
-    // Mip chain by successive halving blits. Skipped entirely when mipLevels
-    // came back as 1
-    int32_t mipWidth  = static_cast<int32_t>(width);
-    int32_t mipHeight = static_cast<int32_t>(height);
-
-    for (uint32_t level = 1; level < mipLevels; ++level) {
-        VkImageMemoryBarrier2 toSrc
-        {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT,
-            .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            .image = outImage.image,
-            .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                               .baseMipLevel = level - 1, .levelCount = 1, .layerCount = 1 }
-        };
-        VkDependencyInfo srcDep
-        {
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &toSrc
-        };
-        vkCmdPipelineBarrier2(commandBuffer, &srcDep);
-
-        const int32_t nextWidth  = mipWidth  > 1 ? mipWidth  / 2 : 1;
-        const int32_t nextHeight = mipHeight > 1 ? mipHeight / 2 : 1;
-
-        VkImageBlit2 blit
-        {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-            .srcSubresource{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                             .mipLevel = level - 1, .baseArrayLayer = 0, .layerCount = 1 },
-            .srcOffsets{ { 0, 0, 0 }, { mipWidth, mipHeight, 1 } },
-            .dstSubresource{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                             .mipLevel = level, .baseArrayLayer = 0, .layerCount = 1 },
-            .dstOffsets{ { 0, 0, 0 }, { nextWidth, nextHeight, 1 } }
-        };
-        VkBlitImageInfo2 blitInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-            .srcImage = outImage.image,
-            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            .dstImage = outImage.image,
-            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .regionCount = 1,
-            .pRegions = &blit,
-            .filter = VK_FILTER_LINEAR
-        };
-        vkCmdBlitImage2(commandBuffer, &blitInfo);
-
-        mipWidth  = nextWidth;
-        mipHeight = nextHeight;
-    }
-
-    // Everything but the last level is TRANSFER_SRC; the last is TRANSFER_DST.
-    const std::array<VkImageMemoryBarrier2, 2> readBarriers
-    {
-        VkImageMemoryBarrier2
-        {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-            .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            .image = outImage.image,
-            .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                               .baseMipLevel = 0, .levelCount = mipLevels - 1, .layerCount = 1 }
-        },
-        VkImageMemoryBarrier2
-        {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-            .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            .image = outImage.image,
-            .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                               .baseMipLevel = mipLevels - 1, .levelCount = 1, .layerCount = 1 }
-        }
-    };
-    VkDependencyInfo readDep
-    {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = mipLevels > 1 ? 2u : 1u,
-        .pImageMemoryBarriers = mipLevels > 1 ? readBarriers.data() : &readBarriers[1]
-    };
-    vkCmdPipelineBarrier2(commandBuffer, &readDep);
+    // Mip chain by successive halving blits
+    vkutil::generateMips(commandBuffer, {
+        .image     = outImage.image,
+        .width     = width,
+        .height    = height,
+        .mipLevels = mipLevels,
+    });
 
     outImage.mipLevels = mipLevels;
     return true;

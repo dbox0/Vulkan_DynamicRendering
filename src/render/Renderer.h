@@ -181,6 +181,7 @@ private:
     render::EnvironmentMap m_env;
     uint32_t m_envIrradianceSlot = 0;   // 1-based cube ID, 0 = none
     uint32_t m_envPrefilterSlot  = 0;
+    uint32_t m_envSkyboxSlot     = 0;   // full-res sky; the prefilter cube is too small to look at
     float    m_envMaxLod         = 0.0f;
 
     // The skybox needs the inverse of the matrix render() already computed,

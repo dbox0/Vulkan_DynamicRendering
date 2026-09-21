@@ -30,11 +30,18 @@ bool EnvironmentMap::load(const BakeContext& ctx,
         ? uint32_t(std::floor(std::log2(float(settings.cubeSize)))) + 1u
         : 1u;
 
+    const uint32_t prefilterMaxMips = uint32_t(std::floor(std::log2(float(settings.prefilterSize)))) + 1u;
+    const uint32_t prefilterMips    = std::clamp(settings.prefilterMips, 1u, prefilterMaxMips);
+
     const auto fail = [this] { destroy(); return false; };
 
-    if (!createSampler())                                         return fail();
-    if (!createCubemap(m_skybox, settings.cubeSize, skyMips))     return fail();
-    if (!createCubemap(m_irradiance, settings.irradianceSize, 1)) return fail();
+
+    const VkImageUsageFlags skyUsage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    if (!createSampler())                                                        return fail();
+    if (!createCubemap(m_skybox, settings.cubeSize, skyMips, skyUsage))          return fail();
+    if (!createCubemap(m_irradiance, settings.irradianceSize, 1))                return fail();
+    if (!createCubemap(m_prefilter, settings.prefilterSize, prefilterMips))      return fail();
     if (!createBrdfLut(settings.brdfLutSize)) return fail();
     if (!createPipelines())                                       return fail();
 
@@ -45,6 +52,7 @@ bool EnvironmentMap::load(const BakeContext& ctx,
     }
 
     recordEquirectToCube(cmd, equirectView, equirectSampler);
+    recordSkyMips(cmd);
     recordIrradiance(cmd);
     recordPrefilter(cmd);
     recordBrdfLut(cmd);
@@ -60,7 +68,8 @@ bool EnvironmentMap::load(const BakeContext& ctx,
     return true;
 }
 
-bool EnvironmentMap::createCubemap(Cubemap& out, uint32_t size, uint32_t mips) {
+bool EnvironmentMap::createCubemap(Cubemap& out, uint32_t size, uint32_t mips,
+                                   VkImageUsageFlags extraUsage) {
     out.size   = size;
     out.mips   = mips;
     out.format = CubemapFORMAT;
@@ -75,7 +84,7 @@ bool EnvironmentMap::createCubemap(Cubemap& out, uint32_t size, uint32_t mips) {
         .arrayLayers   = 6,
         .samples       = VK_SAMPLE_COUNT_1_BIT,
         .tiling        = VK_IMAGE_TILING_OPTIMAL,
-        .usage         = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .usage         = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | extraUsage,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
     const VmaAllocationCreateInfo alloc{ .usage = VMA_MEMORY_USAGE_AUTO };
@@ -112,53 +121,37 @@ bool EnvironmentMap::createCubemap(Cubemap& out, uint32_t size, uint32_t mips) {
         }
     }
 
-    // Anything that *samples* the cube during the bake has to be restricted to
-    // mip 0: the higher mips are still VK_IMAGE_LAYOUT_UNDEFINED at that point
-    if (&out == &m_skybox) {
-        const VkImageViewCreateInfo mip0{
-            .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image            = out.image,
-            .viewType         = VK_IMAGE_VIEW_TYPE_CUBE,
-            .format           = out.format,
-            .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6 },
-        };
-        if (vkCreateImageView(m_ctx.device, &mip0, nullptr, &m_skyboxMip0View) != VK_SUCCESS) {
-            showError("Could not create the skybox mip 0 sampling view");
-            return false;
-        }
-    }
     return true;
 }
 
 void EnvironmentMap::recordPrefilter(VkCommandBuffer cmd)
 {
-    if (m_skybox.mips <= 1 || !m_prefilterPipeline) return;
+    if (!m_prefilterPipeline) return;
 
-    // Mips 1..n-1 only: mip 0 is the source and is already SHADER_READ_ONLY.
-    const VkImageSubresourceRange tail{
-        VK_IMAGE_ASPECT_COLOR_BIT, 1, m_skybox.mips - 1, 0, 6 };
+    const VkImageSubresourceRange all{ VK_IMAGE_ASPECT_COLOR_BIT, 0, m_prefilter.mips, 0, 6 };
 
     vkutil::imageBarrier(cmd, {
-        .image     = m_skybox.image,
+        .image     = m_prefilter.image,
         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .newLayout = VK_IMAGE_LAYOUT_GENERAL,
         .srcStage  = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
         .dstStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
         .dstAccess = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-        .range     = tail,
+        .range     = all,
     });
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_prefilterPipeline);
 
-    for (uint32_t mip = 1; mip < m_skybox.mips; ++mip) {
-        const uint32_t mipSize = std::max(1u, m_skybox.size >> mip);
+    const float lastMip = float(std::max(m_prefilter.mips, 2u) - 1);
+    for (uint32_t mip = 0; mip < m_prefilter.mips; ++mip) {
+        const uint32_t mipSize = std::max(1u, m_prefilter.size >> mip);
 
         const VkDescriptorSet set = allocateSet(m_prefilterSetLayout);
         if (!set) return;
 
-        const VkDescriptorImageInfo srcInfo{ m_sampler, m_skyboxMip0View,
+        const VkDescriptorImageInfo srcInfo{ m_sampler, m_skybox.cubeView,
                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-        const VkDescriptorImageInfo dstInfo{ VK_NULL_HANDLE, m_skybox.mipStorageViews[mip],
+        const VkDescriptorImageInfo dstInfo{ VK_NULL_HANDLE, m_prefilter.mipStorageViews[mip],
                                              VK_IMAGE_LAYOUT_GENERAL };
         const VkWriteDescriptorSet writes[]{
             { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0,
@@ -171,7 +164,7 @@ void EnvironmentMap::recordPrefilter(VkCommandBuffer cmd)
         vkUpdateDescriptorSets(m_ctx.device, 2, writes, 0, nullptr);
 
         const PrefilterPush push{
-            .roughness   = float(mip) / float(m_skybox.mips - 1),
+            .roughness   = m_prefilter.mips > 1 ? float(mip) / lastMip : 0.0f,
             .mipSize     = mipSize,
             .sampleCount = 1024,
             .sourceSize  = float(m_skybox.size),
@@ -186,14 +179,14 @@ void EnvironmentMap::recordPrefilter(VkCommandBuffer cmd)
     }
 
     vkutil::imageBarrier(cmd, {
-        .image     = m_skybox.image,
+        .image     = m_prefilter.image,
         .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
         .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         .srcStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
         .srcAccess = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
         .dstStage  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
         .dstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-        .range     = tail,
+        .range     = all,
     });
 }
 
@@ -303,9 +296,9 @@ void EnvironmentMap::recordBrdfLut(VkCommandBuffer cmd)
 
 bool EnvironmentMap::createPipelines() {
 
-    // equirect (1) + irradiance (1) + one set per prefiltered mip.
-    const uint32_t prefilterSets = m_skybox.mips > 1 ? m_skybox.mips - 1 : 0;
-    const uint32_t setCount      = 3 + prefilterSets;
+    // equirect + irradiance + BRDF LUT, plus one set per prefilter level
+    // (level 0 included: it is baked too now).
+    const uint32_t setCount = 3 + m_prefilter.mips;
 
     const VkDescriptorPoolSize sizes[]{
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount - 1 },
@@ -342,11 +335,10 @@ bool EnvironmentMap::createPipelines() {
     if (!createPipeline("ibl/equirect_to_cube.comp", m_equirectSetLayout, 0,
                         m_equirectPipeLayout, m_equirectPipeline))
         return false;
-    if (!createPipeline("ibl/irradiance.comp", m_convolveSetLayout, 0,
+    if (!createPipeline("ibl/irradiance.comp", m_convolveSetLayout, sizeof(IrradiancePush),
                         m_convolvePipeLayout, m_irradiancePipeline))
         return false;
-    if (prefilterSets > 0 &&
-        !createPipeline("ibl/prefilter.comp", m_prefilterSetLayout, sizeof(PrefilterPush),
+    if (!createPipeline("ibl/prefilter.comp", m_prefilterSetLayout, sizeof(PrefilterPush),
                         m_prefilterPipeLayout, m_prefilterPipeline))
         return false;
 
@@ -468,17 +460,44 @@ void EnvironmentMap::recordEquirectToCube(VkCommandBuffer cmd,
 
     const uint32_t groups = (m_skybox.size + 7) / 8;
     vkCmdDispatch(cmd, groups, groups, 6);
+    // Mip 0 stays GENERAL; recordSkyMips takes it from here.
+}
 
-    vkutil::imageBarrier(cmd, {
-        .image     = m_skybox.image,
-        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        .srcStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-        .srcAccess = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-        .dstStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
-                   | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .dstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-        .range     = all,
+void EnvironmentMap::recordSkyMips(VkCommandBuffer cmd)
+{
+    // generateMips wants every level in TRANSFER_DST with level 0 visible to
+    // the blit. Level 0 was just written by the equirect compute pass.
+    vkutil::ImageBarrier toTransfer[2]{
+        {
+            .image     = m_skybox.image,
+            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcStage  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            .srcAccess = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+            .dstStage  = VK_PIPELINE_STAGE_2_BLIT_BIT,
+            .dstAccess = VK_ACCESS_2_TRANSFER_READ_BIT,
+            .range     = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6 },
+        },
+        {
+            .image     = m_skybox.image,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcStage  = VK_PIPELINE_STAGE_2_NONE,
+            .dstStage  = VK_PIPELINE_STAGE_2_BLIT_BIT,
+            .dstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .range     = { VK_IMAGE_ASPECT_COLOR_BIT, 1, m_skybox.mips - 1, 0, 6 },
+        },
+    };
+    vkutil::imageBarriers(cmd, { toTransfer, m_skybox.mips > 1 ? 2u : 1u });
+
+    vkutil::generateMips(cmd, {
+        .image      = m_skybox.image,
+        .width      = m_skybox.size,
+        .height     = m_skybox.size,
+        .mipLevels  = m_skybox.mips,
+        .layerCount = 6,
+        .dstStage   = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccess  = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
     });
 }
 
@@ -498,7 +517,7 @@ void EnvironmentMap::recordIrradiance(VkCommandBuffer cmd) {
     const VkDescriptorSet set = allocateSet(m_convolveSetLayout);
     if (!set) return;
 
-    const VkDescriptorImageInfo srcInfo{ m_sampler, m_skyboxMip0View,
+    const VkDescriptorImageInfo srcInfo{ m_sampler, m_skybox.cubeView,
                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     const VkDescriptorImageInfo dstInfo{ VK_NULL_HANDLE, m_irradiance.mipStorageViews[0],
                                          VK_IMAGE_LAYOUT_GENERAL };
@@ -515,6 +534,14 @@ void EnvironmentMap::recordIrradiance(VkCommandBuffer cmd) {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_irradiancePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_convolvePipeLayout,
                             0, 1, &set, 0, nullptr);
+
+    // irradiance.comp takes ~16k samples per texel over a hemisphere, about the
+    // density of a 64x64 face. Reading a finer mip aliases the sun.
+    const IrradiancePush push{
+        .sourceLod = std::max(0.0f, std::log2(float(m_skybox.size) / 64.0f)),
+    };
+    vkCmdPushConstants(cmd, m_convolvePipeLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                       0, sizeof(push), &push);
 
     const uint32_t groups = (m_irradiance.size + 7) / 8;
     vkCmdDispatch(cmd, groups, groups, 6);
@@ -553,7 +580,6 @@ void EnvironmentMap::destroyBakeOnly() {
     vkDestroyDescriptorSetLayout(m_ctx.device, m_convolveSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(m_ctx.device, m_prefilterSetLayout, nullptr);
     vkDestroyDescriptorPool(m_ctx.device, m_descriptorPool, nullptr);
-    vkDestroyImageView(m_ctx.device, m_skyboxMip0View, nullptr);
     vkDestroyPipeline(m_ctx.device, m_brdfPipeline, nullptr);
     vkDestroyPipelineLayout(m_ctx.device, m_brdfPipeLayout, nullptr);
     vkDestroyDescriptorSetLayout(m_ctx.device, m_brdfSetLayout,nullptr);
@@ -568,7 +594,6 @@ void EnvironmentMap::destroyBakeOnly() {
     m_convolveSetLayout   = VK_NULL_HANDLE;
     m_prefilterSetLayout  = VK_NULL_HANDLE;
     m_descriptorPool      = VK_NULL_HANDLE;
-    m_skyboxMip0View      = VK_NULL_HANDLE;
     m_brdfPipeline   = VK_NULL_HANDLE;
     m_brdfPipeLayout = VK_NULL_HANDLE;
     m_brdfSetLayout  = VK_NULL_HANDLE;
@@ -580,6 +605,7 @@ void EnvironmentMap::destroy() {
 
     destroyCubemap(m_skybox);
     destroyCubemap(m_irradiance);
+    destroyCubemap(m_prefilter);
 
     vkDestroyImageView(m_ctx.device, m_brdfView, nullptr);
     m_brdfView = VK_NULL_HANDLE;
@@ -611,6 +637,7 @@ EnvironmentMap& EnvironmentMap::operator=(EnvironmentMap&& other) noexcept {
     m_settings   = other.m_settings;
     m_skybox     = std::exchange(other.m_skybox, {});
     m_irradiance = std::exchange(other.m_irradiance, {});
+    m_prefilter  = std::exchange(other.m_prefilter, {});
     m_sampler    = std::exchange(other.m_sampler, VK_NULL_HANDLE);
 
     m_descriptorPool     = std::exchange(other.m_descriptorPool, VK_NULL_HANDLE);
@@ -624,10 +651,13 @@ EnvironmentMap& EnvironmentMap::operator=(EnvironmentMap&& other) noexcept {
     m_prefilterSetLayout  = std::exchange(other.m_prefilterSetLayout, VK_NULL_HANDLE);
     m_prefilterPipeLayout = std::exchange(other.m_prefilterPipeLayout, VK_NULL_HANDLE);
     m_prefilterPipeline   = std::exchange(other.m_prefilterPipeline, VK_NULL_HANDLE);
-    m_skyboxMip0View      = std::exchange(other.m_skyboxMip0View, VK_NULL_HANDLE);
 
-    m_brdfSetLayout       = std::exchange(other.m_brdfSetLayout, VK_NULL_HANDLE);
+    m_brdfImage           = std::exchange(other.m_brdfImage, VK_NULL_HANDLE);
     m_brdfAllocation      = std::exchange(other.m_brdfAllocation, VK_NULL_HANDLE);
+    m_brdfView            = std::exchange(other.m_brdfView, VK_NULL_HANDLE);
+    m_brdfSize            = std::exchange(other.m_brdfSize, 0u);
+    m_brdfSetLayout       = std::exchange(other.m_brdfSetLayout, VK_NULL_HANDLE);
+    m_brdfPipeLayout      = std::exchange(other.m_brdfPipeLayout, VK_NULL_HANDLE);
     m_brdfPipeline        = std::exchange(other.m_brdfPipeline, VK_NULL_HANDLE);
 
     return *this;

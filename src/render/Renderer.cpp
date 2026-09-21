@@ -137,8 +137,9 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
                        m_resources.sampler(tex.samplerId), settings))
         {
             m_envIrradianceSlot = m_resources.addCubeTexture(m_env.irradianceView(), m_env.sampler());
-            m_envPrefilterSlot  = m_resources.addCubeTexture(m_env.skyboxView(),     m_env.sampler());
-            m_envMaxLod = std::min(static_cast<float>(m_env.skyboxMips() - 1),6.0f);
+            m_envPrefilterSlot  = m_resources.addCubeTexture(m_env.prefilterView(),  m_env.sampler());
+            m_envSkyboxSlot     = m_resources.addCubeTexture(m_env.skyboxView(),     m_env.sampler());
+            m_envMaxLod = static_cast<float>(m_env.prefilterMips() - 1);
             m_resources.setBrdfLut(m_env.brdfLutView(), m_env.sampler());
         }
     }
@@ -680,7 +681,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
             vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
             m_skyboxPass.record(res.commandBuffer, globalSet,
-                                m_invViewProj, m_cameraPosition, m_envPrefilterSlot);
+                                m_invViewProj, m_cameraPosition, m_envSkyboxSlot);
 
             vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_sceneLayout, 0, 1, &globalSet, 0, nullptr);

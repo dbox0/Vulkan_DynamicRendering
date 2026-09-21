@@ -36,6 +36,11 @@ struct EnvironmentSettings {
     uint32_t irradianceSize = 32;
     bool     generateMips   = false;
     uint32_t brdfLutSize = 512;
+
+    // Specular IBL. Level m is baked at roughness m / (prefilterMips - 1), and
+    // the shader samples lod = roughness * (prefilterMips - 1)
+    uint32_t prefilterSize = 256;
+    uint32_t prefilterMips = 6;    // 256 -> 8
 };
 
 struct PrefilterPush {
@@ -43,6 +48,10 @@ struct PrefilterPush {
     uint32_t mipSize;
     uint32_t sampleCount;
     float    sourceSize;
+};
+
+struct IrradiancePush {
+    float sourceLod;
 };
 
 struct BrdfLutPush {
@@ -69,14 +78,16 @@ public:
 
     VkImageView skyboxView()     const { return m_skybox.cubeView; }
     VkImageView irradianceView() const { return m_irradiance.cubeView; }
-    VkImageView prefilterView()  const { return m_skybox.cubeView; }
+    VkImageView prefilterView()  const { return m_prefilter.cubeView; }
     VkImageView brdfLutView()    const { return m_brdfView; }
     VkSampler   sampler()        const { return m_sampler; }
     uint32_t    skyboxMips()     const { return m_skybox.mips; }
+    uint32_t    prefilterMips()  const { return m_prefilter.mips; }
     bool        ready()          const { return m_skybox.valid(); }
 
 private:
-    bool createCubemap(Cubemap& out, uint32_t size, uint32_t mips);
+    bool createCubemap(Cubemap& out, uint32_t size, uint32_t mips,
+                       VkImageUsageFlags extraUsage = 0);
     bool createSampler();
     bool createPipelines();
     bool createPipeline(const char* file,
@@ -86,6 +97,7 @@ private:
                         VkPipeline& outPipeline);
 
     void recordEquirectToCube(VkCommandBuffer cmd, VkImageView src, VkSampler srcSampler);
+    void recordSkyMips(VkCommandBuffer cmd);
     void recordIrradiance(VkCommandBuffer cmd);
     void recordPrefilter(VkCommandBuffer cmd);
 
@@ -102,6 +114,7 @@ private:
 
     Cubemap   m_skybox{};
     Cubemap   m_irradiance{};
+    Cubemap   m_prefilter{};
     VkSampler m_sampler = VK_NULL_HANDLE;
 
     //Equirect, Irradiance
@@ -117,7 +130,6 @@ private:
     VkDescriptorSetLayout m_prefilterSetLayout  = VK_NULL_HANDLE;
     VkPipelineLayout      m_prefilterPipeLayout = VK_NULL_HANDLE;
     VkPipeline            m_prefilterPipeline   = VK_NULL_HANDLE;
-    VkImageView           m_skyboxMip0View      = VK_NULL_HANDLE;  // cube view, mip 0 only
 
     //BRDF
     VkImage               m_brdfImage      = VK_NULL_HANDLE;

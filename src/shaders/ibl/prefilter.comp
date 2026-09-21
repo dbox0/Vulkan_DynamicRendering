@@ -91,6 +91,7 @@ void main(){
 
     //solid angle of one texel
     float saTexel = 4.0 * PI / (6.0 * pc.sourceSize * pc.sourceSize);
+    float baseLod = max(0.0, log2(pc.sourceSize / float(pc.mipSize)));
 
     vec3  color  = vec3(0.0);
     float weight = 0.0;
@@ -112,8 +113,8 @@ void main(){
 
         float saSample = 1.0 / (float(pc.sampleCount) * pdf + 1e-4);
         float mipLevel = pc.roughness == 0.0
-        ? 0.0
-        : 0.5 * log2(saSample / saTexel);
+        ? baseLod
+        : max(baseLod, 0.5 * log2(saSample / saTexel));
 
         color  += textureLod(uSource, L, mipLevel).rgb * NdotL;
         weight += NdotL;
