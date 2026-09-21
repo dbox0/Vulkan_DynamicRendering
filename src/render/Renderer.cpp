@@ -17,6 +17,7 @@
 #include "../common/constants.h"
 #include <glm/glm.hpp>
 
+#include "../common/vkbarrier.h"
 #include "../scene/Camera.h"
 
 // ============================================================================
@@ -542,7 +543,9 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         VkImageMemoryBarrier2
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+                            | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                            | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             .srcAccessMask = 0,
             .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -662,6 +665,14 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     m_profiler.endScope(res.commandBuffer);
 
     {
+        //  __
+        // / _\ ___ ___ _ __   ___
+        // \ \ / __/ _ \ '_ \ / _ \
+        // _\ \ (_|  __/ | | |  __/
+        // \__/\___\___|_| |_|\___|
+        //
+
+
         GpuScope sceneScope(m_profiler,res.commandBuffer,"Scene");
         vkCmdBeginRendering(res.commandBuffer, &renderingInfo); // hdr color clear/store, depth clear/store
         {
@@ -717,6 +728,22 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .pColorAttachments = &swapColorAttachInfo,
         .pDepthAttachment = &swapDepthAttachInfo
     };
+
+    // Test using our vkutil Image Barrier
+    vkutil::imageBarrier(res.commandBuffer,
+        {
+            .image = m_swapchain.depthImage(),
+            .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+                        | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            .srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
+                        | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .range = {VK_IMAGE_ASPECT_DEPTH_BIT , 0, 1 , 0 ,1}
+        });
 
 
     vkCmdBeginRendering(res.commandBuffer, &swapRenderingInfo);

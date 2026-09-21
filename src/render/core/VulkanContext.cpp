@@ -148,8 +148,7 @@ bool VulkanContext::createDebugMessenger()
     return vkCreateDebugUtilsMessengerEXT(m_instance, &info, nullptr,
                                           &m_debugMessenger) == VK_SUCCESS;
 }
-bool VulkanContext::createInstance(uint32_t apiVersion)
-{
+bool VulkanContext::createInstance(uint32_t apiVersion) {
     if (volkInitialize() != VK_SUCCESS) {
         showError("Error initializing volk");
         return false;
@@ -170,7 +169,7 @@ bool VulkanContext::createInstance(uint32_t apiVersion)
         requestedExtensions.push_back(sdlExtensions[i]);
     }
 
-    const std::vector<const char *> requestedLayers{ "VK_LAYER_KHRONOS_validation" };
+    const std::vector<const char *> requestedLayers{ "VK_LAYER_KHRONOS_validation"};
 
     // Attached via pNext so the callback also covers instance creation and
     // destruction, which happen outside the messenger's own lifetime.
@@ -184,10 +183,26 @@ bool VulkanContext::createInstance(uint32_t apiVersion)
         .pfnUserCallback = debugCallback
     };
 
+//#ifndef NDEBUG
+    const VkBool32 enableSyncValidation = VK_TRUE;
+    const VkLayerSettingEXT layerSettings[] {
+        "VK_LAYER_KHRONOS_validation","validate_sync",
+        VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &enableSyncValidation
+    };
+
+    const VkLayerSettingsCreateInfoEXT layerSettingsInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT,
+        .pNext = &debugInfo,
+        .settingCount = static_cast<uint32_t>(std::size(layerSettings)),
+        .pSettings = layerSettings,
+    };
+//#endif*/
+
     VkInstanceCreateInfo instCreateInfo
     {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pNext = &debugInfo,
+        .pNext = &layerSettingsInfo,
         .pApplicationInfo = &appInfo,
         .enabledLayerCount = static_cast<uint32_t>(requestedLayers.size()),
         .ppEnabledLayerNames = requestedLayers.data(),
