@@ -602,7 +602,7 @@ bool VulkanContext::createImage2D(VkCommandBuffer commandBuffer, const void *ima
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
         .srcAccessMask = VK_ACCESS_2_NONE,
-        .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
         .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

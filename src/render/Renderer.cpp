@@ -779,16 +779,13 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         .srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_NONE,
+        .dstStageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,
         .dstAccessMask = 0,
         .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         .image = m_swapchain.image(imageIndex),
         .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
     };
-
-
-
 
     VkDependencyInfo presentDepInfo
     {
