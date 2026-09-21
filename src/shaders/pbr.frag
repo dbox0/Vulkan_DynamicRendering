@@ -144,8 +144,7 @@ vec3 F_Schlick(vec3 f0, float VdotH)
     return f0 + (1.0 - f0) * pow(1.0 - VdotH, 5.0);
 }
 
-// Karis' analytic fit of the split-sum environment BRDF. Stands in for the
-// BRDF LUT until real IBL exists, so metals aren't black outside the sun.
+
 vec3 EnvBRDFApprox(vec3 f0, float roughness, float NdotV)
 {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572,  0.022);
@@ -154,29 +153,6 @@ vec3 EnvBRDFApprox(vec3 f0, float roughness, float NdotV)
     float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
     vec2  AB   = vec2(-1.04, 1.04) * a004 + r.zw;
     return f0 * AB.x + AB.y;
-}
-
-// Khronos PBR Neutral:
-vec3 PBRNeutralToneMapping(vec3 color)
-{
-    const float startCompression = 0.8 - 0.04;
-    const float desaturation     = 0.15;
-
-    float x = min(color.r, min(color.g, color.b));
-    float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
-    color -= offset;
-
-    float peak = max(color.r, max(color.g, color.b));
-    if (peak < startCompression) {
-        return color;
-    }
-
-    const float d = 1.0 - startCompression;
-    float newPeak = 1.0 - d * d / (peak + d - startCompression);
-    color *= newPeak / peak;
-
-    float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
-    return mix(color, vec3(newPeak), g);
 }
 
 // 1 = lit, 0 = fully shadowed.
@@ -269,7 +245,7 @@ void main()
         vec3 T, B;
         if (inTangent.w != 0.0) {
             T = normalize(inTangent.xyz - N * dot(N, inTangent.xyz))*flip;  // re-orthogonalise
-            B = cross(N, T) * sign(inTangent.w);
+            B = cross(N, T) * sign(inTangent.w)*flip;
         } else {
             // No tangents in the mesh: cotangent frame from screen-space
             // derivatives (Schueler). Good enough until MikkTSpace is in.
@@ -340,6 +316,5 @@ void main()
 
     if (any(isnan(hdr)) || any(isinf(hdr))) hdr = vec3(0.0);
 
-    //fragColor = vec4(PBRNeutralToneMapping(hdr * frame.exposure), baseColor.a);
     fragColor = vec4(hdr, baseColor.a);
 }
