@@ -1,5 +1,6 @@
 #version 460
-
+#extension GL_EXT_nonuniform_qualifier : require
+#include "../common/scene.glsl"
 
 // ---------------------------------------------------------------------------
 
@@ -143,7 +144,7 @@ float geometricSpecularAA(vec3 N, float alpha)
 
 void main()
 {
-    Material        mat   = loadMaterial(inM);
+    Material        mat   = loadMaterial(inMaterialIndex);
     FrameDataBuffer frame = frameData();
 
     // Derivatives up front, in uniform control flow.

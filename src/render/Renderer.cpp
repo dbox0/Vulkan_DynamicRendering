@@ -284,7 +284,7 @@ bool Renderer::createSceneLayout()
     {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset = 0,
-        .size = sizeof(FrameConstants)
+        .size = sizeof(PushConstants)
     };
 
     // set 0: bindless textures + materials. set 1: the shadow map.
@@ -664,16 +664,11 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             m_sceneLayout, 0, 1, &globalSet, 0, nullptr);
 
-    FrameConstants frameConsts
-    {
-        .vertexBufferAddress     = m_geometry.vertexBufferAddress(),
-        .materialBufferAddress   = m_resources.materialBufferAddress(),
-        .renderItemBufferAddress = res.renderItemBuffer.deviceAddress,
-        .frameDataAddress        = res.frameDataBuffer.deviceAddress
-    };
+
+   const PushConstants push{.frameData = res.frameDataBuffer.deviceAddress};
     vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(FrameConstants), &frameConsts);
+                       0, sizeof(PushConstants), &push);
 
     vkCmdBindIndexBuffer(res.commandBuffer, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
@@ -730,7 +725,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
                                     m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
             vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(FrameConstants), &frameConsts);
+                               0, sizeof(PushConstants), &push);
 
             m_scenePass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches);
         }
@@ -799,8 +794,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
 
         m_profiler.beginScope(res.commandBuffer,"ImGui");
-        m_debugLines.record(res.commandBuffer, m_sceneLayout, frameConsts,
-                            res.debugLineBuffer.deviceAddress);
+        m_debugLines.record(res.commandBuffer, m_sceneLayout, push);
 
         if (hasSelection) {
             m_outlinePass.recordComposite(res.commandBuffer, extent);
@@ -978,6 +972,12 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
     *res.frameDataPtr = FrameData
     {
+        .table = {
+            .vertices    = m_geometry.vertexBufferAddress(),
+            .materials   = m_resources.materialBufferAddress(),
+            .renderItems = res.renderItemBuffer.deviceAddress,
+            .debugLines  = res.debugLineBuffer.deviceAddress,
+        },
         .viewProj       = viewProj,
         .lightViewProj  = shadow.lightViewProj,
         .cameraPosition = camera.position,

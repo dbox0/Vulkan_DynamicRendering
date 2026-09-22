@@ -1,4 +1,6 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : require
+
 #include "../common/scene.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];

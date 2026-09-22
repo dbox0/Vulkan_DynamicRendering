@@ -47,7 +47,7 @@ public:
     // copy of the frame constants; nothing after it may rely on the vertex
     // address that was bound before.
     void record(VkCommandBuffer cmd, VkPipelineLayout layout,
-                const FrameConstants &frameConsts, uint64_t lineBufferAddress) const;
+                const PushConstants &push) const;
 
 private:
     VulkanContext &m_ctx;

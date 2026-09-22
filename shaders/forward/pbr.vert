@@ -17,7 +17,7 @@ mat3 cofactor(mat3 m)
 
 void main()
 {
-    Vertex          v     = loadVertex(gl_vertexIndex);
+    Vertex          v     = loadVertex(gl_VertexIndex);
     RenderItem      ri    =  loadRenderItem(gl_InstanceIndex);
     FrameDataBuffer frame = frameData();
 

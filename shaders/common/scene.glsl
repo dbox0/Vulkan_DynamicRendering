@@ -37,11 +37,11 @@ layout(buffer_reference, scalar) readonly buffer RenderItemBuffer  { RenderItem 
 
 struct GpuTable
 {
-    VertexBuffer      vertices;
-    MaterialBuffer    materials;
-    RenderItemBuffer  renderItems;
-    DebugVertexBuffer debugLines;
-    uint64_t          reserved[4];
+    uint64_t vertices;
+    uint64_t materials;
+    uint64_t renderItems;
+    uint64_t debugLines;
+    uint64_t reserved[4];
 };
 
 layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
@@ -74,10 +74,9 @@ layout(push_constant, scalar) uniform PushConstants
     uint            pad;
 } pc;
 
-FrameDataBuffer frameData()               { return pc.frame; }
-Vertex          loadVertex(uint i)        { return pc.frame.table.vertices.vertices[i]; }
-RenderItem      loadRenderItem(uint i)    { return pc.frame.table.renderItems.items[i]; }
-Material        loadMaterial(uint i)      { return pc.frame.table.materials.materials[i]; }
-DebugVertex     loadDebugVertex(uint i)   { return pc.frame.table.debugLines.vertices[i]; }
-
+FrameDataBuffer frameData()             { return pc.frame; }
+Vertex          loadVertex(uint i)      { return VertexBuffer(pc.frame.table.vertices).vertices[i]; }
+RenderItem      loadRenderItem(uint i)  { return RenderItemBuffer(pc.frame.table.renderItems).items[i]; }
+Material        loadMaterial(uint i)    { return MaterialBuffer(pc.frame.table.materials).materials[i]; }
+DebugVertex     loadDebugVertex(uint i) { return DebugVertexBuffer(pc.frame.table.debugLines).vertices[i]; }
 #endif

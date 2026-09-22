@@ -124,21 +124,15 @@ void DebugLinePass::upload(DebugVertex *dst)
 }
 
 void DebugLinePass::record(VkCommandBuffer cmd, VkPipelineLayout layout,
-                           const FrameConstants &frameConsts, uint64_t lineBufferAddress) const
+                           const PushConstants &push) const
 {
     if (m_vertexCount == 0) {
         return;
     }
 
-    // The address slot that holds the mesh vertex buffer is repointed at the
-    // line buffer -- debug_line.vert reads the same push constant block, so
-    // this needs no layout of its own.
-    FrameConstants debugConsts = frameConsts;
-    debugConsts.vertexBufferAddress = lineBufferAddress;
-
     vkCmdPushConstants(cmd, layout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(FrameConstants), &debugConsts);
+                       0, sizeof(PushConstants), &push);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdDraw(cmd, m_vertexCount, 1, 0, 0);
