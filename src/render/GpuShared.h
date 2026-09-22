@@ -8,6 +8,60 @@
 #error "GpuShared.h assumes tightly packed glm types (scalar block layout)"
 #endif
 
+struct GpuTable {
+    uint64_t vertices = 0;
+    uint64_t materials = 0;
+    uint64_t renderItems = 0;
+    uint64_t debugLines = 0;
+    uint64_t reserved [4]{};
+};
+static_assert(sizeof(GpuTable) == 64);
+
+// FrameData -> per frame-in-flight, host-visible, read through BDA.
+// This is where lights will go later (a light list address, counts, etc).
+struct FrameData
+{
+    GpuTable table;
+    glm::mat4 viewProj{ 1.0f };
+
+    // World -> shadow map clip. Reverse Z like the camera, ortho, so w is 1.
+    glm::mat4 lightViewProj{ 1.0f };
+
+    glm::vec3 cameraPosition{ 0.0f };
+    float     exposure = 1.0f;
+    glm::vec3 sunDirection{ 0.0f, -1.0f, -1.0f }; // direction light TRAVELS, normalised on the CPU
+    float     sunIntensity = 3.0f;
+    glm::vec3 sunColor{ 1.0f };
+    float     ambientIntensity = 1.0f;
+    glm::vec3 skyColor{ 0.15f, 0.18f, 0.25f };
+    glm::vec3 groundColor{ 0.05f, 0.03f, 0.02f };
+
+    uint  envIrradianceTex;  // 0 = none, fall back to hemisphere
+    uint  envPrefilterTex;
+    float envIntensity;
+    float envMaxLod;
+
+    float shadowTexelSize  = 0.0f;   // 1 / resolution, for PCF tap offsets
+    float shadowNormalBias = 0.0f;   // world units, already scaled by texel size
+    float shadowDepthBias  = 0.0f;   // light-space depth, added to the compare
+    uint  shadowEnabled    = 0;
+};
+static_assert(offsetof(FrameData, viewProj)        == 64);
+static_assert(offsetof(FrameData, lightViewProj)   == 128);
+static_assert(offsetof(FrameData, cameraPosition)  == 192);
+static_assert(offsetof(FrameData, sunDirection)    == 208);
+static_assert(offsetof(FrameData, skyColor)        == 240);
+static_assert(offsetof(FrameData, shadowTexelSize) == 280);
+static_assert(sizeof(FrameData) == 296);
+
+
+struct PushConstants {
+    uint64_t frameData = 0;
+    uint32_t viewIndex = 0;
+    uint32_t pad       = 0;
+};
+static_assert(sizeof(PushConstants) == 16);
+
 struct Vertex
 {
     glm::vec3 position{ 0.0f };
@@ -88,55 +142,5 @@ struct RenderItem
 };
 static_assert(sizeof(RenderItem) == 68);
 static_assert(offsetof(RenderItem, materialIndex) == 64);
-
-
-// FrameData -> per frame-in-flight, host-visible, read through BDA.
-// This is where lights will go later (a light list address, counts, etc).
-// ----------------------------------------------------------------------------
-struct FrameData
-{
-    glm::mat4 viewProj{ 1.0f };
-
-    // World -> shadow map clip. Reverse Z like the camera, ortho, so w is 1.
-    glm::mat4 lightViewProj{ 1.0f };
-
-    glm::vec3 cameraPosition{ 0.0f };
-    float     exposure = 1.0f;
-    glm::vec3 sunDirection{ 0.0f, -1.0f, -1.0f }; // direction light TRAVELS, normalised on the CPU
-    float     sunIntensity = 3.0f;
-    glm::vec3 sunColor{ 1.0f };
-    float     ambientIntensity = 1.0f;
-    glm::vec3 skyColor{ 0.15f, 0.18f, 0.25f };
-    glm::vec3 groundColor{ 0.05f, 0.03f, 0.02f };
-
-    uint  envIrradianceTex;  // 0 = none, fall back to hemisphere
-    uint  envPrefilterTex;
-    float envIntensity;
-    float envMaxLod;
-
-    float shadowTexelSize  = 0.0f;   // 1 / resolution, for PCF tap offsets
-    float shadowNormalBias = 0.0f;   // world units, already scaled by texel size
-    float shadowDepthBias  = 0.0f;   // light-space depth, added to the compare
-    uint  shadowEnabled    = 0;
-};
-
-static_assert(sizeof(FrameData) == 228 +4);
-static_assert(offsetof(FrameData, lightViewProj)  == 64);
-static_assert(offsetof(FrameData, cameraPosition) == 128);
-static_assert(offsetof(FrameData, sunDirection)   == 144);
-static_assert(offsetof(FrameData, skyColor)       == 176);
-static_assert(offsetof(FrameData, shadowTexelSize) == 216);
-
-// Push constants. 32 bytes
-// ----------------------------------------------------------------------------
-struct FrameConstants
-{
-    uint64_t vertexBufferAddress     = 0;
-    uint64_t materialBufferAddress   = 0;
-    uint64_t renderItemBufferAddress = 0;
-    uint64_t frameDataAddress        = 0;
-};
-
-static_assert(sizeof(FrameConstants) == 32);
 
 

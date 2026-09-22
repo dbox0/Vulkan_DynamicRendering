@@ -313,14 +313,6 @@ bool VulkanContext::createDevice()
     {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .pNext = &features14,
-        // SPIR-V 1.6 removed OpKill, so glslang lowers every `discard` to
-        // OpDemoteToHelperInvocation (or OpTerminateInvocation, depending on
-        // the construct). Both are core in 1.3 but still opt-in, and any
-        // fragment shader that discards -- alpha masking in pbr.frag, the
-        // selection outline -- fails module creation without them.
-        // NOTE: declaration order matters here; these two sit BEFORE
-        // synchronization2 in the struct, so designated initialisers have to
-        // list them first.
         .shaderDemoteToHelperInvocation = VK_TRUE,
         .shaderTerminateInvocation = VK_TRUE,
         .synchronization2 = VK_TRUE,
