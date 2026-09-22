@@ -10,6 +10,7 @@
 #include "../../assets/ImportMesh.h"
 #include "../core/VulkanContext.h"
 #include "../../common/errors.h"
+#include  "../../assets/VertexPacking.h"
 
 namespace {
     // Empty Mesh that mesh() can hand back for a stale handle instead of
@@ -23,37 +24,39 @@ namespace {
 
 bool GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 {
-    if (m_vertexBuffer.vkBuffer) {
+    if (m_positionBuffer.vkBuffer) {
         showError("GeometryStore::reserve called more than once");
         return false;
     }
 
-    const size_t vertexCapacity = vertexBudgetBytes / sizeof(Vertex);
+    const size_t vertexCapacity = vertexBudgetBytes / kVertexStride;
     const size_t indexCapacity  = indexBudgetBytes / sizeof(uint32_t);
 
-    // Only the allocators know the budget. The CPU mirror stays empty until
-    // something is actually loaded
+
     m_vertexAlloc.reset(vertexCapacity);
     m_indexAlloc.reset(indexCapacity);
-    m_vertices.clear();
+    m_positions.clear();
+    m_attributes.clear();
+    m_colors.clear();
     m_indices.clear();
 
-    m_vertexBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        vertexCapacity * sizeof(Vertex), false, VMA_MEMORY_USAGE_AUTO);
+    const VkBufferUsageFlags streamUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-    if (!m_vertexBuffer.vkBuffer) {
-        showError("GeometryStore::reserve : Error creating the vertex buffer");
+    m_positionBuffer  = m_ctx.createBuffer(streamUsage, vertexCapacity * sizeof(glm::vec3),
+                                           false, VMA_MEMORY_USAGE_AUTO);
+    m_attributeBuffer = m_ctx.createBuffer(streamUsage, vertexCapacity * sizeof(PackedAttributes),
+                                           false, VMA_MEMORY_USAGE_AUTO);
+    m_colorBuffer     = m_ctx.createBuffer(streamUsage, vertexCapacity * sizeof(uint32_t),
+                                           false, VMA_MEMORY_USAGE_AUTO);
+    m_indexBuffer     = m_ctx.createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                           indexCapacity * sizeof(uint32_t), false, VMA_MEMORY_USAGE_AUTO);
+
+    if (!m_positionBuffer.vkBuffer || !m_attributeBuffer.vkBuffer ||
+        !m_colorBuffer.vkBuffer || !m_indexBuffer.vkBuffer) {
+        showError("GeometryStore::reserve : buffer creation failed");
+        destroyBuffers();
         return false;
-    }
-
-    m_indexBuffer = m_ctx.createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        indexCapacity * sizeof(uint32_t), false, VMA_MEMORY_USAGE_AUTO);
-
-    if (!m_indexBuffer.vkBuffer) {
-        showError("GeometryStore::reserve : Error creating the index buffer");
-        m_ctx.destroyBuffer(m_vertexBuffer);
-        return false;
-    }
+        }
 
     std::cout << "Geometry budget: " << vertexCapacity << " verts ("
               << vertexBudgetBytes / 1024 / 1024 << " MB VRAM), "
@@ -63,18 +66,27 @@ bool GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
     return true;
 }
 
+void GeometryStore::destroyBuffers()
+{
+    m_ctx.destroyBuffer(m_positionBuffer);
+    m_ctx.destroyBuffer(m_attributeBuffer);
+    m_ctx.destroyBuffer(m_colorBuffer);
+    m_ctx.destroyBuffer(m_indexBuffer);
+}
+
 void GeometryStore::shutdown()
 {
-    m_ctx.destroyBuffer(m_vertexBuffer);
-    m_ctx.destroyBuffer(m_indexBuffer);
+    destroyBuffers();
+
+    m_positions.clear();  m_positions.shrink_to_fit();
+    m_attributes.clear(); m_attributes.shrink_to_fit();
+    m_colors.clear();     m_colors.shrink_to_fit();
 
     m_meshes.clear();
     m_freeSlots.clear();
     m_liveMeshes = 0;
     ++m_revision;
 
-    m_vertices.clear();
-    m_vertices.shrink_to_fit();
     m_indices.clear();
     m_indices.shrink_to_fit();
 
@@ -89,28 +101,27 @@ void GeometryStore::shutdown()
 // suballocation
 // ============================================================================
 
-void GeometryStore::growVertices(size_t need)
+template <class T>
+void GeometryStore::growTo(std::vector<T> &v, size_t need)
 {
-    if (need <= m_vertices.size()) {
+    if (need <= v.size()) {
         return;
     }
-    // Geometric growth: resize alone would reallocate exactly, turning a load
-    // of many small primitives into a quadratic copy.
-    if (need > m_vertices.capacity()) {
-        m_vertices.reserve(std::max(need, m_vertices.capacity() * 2));
+    if (need > v.capacity()) {
+        v.reserve(std::max(need, v.capacity() * 2));
     }
-    m_vertices.resize(need);
+    v.resize(need);
 }
 
-void GeometryStore::growIndices(size_t need)
+void GeometryStore::growVertices(size_t need)
 {
-    if (need <= m_indices.size()) {
-        return;
-    }
-    if (need > m_indices.capacity()) {
-        m_indices.reserve(std::max(need, m_indices.capacity() * 2));
-    }
-    m_indices.resize(need);
+    growTo(m_positions, need);
+    growTo(m_attributes, need);
+    growTo(m_colors, need);
+}
+
+void GeometryStore::growIndices(size_t need) {
+    growTo(m_indices, need);
 }
 
 size_t GeometryStore::allocateVertices(size_t count)
@@ -147,7 +158,7 @@ size_t GeometryStore::allocateIndices(size_t count)
 
 void GeometryStore::touchVertices(size_t firstVertex, size_t count)
 {
-    if (count && firstVertex + count <= m_vertices.size()) {
+    if (count && firstVertex + count <= m_positions.size()) {
         m_dirtyVertices.push_back(DirtyRange{ firstVertex, count });
     }
 }
@@ -177,13 +188,14 @@ bool GeometryStore::addSubMesh(const ImportMesh &src, SubMesh &out) {
         return false;
     }
 
-    Vertex *dst = vertexAt(vertexStart);
     for (size_t i = 0; i < src.vertices.size(); ++i) {
         const ImportVertex &v = src.vertices[i];
-        dst[i] = Vertex{ .position = v.position, .normal = v.normal, .tangent = v.tangent,
-                         .uv = v.uv, .color = v.color };
+        m_positions [vertexStart + i] = v.position;
+        m_attributes[vertexStart + i] = PackedAttributes{ vpack::packNormal(v.normal),
+                                                          vpack::packTangent(v.tangent), v.uv };
+        m_colors    [vertexStart + i] = vpack::packColor(v.color);
     }
-    std::copy(src.indices.begin(), src.indices.end(), indexAt(indexStart));
+    std::copy(src.indices.begin(), src.indices.end(), m_indices.begin() + indexStart);
 
     out.vertexStart = vertexStart;
     out.vertexCount = src.vertices.size();
@@ -210,7 +222,7 @@ void GeometryStore::computeBounds(SubMesh &subMesh) const
     glm::vec3 hi(-std::numeric_limits<float>::max());
 
     for (size_t i = 0; i < subMesh.vertexCount; ++i) {
-        const glm::vec3 &position = m_vertices[subMesh.vertexStart + i].position;
+        const glm::vec3 &position = m_positions[subMesh.vertexStart + i];
         lo = glm::min(lo, position);
         hi = glm::max(hi, position);
     }
@@ -408,8 +420,12 @@ bool GeometryStore::flushUploads()
         return false;
     }
 
-    bool ok = uploadRanges(cmd, m_dirtyVertices, m_vertices.data(), sizeof(Vertex),
-                           m_vertexBuffer, "vertices");
+    bool ok = uploadRanges(cmd, m_dirtyVertices, m_positions.data(),  sizeof(glm::vec3),
+                       m_positionBuffer, "positions");
+    ok = uploadRanges(cmd, m_dirtyVertices, m_attributes.data(), sizeof(PackedAttributes),
+                      m_attributeBuffer, "attributes") && ok;
+    ok = uploadRanges(cmd, m_dirtyVertices, m_colors.data(), sizeof(uint32_t),
+                      m_colorBuffer, "colors") && ok;
     ok = uploadRanges(cmd, m_dirtyIndices, m_indices.data(), sizeof(uint32_t),
                       m_indexBuffer, "indices") && ok;
 

@@ -147,12 +147,6 @@ void main()
     Material        mat   = loadMaterial(inMaterialIndex);
     FrameDataBuffer frame = frameData();
 
-    // Derivatives up front, in uniform control flow.
-    vec3 dPdx  = dFdx(inWorldPos);
-    vec3 dPdy  = dFdy(inWorldPos);
-    vec2 dUVdx = dFdx(inUV);
-    vec2 dUVdy = dFdy(inUV);
-
     // ---- base colour / alpha ------------------------------------------------
     vec4 baseColor = mat.baseColorFactor * inColor * sampleTex(mat.baseColorTex, inUV);
 
@@ -173,36 +167,25 @@ void main()
     vec3  emissive  = mat.emissiveFactor * sampleTex(mat.emissiveTex, inUV).rgb;
 
     // ---- normal -------------------------------------------------------------
-    vec3 N = normalize(inNormal);
+    // MikkTSpace reconstruction: unnormalised interpolants, bitangent from the
+    // cross product, one normalize at the end. Matches the baker.
+    vec3 vN = inNormal;
+    vec3 vT = inTangent.xyz;
+    vec3 vB = inTangent.w * cross(vN, vT);
 
-    float flip = 1;
-    if ((mat.flags & MAT_DOUBLE_SIDED) != 0u && !gl_FrontFacing) {
-        N = -N;
-        flip = -1;
-    }
-
-    vec3 Ng = N;
-
+    vec3 N = normalize(vN);
     if ((mat.flags & MAT_NORMAL_MAP) != 0u) {
-        vec3 T, B;
-        if (inTangent.w != 0.0) {
-            T = normalize(inTangent.xyz - N * dot(N, inTangent.xyz))*flip;  // re-orthogonalise
-            B = cross(N, T) * sign(inTangent.w)*flip;
-        } else {
-            // No tangents in the mesh: cotangent frame from screen-space
-            // derivatives (Schueler). Good enough until MikkTSpace is in.
-            vec3 dp2perp = cross(dPdy, N);
-            vec3 dp1perp = cross(N, dPdx);
-            T = dp2perp * dUVdx.x + dp1perp * dUVdy.x;
-            B = dp2perp * dUVdx.y + dp1perp * dUVdy.y;
-            float invMax = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
-            T *= invMax;
-            B *= invMax;
-        }
-
         vec3 n = sampleTex(mat.normalTex, inUV).xyz * 2.0 - 1.0;
         n.xy *= mat.normalScale;
-        N = normalize(mat3(T, B, N) * n);
+        N = normalize(n.x * vT + n.y * vB + n.z * vN);
+    }
+
+    // Back face of a double-sided material: the whole frame mirrors, which is
+    // the same as negating the result.
+    vec3 Ng = normalize(vN);
+    if ((mat.flags & MAT_DOUBLE_SIDED) != 0u && !gl_FrontFacing) {
+        N  = -N;
+        Ng = -Ng;
     }
 
 

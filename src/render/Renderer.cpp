@@ -973,7 +973,9 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     *res.frameDataPtr = FrameData
     {
         .table = {
-            .vertices    = m_geometry.vertexBufferAddress(),
+            .positions   = m_geometry.positionBufferAddress(),
+            .attributes  = m_geometry.attributeBufferAddress(),
+            .colors      = m_geometry.colorBufferAddress(),
             .materials   = m_resources.materialBufferAddress(),
             .renderItems = res.renderItemBuffer.deviceAddress,
             .debugLines  = res.debugLineBuffer.deviceAddress,

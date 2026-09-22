@@ -5,5 +5,5 @@ void main()
 {
     RenderItem ri = loadRenderItem(gl_InstanceIndex);
 
-    gl_Position = frameData().viewProj * ri.worldMatrix * vec4(loadVertex(gl_VertexIndex).position,1.0);
+    gl_Position = frameData().viewProj * ri.worldMatrix * vec4(loadPosition(gl_VertexIndex), 1.0);
 }

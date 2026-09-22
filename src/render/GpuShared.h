@@ -9,13 +9,17 @@
 #endif
 
 struct GpuTable {
-    uint64_t vertices = 0;
-    uint64_t materials = 0;
-    uint64_t renderItems = 0;
-    uint64_t debugLines = 0;
-    uint64_t reserved [4]{};
+    uint64_t positions = 0, attributes = 0, colors = 0;
+    uint64_t materials = 0, renderItems = 0, debugLines = 0;
+    uint64_t reserved[2]{};
 };
 static_assert(sizeof(GpuTable) == 64);
+static_assert(offsetof(GpuTable, attributes)  == 8);
+static_assert(offsetof(GpuTable, colors)      == 16);
+static_assert(offsetof(GpuTable, materials)   == 24);
+static_assert(offsetof(GpuTable, renderItems) == 32);
+static_assert(offsetof(GpuTable, debugLines)  == 40);
+
 
 // FrameData -> per frame-in-flight, host-visible, read through BDA.
 // This is where lights will go later (a light list address, counts, etc).
@@ -62,24 +66,14 @@ struct PushConstants {
 };
 static_assert(sizeof(PushConstants) == 16);
 
-struct Vertex
-{
-    glm::vec3 position{ 0.0f };
-    glm::vec3 normal{ 0.0f, 0.0f, 1.0f };
-    glm::vec4 tangent{ 0.0f };   // xyz = tangent, w = bitangent sign (+1/-1).
 
-    // w == 0 means "mesh supplied no tangents";
-    // the shader then derives a frame itself.
-    glm::vec2 uv{ 0.0f };        // TEXCOORD_0
-    glm::vec4 color{ 1.0f };     // COLOR_0 -- multiplies base colour (glTF spec)
+struct PackedAttributes {
+    uint32_t normal = 0;
+    uint32_t tangent = 0;
+    glm::vec2 uv {0.0f};
 };
-
-static_assert(sizeof(Vertex) == 64);
-static_assert(offsetof(Vertex, normal)  == 12);
-static_assert(offsetof(Vertex, tangent) == 24);
-static_assert(offsetof(Vertex, uv)      == 40);
-static_assert(offsetof(Vertex, color)   == 48);
-
+static_assert(sizeof(PackedAttributes) == 16);
+static_assert(offsetof(PackedAttributes, uv) == 8);
 
 // One end of a debug line. Written straight into a host-visible buffer and
 // read through BDA

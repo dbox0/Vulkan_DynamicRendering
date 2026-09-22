@@ -39,11 +39,8 @@ public:
 
     // Writable views into the CPU mirror. The pointer is invalidated by any
     // subsequent allocate call
-    Vertex   *vertexAt(size_t index) { return &m_vertices[index]; }
-    uint32_t *indexAt(size_t index)  { return &m_indices[index];  }
-
-    const Vertex   *vertexAt(size_t index) const { return &m_vertices[index]; }
-    const uint32_t *indexAt(size_t index)  const { return &m_indices[index];  }
+    static constexpr size_t kVertexStride = sizeof(glm::vec3) + sizeof(PackedAttributes) + sizeof(uint32_t);
+    static_assert(kVertexStride == 32);
 
     // For edits to geometry that is already resident
     void touchVertices(size_t firstVertex, size_t count);
@@ -84,20 +81,29 @@ public:
 
     uint64_t lastUploadTicket() const { return m_lastUploadTicket; }
 
-    uint64_t vertexBufferAddress() const { return m_vertexBuffer.deviceAddress; }
+    const glm::vec3 *positionAt(size_t index) const { return &m_positions[index]; }
+    uint64_t positionBufferAddress()  const { return m_positionBuffer.deviceAddress; }
+    uint64_t attributeBufferAddress() const { return m_attributeBuffer.deviceAddress; }
+    uint64_t colorBufferAddress()     const { return m_colorBuffer.deviceAddress; }
+    size_t   vertexResident() const { return m_positions.size(); }
+
     VkBuffer indexBuffer()         const { return m_indexBuffer.vkBuffer; }
+    const uint32_t *indexAt(size_t index) const { return &m_indices[index]; }
 
     // --- stats for the editor ------------------------------------------
     size_t vertexCapacity() const { return m_vertexAlloc.capacity(); }
     size_t indexCapacity()  const { return m_indexAlloc.capacity(); }
     size_t vertexUsed()     const { return m_vertexAlloc.used(); }
     size_t indexUsed()      const { return m_indexAlloc.used(); }
-    size_t vertexResident() const { return m_vertices.size(); }   // CPU mirror size
+
     size_t indexResident()  const { return m_indices.size(); }
     size_t largestFreeVertexBlock() const { return m_vertexAlloc.largestFreeBlock(); }
     size_t largestFreeIndexBlock()  const { return m_indexAlloc.largestFreeBlock(); }
 
 private:
+    template <class T> static void growTo(std::vector<T> &v, size_t need);
+    void destroyBuffers();
+
     struct DirtyRange { size_t offset = 0; size_t count = 0; };
 
     struct MeshSlot
@@ -132,7 +138,15 @@ private:
 
     VulkanContext &m_ctx;
 
-    std::vector<Vertex>   m_vertices;
+    std::vector<glm::vec3>        m_positions;
+    std::vector<PackedAttributes> m_attributes;
+    std::vector<uint32_t>         m_colors;
+
+    GPUBuffer m_positionBuffer;
+    GPUBuffer m_attributeBuffer;
+    GPUBuffer m_colorBuffer;
+
+
     std::vector<uint32_t> m_indices;
     RangeAllocator        m_vertexAlloc;
     RangeAllocator        m_indexAlloc;

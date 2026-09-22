@@ -175,15 +175,15 @@ PickResult pickNode(Scene &scene, const GeometryStore &geometry,
         localRay.origin    = glm::vec3(invWorld * glm::vec4(ray.origin, 1.0f));
         localRay.direction = glm::vec3(invWorld * glm::vec4(ray.direction, 0.0f));
 
-        const Vertex   *vertices = geometry.vertexAt(subMesh.vertexStart);
-        const uint32_t *indices  = geometry.indexAt(subMesh.indexStart);
+        const glm::vec3 *positions = geometry.positionAt(subMesh.vertexStart);
+        const uint32_t  *indices   = geometry.indexAt(subMesh.indexStart);
 
         for (size_t i = 0; i + 2 < subMesh.indexCount; i += 3) {
             // Indices are local to the submesh's vertex block -- the indirect
             // command supplies vertexStart as vertexOffset, so the CPU side has to add it back the same way.
-            const glm::vec3 &v0 = vertices[indices[i + 0]].position;
-            const glm::vec3 &v1 = vertices[indices[i + 1]].position;
-            const glm::vec3 &v2 = vertices[indices[i + 2]].position;
+            const glm::vec3 &v0 = positions[indices[i + 0]];
+            const glm::vec3 &v1 = positions[indices[i + 1]];
+            const glm::vec3 &v2 = positions[indices[i + 2]];
 
             float t = 0.0f;
             if (rayTriangle(localRay, v0, v1, v2, t) && t < best.distance) {

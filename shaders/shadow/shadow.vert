@@ -7,13 +7,9 @@ layout(location = 1) out flat uint outMaterialIndex;
 
 void main()
 {
-    Vertex     v  = loadVertex(gl_VertexIndex);
     RenderItem ri = loadRenderItem(gl_InstanceIndex);
+    gl_Position = frameData().lightViewProj * ri.worldMatrix * vec4(loadPosition(gl_VertexIndex), 1.0);
 
-    gl_Position = frameData().lightViewProj
-                * ri.worldMatrix
-                * vec4(v.position, 1.0);
-
-    outUV            = v.uv;
+    outUV            = loadUV(gl_VertexIndex);
     outMaterialIndex = ri.materialIndex;
 }
