@@ -10,29 +10,7 @@
 #include "../core/gpu_types.h"
 
 class VulkanContext;
-
-// One device-local vertex buffer and one index buffer, allocated once at the
-// full budget and suballocated with a coalescing free list. Models can be
-// loaded and unloaded in any order; freed space is reused.
-
-// OFFSETS: a CPU element index and its offset into the GPU buffer are the
-// same number.
-
-// MESH IDS are opaque handles: the low 24 bits are a 1-based
-// slot, the top 8 a generation that bumps on every removeMesh. A node holding
-// a mesh ID whose slot has since been recycled fails meshAlive(). 0 is never
-// a valid handle.
-//
-// Scene caches DrawItems holding `const SubMesh *` across
-// frames, and Renderer holds a pointer to that cache, so a Mesh must not move
-// once it has been added. Slots live in a deque
-
-// revision() bumps on every add or remove so the cache knows to rebuild.
-
-// LIFETIME: removeMesh() does not release the ranges immediately -- frames
-// already submitted may still be reading them. The ranges go on a pending
-// list and come back into circulation from tick(), after the frame that
-// removed them
+struct ImportMesh;
 
 class GeometryStore
 {
@@ -53,9 +31,7 @@ public:
     void shutdown();
 
     // --- suballocation ---------------------------------------------------
-    // Returns the start offset, or kInvalidOffset when the budget cannot
-    // satisfy the request
-
+    // Returns the start offset, or kInvalidOffset
     // The returned range is marked dirty, so whatever the caller writes into
     // it gets picked up by the next flushUploads().
     size_t allocateVertices(size_t count);
@@ -70,7 +46,6 @@ public:
     const uint32_t *indexAt(size_t index)  const { return &m_indices[index];  }
 
     // For edits to geometry that is already resident
-
     void touchVertices(size_t firstVertex, size_t count);
     void touchIndices(size_t firstIndex, size_t count);
 
@@ -78,6 +53,8 @@ public:
     // addMesh takes ownership of the ranges its submeshes point at;
     // removeMesh gives them back
     uint32_t addMesh(Mesh &&mesh);
+    bool addSubMesh(const ImportMesh &src, SubMesh &out);
+
     bool     removeMesh(uint32_t meshId);
 
     bool        meshAlive(uint32_t meshId) const;

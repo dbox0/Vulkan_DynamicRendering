@@ -9,6 +9,7 @@
 #include <volk.h>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "ImportMesh.h"
 #include "Mesh.h"
 #include "TextureCache.h"
 #include "../../third_party/tiny_gltf_v3.h"
@@ -217,6 +218,8 @@ uint32_t GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex,
 std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                                              const std::vector<uint32_t> &materialIds)
 {
+    size_t totalIn =0;
+    size_t totalOut = 0;
     std::vector<uint32_t> meshIds(model.meshes_count);
 
     for (int i = 0; i < model.meshes_count; ++i) {
@@ -226,7 +229,7 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
 
         mesh.subMeshes.resize(tg3mesh->primitives_count);
 
-        for (int u = 0; u < tg3mesh->primitives_count; ++u) {
+        for (uint32_t u = 0; u < tg3mesh->primitives_count; ++u) {
             const tg3_primitive *primitive = &tg3mesh->primitives[u];
             SubMesh &subMesh = mesh.subMeshes[u];
 
@@ -236,10 +239,17 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                     ? materialIds[primitive->material]
                     : 0;
 
+
+            if (primitive->mode != -1 && primitive->mode != TG3_MODE_TRIANGLES) {
+                std::cerr << "[warn] mesh '" << mesh.name << "' primitive " << u
+                          << ": mode " << primitive->mode << " unsupported; skipped" << std::endl;
+                continue;
+            }
+
             // Find POSITION first: its count determines how many vertex slots
             // this submesh needs, and every other attribute writes into them.
             const tg3_accessor *positionAccessor = nullptr;
-            for (int v = 0; v < primitive->attributes_count; ++v) {
+            for (uint32_t v = 0; v < primitive->attributes_count; ++v) {
                 const tg3_str_int_pair *attr = &primitive->attributes[v];
                 if (std::strcmp(attr->key.data, "POSITION") == 0) {
                     positionAccessor = &model.accessors[attr->value];
@@ -247,31 +257,21 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 }
             }
             if (!positionAccessor) {
-                showError("glTF primitive has no POSITION attribute; skipping");
+                std::cerr << "glTF primitive has no POSITION attribute; skipping" << std::endl;
+                continue;
+            }
+            if (positionAccessor->type != TG3_TYPE_VEC3 ||
+                positionAccessor->component_type != TG3_COMPONENT_TYPE_FLOAT)
+            {
+                std::cerr << "[warn] mesh '" << mesh.name << "' primitive " << u
+                          << ": unsupported POSITION format; skipped" << std::endl;
                 continue;
             }
 
-            assert(positionAccessor->type == TG3_TYPE_VEC3 &&
-                   positionAccessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-
-            subMesh.vertexCount = positionAccessor->count;
-            subMesh.vertexStart = m_geometry.allocateVertices(positionAccessor->count);
-
-            if (subMesh.vertexStart == GeometryStore::kInvalidOffset) {
-                std::cerr << "[warn] Vertex budget exhausted in mesh '" << mesh.name
-              << "'; primitive " << u << " skipped" << std::endl;
-                subMesh = SubMesh{};
-                continue;
-            }
-            subMesh.vertexCount = positionAccessor->count;
-
-            // Copies one float attribute into the vertex slots starting at
-            // vertexStart. Captures vertexStart rather than reading a member,
-            // which is what makes this independent of GeometryStore's cursor.
-            const size_t vertexStart = subMesh.vertexStart;
+            ImportMesh importMesh;
+            importMesh.vertices.resize(positionAccessor->count);
 
 
-            // glTF allows normalized u8/u16 for COLOR_0 and TEXCOORD_0
             auto readComponent = [](const unsigned char *base, const tg3_accessor *accessor, int c) -> float
             {
                 switch (accessor->component_type) {
@@ -302,128 +302,136 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 }
             };
 
-            auto writeAttribute = [this, &model, vertexStart, &readComponent]<typename T>(
-                T Vertex::*member, const tg3_str_int_pair *attr)
+            auto writeAttribute = [&model, &importMesh, &readComponent]<typename T>(
+                T ImportVertex::*member, const tg3_str_int_pair *attr) -> bool
             {
                 const tg3_accessor    *accessor    = &model.accessors[attr->value];
+                if (accessor->count != importMesh.vertices.size()) {
+                    return false;
+                }
                 const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
                 const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
 
                 const size_t bufferOffset = buffer_view->byte_offset + accessor->byte_offset;
-
-                // Stride comes from the ACCESSOR, not from the destination
-                // member: a tightly packed VEC4 has stride 16 while
-                // sizeof(glm::vec3) is 12, so the old sizeof(T) fallback read
-                // every vertex after the first at the wrong offset.
                 const size_t stride = static_cast<size_t>(tg3_accessor_byte_stride(accessor, buffer_view));
 
-                // How many floats the file actually supplies -- a VEC3
+                // file actually supplies a vec3
                 // COLOR_0 feeding a vec4 member must not read a 4th float.
                 const int components = tg3_num_components(accessor->type);
 
                 for (uint64_t index = 0; index < accessor->count; ++index) {
                     const unsigned char *element = buffer->data.data + bufferOffset + index * stride;
 
-                    Vertex *vertex = m_geometry.vertexAt(vertexStart + index);
+                    ImportVertex &vertex = importMesh.vertices[index];
                     if constexpr (std::is_same_v<T, glm::vec4>) {
-                        vertex->*member = glm::vec4(readComponent(element, accessor, 0),
-                                                    readComponent(element, accessor, 1),
-                                                    readComponent(element, accessor, 2),
-                                                    components >= 4 ? readComponent(element, accessor, 3) : 1.0f);
+                        vertex.*member = glm::vec4(readComponent(element, accessor, 0),
+                                                   readComponent(element, accessor, 1),
+                                                   readComponent(element, accessor, 2),
+                                                   components >= 4 ? readComponent(element, accessor, 3) : 1.0f);
                     } else if constexpr (std::is_same_v<T, glm::vec3>) {
-                        vertex->*member = glm::vec3(readComponent(element, accessor, 0),
-                                                    readComponent(element, accessor, 1),
-                                                    readComponent(element, accessor, 2));
+                        vertex.*member = glm::vec3(readComponent(element, accessor, 0),
+                                                   readComponent(element, accessor, 1),
+                                                   readComponent(element, accessor, 2));
                     } else if constexpr (std::is_same_v<T, glm::vec2>) {
-                        vertex->*member = glm::vec2(readComponent(element, accessor, 0),
-                                                    readComponent(element, accessor, 1));
+                        vertex.*member = glm::vec2(readComponent(element, accessor, 0),
+                                                   readComponent(element, accessor, 1));
                     } else {
-                        static_assert(sizeof(T) == 0, "writeAttribute: unhandled attribute type");
+                        static_assert(false, "writeAttribute: unhandled attribute type");
                     }
                 }
+                return true;
             };
 
-            for (int v = 0; v < primitive->attributes_count; ++v) {
+            for (uint32_t v = 0; v < primitive->attributes_count; ++v) {
                 const tg3_str_int_pair *attr = &primitive->attributes[v];
                 const tg3_accessor *accessor = &model.accessors[attr->value];
 
                 if (std::strcmp(attr->key.data, "POSITION") == 0) {
-                    writeAttribute(&Vertex::position, attr);
+                    writeAttribute(&ImportVertex::position, attr);
                 } else if (std::strcmp(attr->key.data, "NORMAL") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::normal, attr);
-                } else if (std::strcmp(attr->key.data, "COLOR_0") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC3 || accessor->type == TG3_TYPE_VEC4);
-                    assert(isReadableComponent(accessor));
-                    if (isReadableComponent(accessor)) {
-                        writeAttribute(&Vertex::color, attr);
-                    } else {
-                        std::cerr << "[warn] COLOR_0 has an unsupported component type; "
-                                     "leaving vertex colours at white" << std::endl;
+                    if (accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT) {
+                        importMesh.hasNormals = writeAttribute(&ImportVertex::normal, attr);
                     }
                 } else if (std::strcmp(attr->key.data, "TANGENT") == 0) {
-                    // w carries the bitangent sign. No TANGENT leaves w at 0,
-                    // which the fragment shader reads as "derive a tangent
-                    // frame from screen-space derivatives instead".
-                    assert(accessor->type == TG3_TYPE_VEC4 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::tangent, attr);
+                    if (accessor->type == TG3_TYPE_VEC4 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT) {
+                        importMesh.hasTangents = writeAttribute(&ImportVertex::tangent, attr);
+                    }
                 } else if (std::strcmp(attr->key.data, "TEXCOORD_0") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC2);
-                    assert(isReadableComponent(accessor));
-                    if (isReadableComponent(accessor)) {
-                        writeAttribute(&Vertex::uv, attr);
+                    if (accessor->type == TG3_TYPE_VEC2 && isReadableComponent(accessor)) {
+                        importMesh.hasUVs = writeAttribute(&ImportVertex::uv, attr);
                     } else {
-                        std::cerr << "[warn] TEXCOORD_0 has an unsupported component type; "
-                                     "UVs will be zero" << std::endl;
+                        std::cerr << "[warn] TEXCOORD_0 has an unsupported format; mesh treated as having no UVs" << std::endl;
+                    }
+                } else if (std::strcmp(attr->key.data, "COLOR_0") == 0) {
+                    if ((accessor->type == TG3_TYPE_VEC3 || accessor->type == TG3_TYPE_VEC4) && isReadableComponent(accessor)) {
+                        writeAttribute(&ImportVertex::color, attr);
+                    } else {
+                        std::cerr << "[warn] COLOR_0 has an unsupported format; leaving vertex colours at white" << std::endl;
                     }
                 }
             }
 
-            // Indices.
+            // Indices:
+            // Decode indices into importMesh. No allocation here (moved to addSubMesh)
             if (primitive->indices != -1) {
                 const tg3_accessor    *accessor    = &model.accessors[primitive->indices];
                 const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
                 const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
+                const unsigned char   *src = buffer->data.data + buffer_view->byte_offset + accessor->byte_offset;
 
-                subMesh.indexCount = accessor->count;
-                const size_t indexStart = m_geometry.allocateIndices(accessor->count);
-
-                // Was testing subMesh.indexStart, which is still 0 here -- an
-                // exhausted index budget sailed straight through and wrote at
-                // offset 0.
-                if (indexStart == GeometryStore::kInvalidOffset) {
-                    std::cerr << "Index budget exhausted"<< std::endl;
-                    subMesh = SubMesh{};
-                    continue;
-                }
-
-                subMesh.indexStart = indexStart;
-                subMesh.indexCount = accessor->count;
-
-                const unsigned char *src = buffer->data.data + buffer_view->byte_offset + accessor->byte_offset;
-                uint32_t *dst = m_geometry.indexAt(subMesh.indexStart);
+                importMesh.indices.resize(accessor->count);
+                uint32_t *dst = importMesh.indices.data();
 
                 if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT) {
                     std::memcpy(dst, src, accessor->count * sizeof(uint32_t));
                 } else if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT) {
                     const uint16_t *src16 = reinterpret_cast<const uint16_t *>(src);
                     for (uint64_t idx = 0; idx < accessor->count; ++idx) {
-                        dst[idx] = static_cast<uint32_t>(src16[idx]);
+                        dst[idx] = src16[idx];
                     }
                 } else if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE) {
                     for (uint64_t idx = 0; idx < accessor->count; ++idx) {
-                        dst[idx] = static_cast<uint32_t>(src[idx]);
+                        dst[idx] = src[idx];
                     }
                 } else {
-                    showError("Unsupported glTF index component type");
+                    std::cerr << "[warn] mesh '" << mesh.name << "' primitive " << u
+                              << ": unsupported index type; skipped" << std::endl;
+                    continue;
                 }
+            }
+            const bool indicesInRange = std::ranges::all_of(importMesh.indices, [&](uint32_t idx) {
+                return idx < importMesh.vertices.size();
+            });
+            if (!indicesInRange) {
+                std::cerr << "[warn] mesh '" << mesh.name << "' primitive " << u
+                          << ": index out of range; skipped" << std::endl;
+                continue;
+            }
+            if (m_options.regenerateTangents) {
+                importMesh.hasTangents = false;
+            }
+
+            const MeshProcessStats stats = processMesh(importMesh);
+            totalIn  += stats.inputVertices;
+            totalOut += stats.outputVertices;
+
+            if (importMesh.indices.empty()) {
+                continue;
+            }
+
+            if (!m_geometry.addSubMesh(importMesh, subMesh)) {
+                std::cerr << "[warn] geometry budget exhausted in mesh '" << mesh.name
+                          << "'; primitive " << u << " skipped" << std::endl;
+                subMesh = SubMesh{};
             }
         }
 
         mesh.sourcePath      = m_sourcePath;
         mesh.sourceMeshIndex = static_cast<int32_t>(i);
         meshIds[i] = m_geometry.addMesh(std::move(mesh));
+
     }
+    std::cout << "[import] " << m_sourcePath << "in: " << totalIn << ", out-> " << totalOut << " vertices" << std::endl;
     return meshIds;
 }
 

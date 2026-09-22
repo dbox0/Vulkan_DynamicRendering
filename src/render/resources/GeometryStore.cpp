@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 
+#include "../../assets/ImportMesh.h"
 #include "../core/VulkanContext.h"
 #include "../../common/errors.h"
 
@@ -161,6 +162,34 @@ void GeometryStore::touchIndices(size_t firstIndex, size_t count)
 // ============================================================================
 // meshes
 // ============================================================================
+
+bool GeometryStore::addSubMesh(const ImportMesh &src, SubMesh &out) {
+    if (src.vertices.empty() || src.indices.empty()) {
+        return false;
+    }
+    const size_t vertexStart = allocateVertices(src.vertices.size());
+    if (vertexStart == kInvalidOffset) {
+        return false;
+    }
+    const size_t indexStart = allocateIndices(src.indices.size());
+    if (indexStart == kInvalidOffset) {
+        return false;
+    }
+
+    Vertex *dst = vertexAt(vertexStart);
+    for (size_t i = 0; i < src.vertices.size(); ++i) {
+        const ImportVertex &v = src.vertices[i];
+        dst[i] = Vertex{ .position = v.position, .normal = v.normal, .tangent = v.tangent,
+                         .uv = v.uv, .color = v.color };
+    }
+    std::copy(src.indices.begin(), src.indices.end(), indexAt(indexStart));
+
+    out.vertexStart = vertexStart;
+    out.vertexCount = src.vertices.size();
+    out.indexStart  = indexStart;
+    out.indexCount  = src.indices.size();
+    return true;
+}
 
 uint32_t GeometryStore::makeHandle(size_t slot, uint8_t generation)
 {

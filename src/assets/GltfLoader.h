@@ -16,6 +16,10 @@ struct Image;
 class GltfLoader
 {
 public:
+    struct LoaderOptions {
+        bool regenerateTangents;
+    };
+
     // The cache is taken so every image this loader uploads is registered
     // against its source file. Without that, materials imported from a .gltf
     // resolve to images with no known path and cannot be saved as .mat and
@@ -66,4 +70,5 @@ private:
     GeometryStore &m_geometry;
     Scene         &m_scene;
     TextureCache  &m_cache;
+    LoaderOptions m_options = {.regenerateTangents = false};
 };

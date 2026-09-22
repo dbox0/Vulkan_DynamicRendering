@@ -19,6 +19,11 @@ FetchContent_Declare(json
         GIT_TAG        v3.12.0)
 FetchContent_MakeAvailable(json)
 
+FetchContent_Declare(meshoptimizer
+        GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+        GIT_TAG        v1.2)
+FetchContent_MakeAvailable(meshoptimizer)
+
 add_library(imgui STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -163,6 +168,8 @@ add_executable(vulkanapp
         src/math/Frustum.h
         src/math/Frustum.cpp
         src/render/culling/CullSettings.h
+        src/assets/ImportMesh.h
+        src/assets/MeshProcessing.cpp
 )
 
 # For MSVC, you often need the 'latest' flag specifically
@@ -176,7 +183,9 @@ target_link_libraries(vulkanapp PRIVATE
         glm::glm
         imgui
         imguizmo
-        nlohmann_json::nlohmann_json)
+        nlohmann_json::nlohmann_json
+        meshoptimizer
+)
 
 target_compile_definitions(vulkanapp PRIVATE
         SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders/"
@@ -210,10 +219,14 @@ add_executable(engine_tests
         src/editor/UndoHistory.cpp
         src/editor/SceneUndoWorld.cpp
         src/scene/Scene.cpp
+        src/assets/ImportMesh.h
+        src/assets/MeshProcessing.cpp
 )
 
 target_link_libraries(engine_tests PRIVATE
         glm::glm
-        nlohmann_json::nlohmann_json)
+        nlohmann_json::nlohmann_json
+        meshoptimizer
+)
 
 add_test(NAME engine COMMAND engine_tests)
