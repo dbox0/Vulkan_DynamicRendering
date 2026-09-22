@@ -149,7 +149,7 @@ bool Application::initialize()
     m_scene.initialize(MaxNodes);
 
     if (!m_editor.initialize(m_window, m_ctx,
-                             Swapchain::ColorFormat, Swapchain::DepthFormat,
+                             Swapchain::ColorFormat, RenderTargets::DepthFormat,
                              2, m_swapchain.imageCount(),
                              m_ctx.gfxQueue(), m_ctx.gfxFamily())) {
         showError("Failed to initialize the editor UI");

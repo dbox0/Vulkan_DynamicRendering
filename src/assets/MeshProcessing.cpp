@@ -37,6 +37,7 @@ namespace
                                  &mesh.vertices[0].uv.x, sizeof(ImportVertex),
                                  meshopt_TangentCompatible);
         for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+            tangents[i].w *= -1;
             mesh.vertices[i].tangent = tangents[i];
         }
     }

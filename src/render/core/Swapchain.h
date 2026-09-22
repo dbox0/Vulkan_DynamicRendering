@@ -14,14 +14,6 @@ class Swapchain
 {
 public:
     static constexpr VkFormat ColorFormat = VK_FORMAT_B8G8R8A8_SRGB;
-    static constexpr VkFormat DepthFormat = VK_FORMAT_D32_SFLOAT;
-    static constexpr VkFormat HDRFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-
-    // Coverage of the editor's selection, one byte per pixel. Lives here
-    // rather than in Renderer because it is screen-sized: it has to be
-    // rebuilt on resize alongside the depth buffer, and there is exactly one
-    // place that already knows how to do that.
-    static constexpr VkFormat SelectionMaskFormat = VK_FORMAT_R8_UNORM;
 
     explicit Swapchain(VulkanContext &ctx) : m_ctx(ctx) {}
     Swapchain(const Swapchain &) = delete;
@@ -39,12 +31,7 @@ public:
 
     VkImage        image(uint32_t i)        const { return m_images[i]; }
     VkImageView    imageView(uint32_t i)    const { return m_imageViews[i]; }
-    VkImage        depthImage()             const { return m_depth.image; }
-    VkImageView    depthImageView()         const { return m_depth.imageView; }
-    VkImage        selectionMaskImage()     const { return m_selectionMask.image; }
-    VkImageView    selectionMaskImageView() const { return m_selectionMask.imageView; }
-    VkImage        hdrImage()               const { return m_hdrTarget.image; }
-    VkImageView    hdrImageView()           const { return m_hdrTarget.imageView; }
+
 
     // Acquire wraps the OUT_OF_DATE / SUBOPTIMAL handling so the renderer
     // doesn't have to. Returns false when the caller should skip the frame.
@@ -55,9 +42,6 @@ public:
     uint32_t imageCount() const { return static_cast<uint32_t>(m_images.size()); }
 
 private:
-    bool createDepthBuffer(uint32_t width, uint32_t height);
-    bool createSelectionMask(uint32_t width, uint32_t height);
-    bool createHdrTarget(uint32_t width, uint32_t height);
     VulkanContext &m_ctx;
 
     VkSwapchainKHR           m_swapchain = nullptr;
@@ -67,9 +51,4 @@ private:
     uint32_t m_width  = 0;
     uint32_t m_height = 0;
     bool     m_needsRecreate = false;
-
-    // Screen-sized render targets, rebuilt with the swapchain.
-    GPUImage m_depth;
-    GPUImage m_selectionMask;
-    GPUImage m_hdrTarget;
 };

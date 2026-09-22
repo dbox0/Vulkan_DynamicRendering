@@ -6,6 +6,7 @@
 #include "../core/Swapchain.h"
 #include "../core/VulkanContext.h"
 #include "../../common/errors.h"
+#include "../core/RenderTargets.h"
 
 void ScenePass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {
@@ -165,13 +166,13 @@ bool ScenePass::createPipeline(VkPipelineLayout layout, bool blendEnabled, VkPip
     };
 
     // Dynamic rendering: no VkRenderPass.
-    constexpr VkFormat colorFormat = Swapchain::HDRFormat;
+    constexpr VkFormat colorFormat = RenderTargets::HDRFormat;
     VkPipelineRenderingCreateInfo renderInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &colorFormat,
-        .depthAttachmentFormat = Swapchain::DepthFormat
+        .depthAttachmentFormat = RenderTargets::DepthFormat
     };
 
     VkGraphicsPipelineCreateInfo pipelineInfo

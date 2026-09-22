@@ -10,6 +10,7 @@
 #include "../core/VulkanContext.h"
 #include "../../assets/Mesh.h"
 #include "../../common/errors.h"
+#include "../core/RenderTargets.h"
 
 bool SelectionOutlinePass::createResources()
 {
@@ -472,7 +473,7 @@ bool SelectionOutlinePass::createMaskPipeline(VkPipelineLayout sceneLayout)
         .pDynamicStates = dynamicStates.data()
     };
 
-    constexpr VkFormat maskFormat = Swapchain::SelectionMaskFormat;
+    constexpr VkFormat maskFormat = RenderTargets::SelectionMaskFormat;
     VkPipelineRenderingCreateInfo renderInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
@@ -601,7 +602,7 @@ bool SelectionOutlinePass::createCompositePipeline()
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &colorFormat,
-        .depthAttachmentFormat = Swapchain::DepthFormat
+        .depthAttachmentFormat = RenderTargets::DepthFormat
     };
 
     VkGraphicsPipelineCreateInfo pipelineInfo

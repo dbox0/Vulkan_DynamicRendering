@@ -23,6 +23,7 @@
 #include "post/BloomPass.h"
 #include "../math/Frustum.h"
 #include "culling/CullSettings.h"
+#include "core/RenderTargets.h"
 
 class VulkanContext;
 class Swapchain;
@@ -82,7 +83,7 @@ public:
 
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
              ResourceStore &resources, GeometryStore &geometry)
-        : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry),
+        : m_ctx(ctx), m_swapchain(swapchain), m_targets(ctx) ,m_resources(resources), m_geometry(geometry),
           m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx),
           m_skyboxPass(ctx), m_bloomPass(ctx) {}
     Renderer(const Renderer &) = delete;
@@ -154,6 +155,8 @@ private:
     DrawBatches      m_batches{};
 
     // --- passes -----------------------------------------------------------
+    RenderTargets m_targets;
+
     ScenePass            m_scenePass;
     ShadowPass           m_shadowPass;
     TonemapPass          m_tonemapPass;

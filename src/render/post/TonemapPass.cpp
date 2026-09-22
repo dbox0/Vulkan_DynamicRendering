@@ -5,6 +5,7 @@
 #include "../../assets/Mesh.h"
 #include "../../common/errors.h"
 #include "array"
+#include "../core/RenderTargets.h"
 
 bool TonemapPass::createResources() {
     VkSamplerCreateInfo sampler_info
@@ -222,7 +223,7 @@ bool TonemapPass::createPipelines() {
     };
 
     constexpr VkFormat colAttachmentFormat = Swapchain::ColorFormat;
-    constexpr VkFormat depthAttachmentFormat = Swapchain::DepthFormat;
+    constexpr VkFormat depthAttachmentFormat = RenderTargets::DepthFormat;
 
     VkPipelineRenderingCreateInfo renderingInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,

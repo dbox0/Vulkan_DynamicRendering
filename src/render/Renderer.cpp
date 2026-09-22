@@ -36,6 +36,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 {
     m_maxDraws = maxDrawsPerFrame;
 
+    if (!m_targets.create(m_swapchain.width(), m_swapchain.height())) {
+        return false;
+    }
+
     if (!m_tonemapPass.createResources()) {
         showError("Unable to initialize the tonemap resources");
         return false;
@@ -60,7 +64,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         !m_bloomPass.createTargets(m_swapchain.width(), m_swapchain.height())) {
         return false;
         }
-    m_bloomPass.setSourceView(m_swapchain.hdrImageView());
+    m_bloomPass.setSourceView(m_targets.hdrImageView());
     m_tonemapPass.setBloomView(m_bloomPass.resultView());
 
 
@@ -129,8 +133,8 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 
     // The swapchain (and therefore the mask image) already exists by the time
     // the renderer is initialised, so the descriptor can be pointed at it now.
-    m_outlinePass.setMaskView(m_swapchain.selectionMaskImageView());
-    m_tonemapPass.setSourceView(m_swapchain.hdrImageView());
+    m_outlinePass.setMaskView(m_targets.selectionMaskImageView());
+    m_tonemapPass.setSourceView(m_targets.hdrImageView());
 
 #ifndef NDEBUG
     m_shaderWatcher = std::make_unique<ShaderWatcher>(SHADER_DIR);
@@ -218,6 +222,9 @@ void Renderer::shutdown()
     }
 
     m_profiler.destroy();
+
+    m_targets.destroy();
+
     // Exactly one destroy per handle. The old shutdown() ran this loop twice.
     for (FrameResources &res : m_frameResources) {
         if (res.imageAcquiredSemaphore) {
@@ -577,7 +584,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
             .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .image = m_swapchain.depthImage(),
+            .image = m_targets.depthImage(),
             .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
         },
 
@@ -593,7 +600,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
             .dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .image = m_swapchain.hdrImage(),
+            .image = m_targets.hdrImage(),
             .subresourceRange
             {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -634,7 +641,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     VkRenderingAttachmentInfo colorAttachInfo
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain.hdrImageView(),
+        .imageView = m_targets.hdrImageView(),
         .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -643,7 +650,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     VkRenderingAttachmentInfo depthAttachInfo
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain.depthImageView(),
+        .imageView = m_targets.depthImageView(),
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -696,8 +703,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     // selected: no barriers, no clear, no cost.
     const bool hasSelection = m_outlinePass.hasSelection();
     if (hasSelection) {m_outlinePass.recordMask(res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
-    m_swapchain.selectionMaskImage(),
-    m_swapchain.selectionMaskImageView(), extent);
+    m_targets.selectionMaskImage(),
+    m_targets.selectionMaskImageView(), extent);
     }
     m_profiler.endScope(res.commandBuffer);
 
@@ -735,7 +742,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     //  ====================  Tonemapping ======================
 
     m_profiler.beginScope(res.commandBuffer,"PostProcessing");
-    m_tonemapPass.transitionSource(res.commandBuffer, m_swapchain.hdrImage());
+    m_tonemapPass.transitionSource(res.commandBuffer, m_targets.hdrImage());
     m_profiler.beginScope(res.commandBuffer,"Bloom");
     m_bloomPass.record(res.commandBuffer);
     m_profiler.endScope(res.commandBuffer);
@@ -751,7 +758,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     VkRenderingAttachmentInfo swapDepthAttachInfo
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain.depthImageView(),
+        .imageView = m_targets.depthImageView(),
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE
@@ -769,7 +776,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     // Test using our vkutil Image Barrier
     vkutil::imageBarrier(res.commandBuffer,
         {
-            .image = m_swapchain.depthImage(),
+            .image = m_targets.depthImage(),
             .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             .srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
@@ -883,15 +890,16 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         if (!m_swapchain.recreate(windowWidth, windowHeight)) {
             return;
         }
-        // New image, new view: the outline's descriptor still points at the
-        // destroyed one. recreate() waits idle, so rewriting here is safe.
-        m_tonemapPass.setSourceView(m_swapchain.hdrImageView());
-        m_outlinePass.setMaskView(m_swapchain.selectionMaskImageView());
+        if (!m_targets.recreate(m_swapchain.width(), m_swapchain.height())) {
+            return;
+        }
+        m_tonemapPass.setSourceView(m_targets.hdrImageView());
+        m_outlinePass.setMaskView(m_targets.selectionMaskImageView());
         m_bloomPass.destroyTargets();
         if (!m_bloomPass.createTargets(m_swapchain.width(), m_swapchain.height())) {
             return;
         }
-        m_bloomPass.setSourceView(m_swapchain.hdrImageView());
+        m_bloomPass.setSourceView(m_targets.hdrImageView());
         m_tonemapPass.setBloomView(m_bloomPass.resultView());
     }
 

@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "../core/Swapchain.h"
+#include "../core/RenderTargets.h"
 #include "../core/VulkanContext.h"
 #include "../../common/errors.h"
 #include "../../scene/Scene.h"
@@ -236,7 +237,7 @@ bool DebugLinePass::createPipelines(VkPipelineLayout layout)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &colorFormat,
-        .depthAttachmentFormat = Swapchain::DepthFormat
+        .depthAttachmentFormat = RenderTargets::DepthFormat
     };
 
     VkGraphicsPipelineCreateInfo pipelineInfo

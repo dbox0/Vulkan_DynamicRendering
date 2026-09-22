@@ -5,6 +5,7 @@
 #include "../core/VulkanContext.h"
 #include "../../common/errors.h"
 #include "../core/vkbarrier.h"
+#include "../core/RenderTargets.h"
 
 namespace {
     constexpr uint32_t GroupSize = 8;
@@ -137,7 +138,7 @@ bool BloomPass::createChainImage()
     {
         .sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType     = VK_IMAGE_TYPE_2D,
-        .format        = Swapchain::HDRFormat,
+        .format        = RenderTargets::HDRFormat,
         .extent        = { m_mipExtents[0].width, m_mipExtents[0].height, 1 },
         .mipLevels     = m_mipCount,
         .arrayLayers   = 1,
@@ -168,7 +169,7 @@ bool BloomPass::createChainViews() {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = m_chain.image,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format =  Swapchain::HDRFormat,
+            .format =  RenderTargets::HDRFormat,
             .subresourceRange
             {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -188,7 +189,7 @@ bool BloomPass::createChainViews() {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = m_chain.image,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format =  Swapchain::HDRFormat,
+            .format =  RenderTargets::HDRFormat,
             .subresourceRange
             {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -208,7 +209,7 @@ bool BloomPass::createChainViews() {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = m_chain.image,
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format =  Swapchain::HDRFormat,
+            .format =  RenderTargets::HDRFormat,
             .subresourceRange
         {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
