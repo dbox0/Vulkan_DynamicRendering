@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "278b5cf91b27b149",
+      "parent": null,
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/glTF-Sample-Models/2.0/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "index": 0,
+        "instance": 0,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a7cddc9b6161fdaf",
+      "parent": null,
+      "previous": "278b5cf91b27b149",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          -3.061166
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/glTF-Sample-Models/2.0/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "index": 1,
+        "instance": 1,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "4511e1f06f0522d5",
+      "parent": null,
+      "previous": "a7cddc9b6161fdaf",
+      "data": {
+        "name": "",
+        "translation": [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/glTF-Sample-Models/2.0/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "index": 2,
+        "instance": 2,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "51bf9d8943d47bb0",
+      "parent": null,
+      "previous": "4511e1f06f0522d5",
+      "data": {
+        "name": "",
+        "translation": [
+          -6.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/glTF-Sample-Models/2.0/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "index": 3,
+        "instance": 3,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "1223e7468f5507ee",
+      "parent": null,
+      "previous": "51bf9d8943d47bb0",
+      "data": {
+        "name": "",
+        "translation": [
+          3.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/glTF-Sample-Models/2.0/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "index": 4,
+        "instance": 4,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "074370031e9c0bcc",
+      "parent": null,
+      "previous": "1223e7468f5507ee",
+      "data": {
+        "name": "",
+        "translation": [
+          6.0,
+          5.9604645e-08,
+          -5.9604645e-08
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/glTF-Sample-Models/2.0/EmissiveStrengthTest/glTF/EmissiveStrengthTest.gltf",
+        "index": 5,
+        "instance": 5,
+        "materials": [
+          null
+        ]
+      }
+    }
+  ]
+}

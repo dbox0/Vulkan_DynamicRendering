@@ -1,11 +1,11 @@
-// src/render/passes/BloomPass.h
+// src/render/post/BloomPass.h
 #pragma once
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <array>
 #include <cstdint>
 #include <vector>
-#include "../../common/gpu_types.h"
+#include "../core/gpu_types.h"
 #include "../shaders/ShaderProgram.h"
 
 class VulkanContext;

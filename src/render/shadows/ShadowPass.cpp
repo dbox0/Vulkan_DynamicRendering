@@ -13,7 +13,7 @@ bool ShadowPass::createTarget(uint32_t resolution)
 
 void ShadowPass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {
-    out.push_back({ "shadow.vert", "shadow.frag", &m_vertexShader, &m_fragmentShader,
+    out.push_back({ "shadow/shadow.vert", "shadow/shadow.frag", &m_vertexShader, &m_fragmentShader,
                     { &m_pipeline }, [this, layout] { return createPipelines(layout); } });
 }
 

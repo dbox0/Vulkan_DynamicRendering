@@ -1,7 +1,7 @@
 #include "TextureCache.h"
 
 #include <volk.h>
-#include "../external/stb_image.h"
+#include "../../third_party/stb_image.h"
 #include <system_error>
 
 #include "../render/core/VulkanContext.h"

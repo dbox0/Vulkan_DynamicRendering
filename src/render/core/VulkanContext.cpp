@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "../../common/errors.h"
-#include "../../common/vkbarrier.h"
+#include "vkbarrier.h"
 
 
 

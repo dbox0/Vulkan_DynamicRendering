@@ -100,9 +100,9 @@ bool SelectionOutlinePass::createResources()
 
 void SelectionOutlinePass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout sceneLayout)
 {
-    out.push_back({ "selection_mask.vert", "selection_mask.frag", &m_maskVertexShader, &m_maskFragmentShader,
+    out.push_back({ "editor/selection_mask.vert", "editor/selection_mask.frag", &m_maskVertexShader, &m_maskFragmentShader,
                     { &m_pipelineMask }, [this, sceneLayout] { return createMaskPipeline(sceneLayout); } });
-    out.push_back({ "outline.vert", "outline.frag", &m_outlineVertexShader, &m_outlineFragmentShader,
+    out.push_back({ "editor/outline.vert", "editor/outline.frag", &m_outlineVertexShader, &m_outlineFragmentShader,
                     { &m_pipelineOutline }, [this] { return createCompositePipeline(); } });
 }
 

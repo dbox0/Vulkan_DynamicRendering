@@ -6,7 +6,7 @@
 
 #include "../shaders/ShaderCompiler.h"
 #include "../../common/errors.h"
-#include "../../common/vkbarrier.h"
+#include "../core/vkbarrier.h"
 
 using namespace render;
 

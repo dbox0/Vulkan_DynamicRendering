@@ -48,17 +48,16 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(vulkanapp
-        src/main.cpp
-        src/application.h
-        src/application.cpp
-        src/external/tinygltf.cpp
+        src/app/main.cpp
+        src/app/application.h
+        src/app/application.cpp
+        third_party/tinygltf.cpp
         src/common/constants.h
-        src/common/constants.h
-        src/scene/Geometry/Node.h
-        src/scene/Geometry/NodeWorld.h
+        src/scene/geometry/Node.h
+        src/scene/geometry/NodeWorld.h
         src/common/errors.cpp
         src/common/errors.h
-        src/common/gpu_types.h
+        src/render/core/gpu_types.h
         src/scene/Scene.cpp
         src/scene/Scene.h
         src/editor/Picking.cpp
@@ -103,21 +102,14 @@ add_executable(vulkanapp
         src/render/shaders/ShaderWatcher.h
         src/render/passes/ScenePass.cpp
         src/render/passes/ScenePass.h
-        src/render/passes/ShadowMap.cpp
-        src/render/passes/ShadowMap.h
-        src/render/passes/ShadowPass.cpp
-        src/render/passes/ShadowPass.h
+        src/render/shadows/ShadowMap.cpp
+        src/render/shadows/ShadowMap.h
+        src/render/shadows/ShadowPass.cpp
+        src/render/shadows/ShadowPass.h
         src/render/passes/SelectionOutlinePass.cpp
         src/render/passes/SelectionOutlinePass.h
         src/render/passes/DebugLinePass.cpp
         src/render/passes/DebugLinePass.h
-        src/engine/Component.cpp
-        src/engine/Component.h
-        src/engine/Entity.cpp
-        src/engine/Entity.h
-        src/engine/components/TransformComponent.h
-        src/engine/components/MeshComponent.cpp
-        src/engine/components/MeshComponent.h
         src/assets/Material.h
         src/assets/Mesh.h
         src/assets/TextureCache.h
@@ -153,24 +145,24 @@ add_executable(vulkanapp
         src/editor/EditorWorld.cpp
         src/scene/SceneSnapshot.h
         src/scene/SceneDrawItems.cpp
-        src/render/passes/TonemapPass.cpp
-        src/render/passes/TonemapPass.h
-        src/Math/Plane.h
+        src/render/post/TonemapPass.cpp
+        src/render/post/TonemapPass.h
+        src/math/Plane.h
         src/render/ibl/EnvironmentMap.cpp
         src/render/ibl/EnvironmentMap.h
         src/render/ibl/HdrLoader.cpp
         src/render/ibl/HdrLoader.h
         src/render/passes/SkyboxPass.cpp
         src/render/passes/SkyboxPass.h
-        src/common/vkbarrier.cpp
-        src/common/vkbarrier.h
-        src/render/passes/BloomPass.cpp
-        src/render/passes/BloomPass.h
+        src/render/core/vkbarrier.cpp
+        src/render/core/vkbarrier.h
+        src/render/post/BloomPass.cpp
+        src/render/post/BloomPass.h
         src/render/core/GPUProfiler.cpp
         src/render/core/GPUProfiler.h
-        src/Math/Frustum.h
-        src/Math/Frustum.cpp
-        src/render/CullSettings.h
+        src/math/Frustum.h
+        src/math/Frustum.cpp
+        src/render/culling/CullSettings.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically
@@ -187,10 +179,10 @@ target_link_libraries(vulkanapp PRIVATE
         nlohmann_json::nlohmann_json)
 
 target_compile_definitions(vulkanapp PRIVATE
-        SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/"
+        SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders/"
         ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/src/res/")
 
-target_include_directories(vulkanapp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/external)
+target_include_directories(vulkanapp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # ---------------------------------------------------------------------------
 # Tests

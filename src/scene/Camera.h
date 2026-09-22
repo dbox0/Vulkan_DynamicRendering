@@ -6,7 +6,7 @@
 #include <SDL3/SDL_events.h>
 #include <glm/gtx/quaternion.hpp>
 
-#include "Geometry/Node.h"
+#include "geometry/Node.h"
 
 class Camera
 {

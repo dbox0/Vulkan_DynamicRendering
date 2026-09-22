@@ -5,20 +5,20 @@
 #include <iostream>
 #include <string_view>
 
-#include "assets/GltfLoader.h"
-#include "assets/Mesh.h"
-#include "assets/MaterialSerializer.h"
-#include "assets/PrimitiveBuilder.h"
-#include "common/errors.h"
-#include "editor/EditorCommands.h"
-#include "scene/Geometry/Node.h"
-#include "scene/SceneTypes.h"
-#include "assets/AssetTypes.h"
-#include "editor/EditorWorld.h"
-#include "editor/UndoHistory.h"
-#include "scene/SceneSerializer.h"
-#include "reflect/BinaryArchive.h"
-#include "reflect/Reflection.h"
+#include "../assets/GltfLoader.h"
+#include "../assets/Mesh.h"
+#include "../assets/MaterialSerializer.h"
+#include "../assets/PrimitiveBuilder.h"
+#include "../common/errors.h"
+#include "../editor/EditorCommands.h"
+#include "../scene/geometry/Node.h"
+#include "../scene/SceneTypes.h"
+#include "../assets/AssetTypes.h"
+#include "../editor/EditorWorld.h"
+#include "../editor/UndoHistory.h"
+#include "../scene/SceneSerializer.h"
+#include "../reflect/BinaryArchive.h"
+#include "../reflect/Reflection.h"
 #include <glm/gtx/quaternion.hpp>
 
 namespace

@@ -17,7 +17,7 @@
 #include "../common/constants.h"
 #include <glm/glm.hpp>
 
-#include "../common/vkbarrier.h"
+#include "core/vkbarrier.h"
 #include "../scene/Camera.h"
 
 // ============================================================================

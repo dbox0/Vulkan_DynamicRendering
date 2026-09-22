@@ -15,7 +15,7 @@
 #include "../src/reflect/BinaryArchive.h"
 #include "../src/reflect/JsonArchive.h"
 #include "../src/reflect/Reflection.h"
-#include "../src/scene/Geometry/NodeWorld.h"
+#include "../src/scene/geometry/NodeWorld.h"
 #include "../src/scene/SceneTypes.h"
 #include "../src/assets/AssetTypes.h"
 #include "../src/assets/Material.h"

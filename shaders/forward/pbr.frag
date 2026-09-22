@@ -268,7 +268,7 @@ void main()
     vec3  V     = normalize(frame.cameraPosition - inWorldPos);
     float NdotV = max(dot(N, V), 1e-4);
     float alpha = roughness * roughness;
-    alpha = max(alpha,0.006f);
+    alpha = max(alpha,0.008f);
     alpha = geometricSpecularAA(N, alpha); // AA
 
     vec3 cDiff = mix(baseColor.rgb, vec3(0.0), metallic);

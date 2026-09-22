@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include "../../common/gpu_types.h"
+#include "../core/gpu_types.h"
 #include <cstdint>
 
 class VulkanContext;

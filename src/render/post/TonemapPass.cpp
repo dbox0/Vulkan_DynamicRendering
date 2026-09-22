@@ -256,7 +256,7 @@ bool TonemapPass::createPipelines() {
 }
 
 void TonemapPass::appendShaderPrograms(std::vector<ShaderProgram> &out) {
-    out.push_back({"tonemap.vert","tonemap.frag", &m_vertexShader, &m_fragmentShader,
+    out.push_back({"post/tonemap.vert","post/tonemap.frag", &m_vertexShader, &m_fragmentShader,
         {&m_pipeline},[this]{return createPipelines();}});
 }
 

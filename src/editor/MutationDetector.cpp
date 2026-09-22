@@ -3,7 +3,7 @@
 #include <unordered_set>
 
 #include "../common/Fatal.h"
-#include "../editor/UndoHistory.h"
+#include "UndoHistory.h"
 #include "../reflect/BinaryArchive.h"
 #include "../render/resources/GeometryStore.h"
 #include "../render/resources/ResourceStore.h"

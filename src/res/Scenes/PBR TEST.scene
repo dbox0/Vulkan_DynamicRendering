@@ -1,0 +1,4261 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "d1d01726deaa7be1",
+      "parent": null,
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          -0.70710677,
+          0.0,
+          0.0,
+          0.70710677
+        ],
+        "scale": [
+          10.0,
+          10.0,
+          10.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "e4c892e4b84c3745",
+      "parent": "d1d01726deaa7be1",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "1563aaebbe80594c",
+      "parent": "e4c892e4b84c3745",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.70710677,
+          0.0,
+          0.0,
+          0.70710677
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "5eb90f54bb9bfb2c",
+      "parent": "1563aaebbe80594c",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "8779d8603a0da186",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "92ca43f0f7fd4d50",
+      "parent": "8779d8603a0da186",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 0,
+        "instance": 0,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "598ed1711442dd96",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "8779d8603a0da186",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "37a5c81cc5fad07f",
+      "parent": "598ed1711442dd96",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 1,
+        "instance": 1,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "6bc26073d9983997",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "598ed1711442dd96",
+      "data": {
+        "name": "",
+        "translation": [
+          0.100153506,
+          -0.07976986,
+          -0.042866427
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          2.0,
+          2.0,
+          2.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "88c12df47bd8374a",
+      "parent": "6bc26073d9983997",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "a8c0082ad3ea5577",
+      "parent": "88c12df47bd8374a",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 2,
+        "instance": 2,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "237548b9c1bd7bd3",
+      "parent": "6bc26073d9983997",
+      "previous": "88c12df47bd8374a",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "72bccc6e71afef44",
+      "parent": "237548b9c1bd7bd3",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 3,
+        "instance": 3,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a4d3023c10cdec55",
+      "parent": "6bc26073d9983997",
+      "previous": "237548b9c1bd7bd3",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "00cea952767ef066",
+      "parent": "a4d3023c10cdec55",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 4,
+        "instance": 4,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a87c3997a9f19b03",
+      "parent": "6bc26073d9983997",
+      "previous": "a4d3023c10cdec55",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "04ba419e84edf951",
+      "parent": "a87c3997a9f19b03",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 5,
+        "instance": 5,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "d2fe73ae9a32bf89",
+      "parent": "6bc26073d9983997",
+      "previous": "a87c3997a9f19b03",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "67f37258fc8ae6c9",
+      "parent": "d2fe73ae9a32bf89",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 6,
+        "instance": 6,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "eb5c08e3efc3aaca",
+      "parent": "6bc26073d9983997",
+      "previous": "d2fe73ae9a32bf89",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "a4481a2824f64508",
+      "parent": "eb5c08e3efc3aaca",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 7,
+        "instance": 7,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "9b3f5dd6e6f061f9",
+      "parent": "6bc26073d9983997",
+      "previous": "eb5c08e3efc3aaca",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "91b0897e0942409a",
+      "parent": "9b3f5dd6e6f061f9",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 8,
+        "instance": 8,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "e76dba084af14f42",
+      "parent": "6bc26073d9983997",
+      "previous": "9b3f5dd6e6f061f9",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "b60d48a37a0a0185",
+      "parent": "e76dba084af14f42",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 9,
+        "instance": 9,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "385adb937cc7f154",
+      "parent": "6bc26073d9983997",
+      "previous": "e76dba084af14f42",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "97326e5aad55dffc",
+      "parent": "385adb937cc7f154",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 10,
+        "instance": 10,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "f5d09b0baa3f0e10",
+      "parent": "6bc26073d9983997",
+      "previous": "385adb937cc7f154",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "1227414f5c6c5a4a",
+      "parent": "f5d09b0baa3f0e10",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 11,
+        "instance": 11,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "66ef22ef7edc5ddb",
+      "parent": "6bc26073d9983997",
+      "previous": "f5d09b0baa3f0e10",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "2fea2d7f175bb126",
+      "parent": "66ef22ef7edc5ddb",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 12,
+        "instance": 12,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "6698e9ddc992191e",
+      "parent": "6bc26073d9983997",
+      "previous": "66ef22ef7edc5ddb",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "3352af8fc379a946",
+      "parent": "6698e9ddc992191e",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 13,
+        "instance": 13,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "1623d1e2730d22ee",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "6bc26073d9983997",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "572056d742440760",
+      "parent": "1623d1e2730d22ee",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "e45b2f1fd75d7dfc",
+      "parent": "572056d742440760",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 14,
+        "instance": 14,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "ecf5f0c627abf2f4",
+      "parent": "1623d1e2730d22ee",
+      "previous": "572056d742440760",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "050a0be25da10e94",
+      "parent": "ecf5f0c627abf2f4",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 15,
+        "instance": 15,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "9ecaecad52ff9600",
+      "parent": "1623d1e2730d22ee",
+      "previous": "ecf5f0c627abf2f4",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "290539f0e4fc6e3b",
+      "parent": "9ecaecad52ff9600",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 16,
+        "instance": 16,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "3fe7c5809f2c9084",
+      "parent": "1623d1e2730d22ee",
+      "previous": "9ecaecad52ff9600",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "49e189ff5161f862",
+      "parent": "3fe7c5809f2c9084",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 17,
+        "instance": 17,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "cbeed47125c5a875",
+      "parent": "1623d1e2730d22ee",
+      "previous": "3fe7c5809f2c9084",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "bce91f69a2209cfc",
+      "parent": "cbeed47125c5a875",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 18,
+        "instance": 18,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "982adc5193f6af47",
+      "parent": "1623d1e2730d22ee",
+      "previous": "cbeed47125c5a875",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "fd456c9574337893",
+      "parent": "982adc5193f6af47",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 19,
+        "instance": 19,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "e79c3c4f0b5c1cd2",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "1623d1e2730d22ee",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "b33a944e0480f0bb",
+      "parent": "e79c3c4f0b5c1cd2",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "bc1dd609e8152414",
+      "parent": "b33a944e0480f0bb",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 20,
+        "instance": 20,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "622aef5244fb6e04",
+      "parent": "e79c3c4f0b5c1cd2",
+      "previous": "b33a944e0480f0bb",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "848a2d2ec1224b78",
+      "parent": "622aef5244fb6e04",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 21,
+        "instance": 21,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "270413b46c1a9b48",
+      "parent": "e79c3c4f0b5c1cd2",
+      "previous": "622aef5244fb6e04",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "f630e46fd2e045af",
+      "parent": "270413b46c1a9b48",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 22,
+        "instance": 22,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "6733014ae1b3b0c2",
+      "parent": "e79c3c4f0b5c1cd2",
+      "previous": "270413b46c1a9b48",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "19fd50f07bb10dbb",
+      "parent": "6733014ae1b3b0c2",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 23,
+        "instance": 23,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "7ee7f169c73427e0",
+      "parent": "e79c3c4f0b5c1cd2",
+      "previous": "6733014ae1b3b0c2",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "35b94bbe7449bfd1",
+      "parent": "7ee7f169c73427e0",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 24,
+        "instance": 24,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "77939b939686464f",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "e79c3c4f0b5c1cd2",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "dbc712b7acc19f49",
+      "parent": "77939b939686464f",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "7dce7e4ca3a975bb",
+      "parent": "dbc712b7acc19f49",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 25,
+        "instance": 25,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "5b9797021963105a",
+      "parent": "77939b939686464f",
+      "previous": "dbc712b7acc19f49",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "a94ef3267f5a0171",
+      "parent": "5b9797021963105a",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 26,
+        "instance": 26,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "7fe829175862e3a7",
+      "parent": "77939b939686464f",
+      "previous": "5b9797021963105a",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "672680a14d5174f6",
+      "parent": "7fe829175862e3a7",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 27,
+        "instance": 27,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "c8383b20a607686e",
+      "parent": "77939b939686464f",
+      "previous": "7fe829175862e3a7",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "894703fea56151f0",
+      "parent": "c8383b20a607686e",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 28,
+        "instance": 28,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "82fdb5554b2de187",
+      "parent": "77939b939686464f",
+      "previous": "c8383b20a607686e",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "3f145a3999b8edfe",
+      "parent": "82fdb5554b2de187",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 29,
+        "instance": 29,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "1f19db75afb2e376",
+      "parent": "77939b939686464f",
+      "previous": "82fdb5554b2de187",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "08a9cbb9e29403e7",
+      "parent": "1f19db75afb2e376",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 30,
+        "instance": 30,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "aec1370f54361964",
+      "parent": "77939b939686464f",
+      "previous": "1f19db75afb2e376",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "b27d9f89b672332a",
+      "parent": "aec1370f54361964",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 31,
+        "instance": 31,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "ebf7ae7526f4e8a7",
+      "parent": "77939b939686464f",
+      "previous": "aec1370f54361964",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "d1ed88fb414173c5",
+      "parent": "ebf7ae7526f4e8a7",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 32,
+        "instance": 32,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a937064c570d1a6f",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "77939b939686464f",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "eb6e6c72994c5efe",
+      "parent": "a937064c570d1a6f",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "d78ba9b90371be76",
+      "parent": "eb6e6c72994c5efe",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 33,
+        "instance": 33,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "40d94e5f2b8277c9",
+      "parent": "a937064c570d1a6f",
+      "previous": "eb6e6c72994c5efe",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "2cdbe3ea11f27f52",
+      "parent": "40d94e5f2b8277c9",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 34,
+        "instance": 34,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "ba11f286b7e23f1c",
+      "parent": "a937064c570d1a6f",
+      "previous": "40d94e5f2b8277c9",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "29958466b4b44ba1",
+      "parent": "ba11f286b7e23f1c",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 35,
+        "instance": 35,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "f03858ac77a9526b",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "a937064c570d1a6f",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "4b297679e28eff01",
+      "parent": "f03858ac77a9526b",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "6d1cbe1dae9cb119",
+      "parent": "4b297679e28eff01",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 36,
+        "instance": 36,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "9518b2f010db1250",
+      "parent": "f03858ac77a9526b",
+      "previous": "4b297679e28eff01",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "bf5c3c4c08ab5836",
+      "parent": "9518b2f010db1250",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 37,
+        "instance": 37,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "74af2ef1b4d7d598",
+      "parent": "f03858ac77a9526b",
+      "previous": "9518b2f010db1250",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "404b9b798946977b",
+      "parent": "74af2ef1b4d7d598",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 38,
+        "instance": 38,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "7642e7ad0e142b1a",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "f03858ac77a9526b",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "c7a228ef8e741ab4",
+      "parent": "7642e7ad0e142b1a",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "574a627f69ffd567",
+      "parent": "c7a228ef8e741ab4",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 39,
+        "instance": 39,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "bb4875aac388e91d",
+      "parent": "7642e7ad0e142b1a",
+      "previous": "c7a228ef8e741ab4",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "6e4d13f5c6dde56e",
+      "parent": "bb4875aac388e91d",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 40,
+        "instance": 40,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "397a3422ba290f10",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "7642e7ad0e142b1a",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "b5d6fcaa85328338",
+      "parent": "397a3422ba290f10",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "0af99a45f81b3303",
+      "parent": "b5d6fcaa85328338",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 41,
+        "instance": 41,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a75be55593d2740c",
+      "parent": "397a3422ba290f10",
+      "previous": "b5d6fcaa85328338",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "f8ee4c54942e4735",
+      "parent": "a75be55593d2740c",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 42,
+        "instance": 42,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "edf0c16bb546b491",
+      "parent": "397a3422ba290f10",
+      "previous": "a75be55593d2740c",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "3c46b070ceb35fe8",
+      "parent": "edf0c16bb546b491",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 43,
+        "instance": 43,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "8054a68fd09e9ad9",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "397a3422ba290f10",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "0b6f07cba067fa41",
+      "parent": "8054a68fd09e9ad9",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "4417e3fd8cceef9f",
+      "parent": "0b6f07cba067fa41",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 44,
+        "instance": 44,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a29c255e1fad67bf",
+      "parent": "8054a68fd09e9ad9",
+      "previous": "0b6f07cba067fa41",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "49ec8fab849511be",
+      "parent": "a29c255e1fad67bf",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 45,
+        "instance": 45,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "d1ee30a672974a14",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "8054a68fd09e9ad9",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "c7af78939772d21b",
+      "parent": "d1ee30a672974a14",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "0d1f53cac9f9392e",
+      "parent": "c7af78939772d21b",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 46,
+        "instance": 46,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "a5931adba1d71e34",
+      "parent": "d1ee30a672974a14",
+      "previous": "c7af78939772d21b",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "46f0b20873b83361",
+      "parent": "a5931adba1d71e34",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 47,
+        "instance": 47,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "30ab487331b9fd8d",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "d1ee30a672974a14",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.275
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "9652f6d21a7459de",
+      "parent": "30ab487331b9fd8d",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "5478317b1c67f9d4",
+      "parent": "9652f6d21a7459de",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 48,
+        "instance": 48,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "b0b8b30822e0e4b1",
+      "parent": "30ab487331b9fd8d",
+      "previous": "9652f6d21a7459de",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "bde832e30256aa27",
+      "parent": "b0b8b30822e0e4b1",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 49,
+        "instance": 49,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "27e7f31905d7b025",
+      "parent": "5eb90f54bb9bfb2c",
+      "previous": "30ab487331b9fd8d",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.275
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "a9deee1bc39bf9f6",
+      "parent": "27e7f31905d7b025",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "79e133269ba171e2",
+      "parent": "a9deee1bc39bf9f6",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 50,
+        "instance": 50,
+        "materials": [
+          null
+        ]
+      }
+    },
+    {
+      "id": "b6fc6450f0f1b508",
+      "parent": "27e7f31905d7b025",
+      "previous": "a9deee1bc39bf9f6",
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      }
+    },
+    {
+      "id": "3891ea65dd908d55",
+      "parent": "b6fc6450f0f1b508",
+      "previous": null,
+      "data": {
+        "name": "",
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "lightType": "None",
+        "lightColor": [
+          1.0,
+          0.96,
+          0.9
+        ],
+        "lightIntensity": 3.0,
+        "lightCastsShadows": true
+      },
+      "mesh": {
+        "path": "models/gltf_test_pbr_material/scene.gltf",
+        "index": 51,
+        "instance": 51,
+        "materials": [
+          null
+        ]
+      }
+    }
+  ]
+}

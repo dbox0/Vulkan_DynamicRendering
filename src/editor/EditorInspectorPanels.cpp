@@ -14,7 +14,7 @@
 #include "../assets/Material.h"
 #include "../render/resources/GeometryStore.h"
 #include "../render/resources/ResourceStore.h"
-#include "../scene/Geometry/Node.h"
+#include "../scene/geometry/Node.h"
 
 #include <glm/geometric.hpp>
 

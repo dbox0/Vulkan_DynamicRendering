@@ -6,11 +6,11 @@
 #include <algorithm>
 #include <cmath>
 
-#include "../render/passes/ShadowMap.h"
-#include "../render/passes/TonemapPass.h"
+#include "../render/shadows/ShadowMap.h"
+#include "../render/post/TonemapPass.h"
 #include "../render/passes/SkyboxPass.h"
 #include "../render/Renderer.h"
-#include "../render/passes/BloomPass.h"
+#include "../render/post/BloomPass.h"
 
 using namespace editor::ui;
 

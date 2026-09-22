@@ -7,7 +7,7 @@
 #include "../../assets/Mesh.h"
 #include "../GpuShared.h"
 #include "RangeAllocator.h"
-#include "../../common/gpu_types.h"
+#include "../core/gpu_types.h"
 
 class VulkanContext;
 

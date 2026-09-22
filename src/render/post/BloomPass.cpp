@@ -5,7 +5,7 @@
 #include "../core/VulkanContext.h"
 #include "../shaders/ShaderCompiler.h"   // compileShaderModule
 #include "../../common/errors.h"
-#include "../../common/vkbarrier.h"
+#include "../core/vkbarrier.h"
 
 namespace {
     constexpr uint32_t GroupSize = 8;
@@ -106,8 +106,8 @@ bool BloomPass::createPipelines() {
         }
         return true;
     };
-    return build("postprocessing/bloom_down.comp", m_downShader, m_downPipeline)
-      && build("postprocessing/bloom_up.comp",   m_upShader,   m_upPipeline);
+    return build("post/bloom_down.comp", m_downShader, m_downPipeline)
+      && build("post/bloom_up.comp",   m_upShader,   m_upPipeline);
 }
 void BloomPass::appendShaderPrograms(std::vector<ShaderProgram> &)
 {

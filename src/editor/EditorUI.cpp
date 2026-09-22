@@ -18,14 +18,14 @@
 #include "../render/core/VulkanContext.h"
 #include "../render/resources/GeometryStore.h"
 #include "../render/resources/ResourceStore.h"
-#include "../render/passes/ShadowMap.h"      // ShadowSettings
+#include "../render/shadows/ShadowMap.h"      // ShadowSettings
 #include "../common/constants.h"
 #include "../scene/Scene.h"
 #include "../reflect/BinaryArchive.h"
 #include "UndoHistory.h"
 #include "../scene/Camera.h"
 #include "../common/errors.h"
-#include "../render/CullSettings.h"
+#include "../render/culling/CullSettings.h"
 #include <ImGuizmo.h>
 #include <glm/gtx/euler_angles.hpp>
 

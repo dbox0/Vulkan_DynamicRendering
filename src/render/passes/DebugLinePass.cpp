@@ -13,7 +13,7 @@
 
 void DebugLinePass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {
-    out.push_back({ "debug_line.vert", "debug_line.frag", &m_vertexShader, &m_fragmentShader,
+    out.push_back({ "editor/debug_line.vert", "editor/debug_line.frag", &m_vertexShader, &m_fragmentShader,
                     { &m_pipeline }, [this, layout] { return createPipelines(layout); } });
 }
 

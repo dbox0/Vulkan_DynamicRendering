@@ -5,7 +5,7 @@
 #include <glm/mat4x4.hpp>
 #include <span>
 
-#include "Geometry/NodeWorld.h"
+#include "geometry/NodeWorld.h"
 #include "SceneSnapshot.h"
 
 class GeometryStore;

@@ -4,7 +4,7 @@
 
 #include <iostream>
 #include <ostream>
-#include "../Math/Frustum.h"
+#include "../math/Frustum.h"
 
 void Camera::handleInput(const SDL_Event& e, float deltaTime) {
     if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 #include "../../assets/Material.h"
-#include "../../common/gpu_types.h"
+#include "../core/gpu_types.h"
 #include "../GpuShared.h"
 #include <volk.h>
 #include <filesystem>

@@ -4,7 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <vk_mem_alloc.h>
-#include "../../common/gpu_types.h"
+#include "gpu_types.h"
 
 class VulkanContext;
 

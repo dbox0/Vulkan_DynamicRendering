@@ -2,7 +2,7 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <vector>
-#include "ScenePass.h"        // DrawBatches
+#include "../passes/ScenePass.h"        // DrawBatches
 #include "ShadowMap.h"
 #include "../shaders/ShaderProgram.h"
 

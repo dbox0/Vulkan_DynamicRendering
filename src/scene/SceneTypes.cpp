@@ -1,6 +1,6 @@
 #include "SceneTypes.h"
 
-#include "Geometry/Node.h"
+#include "geometry/Node.h"
 #include "../reflect/Reflection.h"
 
 // WHAT IS -- AND IS NOT -- A NODE FIELD

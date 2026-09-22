@@ -11,8 +11,8 @@
 
 #include "Mesh.h"
 #include "TextureCache.h"
-#include "../external/tiny_gltf_v3.h"
-#include "../external/stb_image.h"
+#include "../../third_party/tiny_gltf_v3.h"
+#include "../../third_party/stb_image.h"
 
 #include "../common/errors.h"
 #include "../render/resources/GeometryStore.h"

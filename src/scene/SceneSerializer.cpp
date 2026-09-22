@@ -18,8 +18,8 @@
 #include "../render/resources/GeometryStore.h"
 #include "../render/resources/ResourceStore.h"
 #include "../render/core/VulkanContext.h"
-#include "Geometry/Node.h"
-#include "Geometry/NodeWorld.h"
+#include "geometry/Node.h"
+#include "geometry/NodeWorld.h"
 #include "Scene.h"
 #include "SceneTypes.h"
 

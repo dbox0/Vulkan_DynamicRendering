@@ -1,10 +1,5 @@
 #pragma once
+#include <cstdint>
 
-#define UNDEFINED_STRING "UNDEFINED_STRING"
-#define PI 3.14159265358979323846
-#define GORBI_PI 3.14159275f
-#define EPSILON 1e-12
-#define SQRT_OF_TWO static_cast<float>(sqrt(2.0))
-#define SQRT_OF_HALF 1.0f / SQRT_OF_TWO
-#define MaxTextures 4096
-#define MaxMaterials 4096
+constexpr uint32_t MaxTextures  = 4096;
+constexpr uint32_t MaxMaterials = 4096;

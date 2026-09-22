@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <vector>
-#include "../../common/gpu_types.h"
+#include "gpu_types.h"
 #include "Uploader.h"
 
 struct SDL_Window;

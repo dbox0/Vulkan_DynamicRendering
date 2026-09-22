@@ -14,6 +14,7 @@ CMakeUserPresets.json
 src/res/models
 src/res/materials/*
 src/res/env/*
+src/res/Scenes/*
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
