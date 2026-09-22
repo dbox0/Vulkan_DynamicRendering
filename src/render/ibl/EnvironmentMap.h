@@ -72,7 +72,9 @@ public:
     bool load(const BakeContext& ctx,
               VkImageView equirectView,
               VkSampler   equirectSampler,
-              const EnvironmentSettings& settings = {});
+              const EnvironmentSettings& settings = {},
+              std::vector<std::string>* shaderDeps = nullptr,
+              std::string* shaderError = nullptr);
 
     void destroy();
 
@@ -89,12 +91,14 @@ private:
     bool createCubemap(Cubemap& out, uint32_t size, uint32_t mips,
                        VkImageUsageFlags extraUsage = 0);
     bool createSampler();
-    bool createPipelines();
+    bool createPipelines(std::vector<std::string>* shaderDeps, std::string* shaderError);
     bool createPipeline(const char* file,
                         VkDescriptorSetLayout setLayout,
                         uint32_t pushConstantSize,
                         VkPipelineLayout& outLayout,
-                        VkPipeline& outPipeline);
+                        VkPipeline& outPipeline,
+                        std::vector<std::string>* shaderDeps,
+                        std::string* shaderError);
 
     void recordEquirectToCube(VkCommandBuffer cmd, VkImageView src, VkSampler srcSampler);
     void recordSkyMips(VkCommandBuffer cmd);

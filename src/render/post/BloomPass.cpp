@@ -3,7 +3,6 @@
 #include <algorithm>
 #include "../core/Swapchain.h"
 #include "../core/VulkanContext.h"
-#include "../shaders/ShaderCompiler.h"   // compileShaderModule
 #include "../../common/errors.h"
 #include "../core/vkbarrier.h"
 
@@ -84,34 +83,38 @@ bool BloomPass::createResources() {
     return true;
 }
 
-bool BloomPass::createPipelines() {
-    auto build = [this](const char *file, VkShaderModule &outModule, VkPipeline &outPipeline) {
-        outModule = compileShaderModule(m_ctx.device(), file, shaderc_compute_shader);
-        if (!outModule) return false;
-
-        const VkComputePipelineCreateInfo info
-        {
-            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-            .stage {
-                .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = outModule,
-                .pName  = "main"
-            },
-            .layout = m_layout,
-        };
-        if (vkCreateComputePipelines(m_ctx.device(),nullptr,1,&info,nullptr,&outPipeline) != VK_SUCCESS) {
-            showError("Failed to create a bloom compute pipeline");
-            return false;
-        }
-        return true;
-    };
-    return build("post/bloom_down.comp", m_downShader, m_downPipeline)
-      && build("post/bloom_up.comp",   m_upShader,   m_upPipeline);
-}
-void BloomPass::appendShaderPrograms(std::vector<ShaderProgram> &)
+bool BloomPass::createPipeline(VkShaderModule module, VkPipeline &outPipeline)
 {
+    const VkComputePipelineCreateInfo info
+    {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage {
+            .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+            .module = module,
+            .pName  = "main"
+        },
+        .layout = m_layout,
+    };
+    if (vkCreateComputePipelines(m_ctx.device(), nullptr, 1, &info, nullptr, &outPipeline) != VK_SUCCESS) {
+        showError("Failed to create a bloom compute pipeline");
+        return false;
+    }
+    return true;
+}
 
+bool BloomPass::createPipelines()
+{
+    return createPipeline(m_downShader, m_downPipeline) &&
+           createPipeline(m_upShader,   m_upPipeline);
+}
+
+void BloomPass::appendShaderPrograms(std::vector<ShaderProgram> &out)
+{
+    out.push_back(computeProgram("post/bloom_down.comp", &m_downShader, { &m_downPipeline },
+                                 [this] { return createPipeline(m_downShader, m_downPipeline); }));
+    out.push_back(computeProgram("post/bloom_up.comp", &m_upShader, { &m_upPipeline },
+                                 [this] { return createPipeline(m_upShader, m_upPipeline); }));
 }
 
 void BloomPass::computeMipChain(uint32_t width, uint32_t height) {

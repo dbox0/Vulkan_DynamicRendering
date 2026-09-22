@@ -57,8 +57,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         return false;
     }
     if (!m_bloomPass.createResources() ||
-        !m_bloomPass.createTargets(m_swapchain.width(), m_swapchain.height()) ||
-        !m_bloomPass.createPipelines()) {
+        !m_bloomPass.createTargets(m_swapchain.width(), m_swapchain.height())) {
         return false;
         }
     m_bloomPass.setSourceView(m_swapchain.hdrImageView());
@@ -104,6 +103,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         showError("Unable to initialize the skybox pipeline");
         return false;
     }
+    if (!m_bloomPass.createPipelines()) {
+        showError("Unable to initialize the bloom pipelines");
+        return false;
+    }
     if (!createSyncResources()) {
         showError("Could not create the sync resources");
         return false;
@@ -119,29 +122,9 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 
     // Optional: no file, or a broken one, just leaves m_envSlot at 0 and the
     // shader falls back to the hemisphere ambient. Not worth failing init over.
-    if (const uint32_t envTextureId = m_resources.loadEnvironment(ASSET_DIR "env/sky2k.hdr")) {
-        const auto& tex = m_resources.texture(envTextureId);
-
-        const render::BakeContext bake{
-            .device    = m_ctx.device(),
-            .allocator = m_ctx.allocator(),
-            .uploader  = &m_ctx.uploader(),
-        };
-        const render::EnvironmentSettings settings{
-            .cubeSize = 1024, .irradianceSize = 32, .generateMips = true,
-        };
-
-        m_ctx.uploader().wait(m_ctx.uploader().lastSubmitted());
-
-        if (m_env.load(bake, m_resources.imageView(tex.imageId),
-                       m_resources.sampler(tex.samplerId), settings))
-        {
-            m_envIrradianceSlot = m_resources.addCubeTexture(m_env.irradianceView(), m_env.sampler());
-            m_envPrefilterSlot  = m_resources.addCubeTexture(m_env.prefilterView(),  m_env.sampler());
-            m_envSkyboxSlot     = m_resources.addCubeTexture(m_env.skyboxView(),     m_env.sampler());
-            m_envMaxLod = static_cast<float>(m_env.prefilterMips() - 1);
-            m_resources.setBrdfLut(m_env.brdfLutView(), m_env.sampler());
-        }
+    m_envSourceTextureId = m_resources.loadEnvironment(ASSET_DIR "env/sky2k.hdr");
+    if (m_envSourceTextureId && bakeEnvironment(m_env, &m_envShaderDeps, nullptr)) {
+        bindEnvironment();
     }
 
     // The swapchain (and therefore the mask image) already exists by the time
@@ -154,6 +137,64 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     m_profiler.initialize(m_ctx, MaxFramesInFlight);
 #endif
     return true;
+}
+
+bool Renderer::bakeEnvironment(render::EnvironmentMap &out, std::vector<std::string> *shaderDeps,
+                               std::string *shaderError)
+{
+    const auto& tex = m_resources.texture(m_envSourceTextureId);
+
+    const render::BakeContext bake{
+        .device    = m_ctx.device(),
+        .allocator = m_ctx.allocator(),
+        .uploader  = &m_ctx.uploader(),
+    };
+    const render::EnvironmentSettings settings{
+        .cubeSize = 1024, .irradianceSize = 32, .generateMips = true,
+    };
+
+    m_ctx.uploader().wait(m_ctx.uploader().lastSubmitted());
+
+    return out.load(bake, m_resources.imageView(tex.imageId), m_resources.sampler(tex.samplerId),
+                    settings, shaderDeps, shaderError);
+}
+
+void Renderer::bindEnvironment()
+{
+    const auto bindCube = [this](uint32_t &slot, VkImageView view) {
+        if (slot) {
+            m_resources.setCubeTexture(slot, view, m_env.sampler());
+        } else {
+            slot = m_resources.addCubeTexture(view, m_env.sampler());
+        }
+    };
+    bindCube(m_envIrradianceSlot, m_env.irradianceView());
+    bindCube(m_envPrefilterSlot,  m_env.prefilterView());
+    bindCube(m_envSkyboxSlot,     m_env.skyboxView());
+    m_envMaxLod = static_cast<float>(m_env.prefilterMips() - 1);
+    m_resources.setBrdfLut(m_env.brdfLutView(), m_env.sampler());
+}
+
+void Renderer::reloadEnvironment(const std::vector<std::string> &changedFiles)
+{
+    if (!m_envSourceTextureId || !dependsOnAny(m_envShaderDeps, changedFiles)) {
+        return;
+    }
+
+    render::EnvironmentMap baked;
+    std::vector<std::string> deps;
+    std::string error;
+    if (!bakeEnvironment(baked, &deps, &error)) {
+        mergeDependencies(m_envShaderDeps, deps);
+        std::cerr << "[hot reload] IBL bake failed, keeping the old environment:\n" << error << std::endl;
+        return;
+    }
+
+    vkDeviceWaitIdle(m_ctx.device());
+    m_env = std::move(baked);
+    m_envShaderDeps = std::move(deps);
+    bindEnvironment();
+    std::cout << "[hot reload] rebaked IBL" << std::endl;
 }
 
 // Renderer.cpp
@@ -863,7 +904,9 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     // Between frames and before anything is recorded, so a rebuilt pipeline
     // is used by this very frame.
     if (m_shaderWatcher) {
-        reloadShaderPrograms(m_ctx.device(), m_shaderPrograms, m_shaderWatcher->poll());
+        const std::vector<std::string> changed = m_shaderWatcher->poll();
+        reloadShaderPrograms(m_ctx.device(), m_shaderPrograms, changed);
+        reloadEnvironment(changed);
     }
 
     const uint32_t frameResIndex = m_frameIndex++ % MaxFramesInFlight;

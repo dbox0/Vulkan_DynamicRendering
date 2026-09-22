@@ -256,8 +256,8 @@ bool TonemapPass::createPipelines() {
 }
 
 void TonemapPass::appendShaderPrograms(std::vector<ShaderProgram> &out) {
-    out.push_back({"post/tonemap.vert","post/tonemap.frag", &m_vertexShader, &m_fragmentShader,
-        {&m_pipeline},[this]{return createPipelines();}});
+    out.push_back(graphicsProgram("post/tonemap.vert","post/tonemap.frag", &m_vertexShader, &m_fragmentShader,
+        {&m_pipeline},[this]{return createPipelines();}));
 }
 
 void TonemapPass::transitionSource(VkCommandBuffer cmd,VkImage hdrImage) const {

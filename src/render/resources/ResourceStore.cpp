@@ -467,6 +467,26 @@ uint32_t ResourceStore::addCubeTexture(VkImageView cubeView,VkSampler sampler) {
     return slot + 1;   // 1-based
 }
 
+bool ResourceStore::setCubeTexture(uint32_t cubeId, VkImageView cubeView, VkSampler sampler)
+{
+    if (!cubeView || !sampler || cubeId == 0 || cubeId > m_cubes.size()) return false;
+
+    const uint32_t slot = cubeId - 1;
+    m_cubes[slot] = { sampler, cubeView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+    const VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_globalDescSet,
+        .dstBinding = 1,
+        .dstArrayElement = slot,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &m_cubes[slot],
+    };
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &write, 0, nullptr);
+    return true;
+}
+
 void ResourceStore::setBrdfLut(VkImageView view, VkSampler sampler)
 {
     m_brdfLut = { sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };

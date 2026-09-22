@@ -8,19 +8,51 @@
 #include "ShaderCompiler.h"
 
 namespace {
-    bool dependsOnAny(const ShaderProgram &program, const std::vector<std::string> &changedFiles)
+    std::string programName(const ShaderProgram &program)
     {
-        return std::ranges::any_of(changedFiles, [&](const std::string &file) {
-            return std::ranges::find(program.dependencies, file) != program.dependencies.end();
-        });
+        std::string name;
+        for (const ShaderStage &stage : program.stages) {
+            name += name.empty() ? stage.file : std::string(" / ") + stage.file;
+        }
+        return name;
     }
+}
 
-    void mergeInto(std::vector<std::string> &dst, const std::vector<std::string> &src)
-    {
-        for (const std::string &file : src) {
-            if (std::ranges::find(dst, file) == dst.end()) {
-                dst.push_back(file);
-            }
+ShaderProgram graphicsProgram(const char *vertFile, const char *fragFile,
+                              VkShaderModule *vertModule, VkShaderModule *fragModule,
+                              std::vector<VkPipeline*> pipelines, std::function<bool()> build)
+{
+    return ShaderProgram{
+        .stages    = { { vertFile, shaderc_vertex_shader, vertModule },
+                       { fragFile, shaderc_fragment_shader, fragModule } },
+        .pipelines = std::move(pipelines),
+        .build     = std::move(build),
+    };
+}
+
+ShaderProgram computeProgram(const char *file, VkShaderModule *module,
+                             std::vector<VkPipeline*> pipelines, std::function<bool()> build)
+{
+    return ShaderProgram{
+        .stages    = { { file, shaderc_compute_shader, module } },
+        .pipelines = std::move(pipelines),
+        .build     = std::move(build),
+    };
+}
+
+bool dependsOnAny(const std::vector<std::string> &dependencies,
+                  const std::vector<std::string> &changedFiles)
+{
+    return std::ranges::any_of(changedFiles, [&](const std::string &file) {
+        return std::ranges::find(dependencies, file) != dependencies.end();
+    });
+}
+
+void mergeDependencies(std::vector<std::string> &dst, const std::vector<std::string> &src)
+{
+    for (const std::string &file : src) {
+        if (std::ranges::find(dst, file) == dst.end()) {
+            dst.push_back(file);
         }
     }
 }
@@ -30,11 +62,11 @@ bool compileShaderPrograms(VkDevice device, std::vector<ShaderProgram> &programs
     bool ok = true;
     for (ShaderProgram &program : programs) {
         program.dependencies.clear();
-        *program.vertModule = compileShaderModule(device, program.vertFile, shaderc_vertex_shader,
-                                                  nullptr, &program.dependencies);
-        *program.fragModule = compileShaderModule(device, program.fragFile, shaderc_fragment_shader,
-                                                  nullptr, &program.dependencies);
-        ok = ok && *program.vertModule && *program.fragModule;
+        for (const ShaderStage &stage : program.stages) {
+            *stage.module = compileShaderModule(device, stage.file, stage.kind,
+                                                nullptr, &program.dependencies);
+            ok = ok && *stage.module;
+        }
     }
     return ok;
 }
@@ -49,30 +81,33 @@ void reloadShaderPrograms(VkDevice device, std::vector<ShaderProgram> &programs,
     bool deviceIdle = false;
 
     for (ShaderProgram &program : programs) {
-        if (!dependsOnAny(program, changedFiles)) {
+        if (!dependsOnAny(program.dependencies, changedFiles)) {
             continue;
         }
 
-        // Both stages compile before anything live is touched.
-        // frag stage is attempted even when vert failed, so its includes are tracked too.
-        std::string vertError, fragError;
+        // Every stage compiles before anything live is touched.
+        // Later stages are attempted even when an earlier one failed, so their includes are tracked too.
+        std::string errors;
         std::vector<std::string> deps;
-        VkShaderModule vert = compileShaderModule(device, program.vertFile, shaderc_vertex_shader,
-                                                  &vertError, &deps);
-        VkShaderModule frag = compileShaderModule(device, program.fragFile, shaderc_fragment_shader,
-                                                  &fragError, &deps);
-        if (!vert || !frag) {
+        std::vector<VkShaderModule> modules;
+        bool compiled = true;
+        for (const ShaderStage &stage : program.stages) {
+            std::string error;
+            modules.push_back(compileShaderModule(device, stage.file, stage.kind, &error, &deps));
+            if (!modules.back()) {
+                compiled = false;
+                errors += error;
+            }
+        }
+        if (!compiled) {
             // Keep watching the old files as well as whatever the broken
             // version tried to include, so fixing either one retries.
-            mergeInto(program.dependencies, deps);
+            mergeDependencies(program.dependencies, deps);
 
-            std::cerr << "[hot reload] " << program.vertFile << " / " << program.fragFile
-                      << " failed, keeping the old pipeline:\n" << vertError << fragError << std::endl;
-            if (vert) {
-                vkDestroyShaderModule(device, vert, nullptr);
-            }
-            if (frag) {
-                vkDestroyShaderModule(device, frag, nullptr);
+            std::cerr << "[hot reload] " << programName(program)
+                      << " failed, keeping the old pipeline:\n" << errors << std::endl;
+            for (VkShaderModule module : modules) {
+                vkDestroyShaderModule(device, module, nullptr);
             }
             continue;
         }
@@ -83,9 +118,10 @@ void reloadShaderPrograms(VkDevice device, std::vector<ShaderProgram> &programs,
             deviceIdle = true;
         }
 
-        // After the swap, vert/frag hold the OLD modules.
-        std::swap(*program.vertModule, vert);
-        std::swap(*program.fragModule, frag);
+        // After the swap, modules holds the OLD modules.
+        for (size_t i = 0; i < modules.size(); ++i) {
+            std::swap(*program.stages[i].module, modules[i]);
+        }
 
         std::vector<VkPipeline> oldPipelines;
         for (VkPipeline *p : program.pipelines) {
@@ -106,15 +142,17 @@ void reloadShaderPrograms(VkDevice device, std::vector<ShaderProgram> &programs,
         if (built) {
             program.dependencies = std::move(deps);
         } else {
-            // Swap back: vert/frag now hold the NEW modules
-            std::swap(*program.vertModule, vert);
-            std::swap(*program.fragModule, frag);
-            mergeInto(program.dependencies, deps);
+            // Swap back: modules now holds the NEW modules
+            for (size_t i = 0; i < modules.size(); ++i) {
+                std::swap(*program.stages[i].module, modules[i]);
+            }
+            mergeDependencies(program.dependencies, deps);
         }
-        vkDestroyShaderModule(device, vert, nullptr);
-        vkDestroyShaderModule(device, frag, nullptr);
+        for (VkShaderModule module : modules) {
+            vkDestroyShaderModule(device, module, nullptr);
+        }
 
         std::cout << "[hot reload] " << (built ? "rebuilt " : "pipeline build failed, rolled back ")
-                  << program.vertFile << " / " << program.fragFile << std::endl;
+                  << programName(program) << std::endl;
     }
 }

@@ -72,6 +72,8 @@ private:
     // Half resolution at level 0, halving until the minor axis reaches 16.
     void computeMipChain(uint32_t width, uint32_t height);
 
+    bool createPipeline(VkShaderModule module, VkPipeline &outPipeline);
+
     bool createChainImage();
     bool createChainViews();
     bool allocateSets();

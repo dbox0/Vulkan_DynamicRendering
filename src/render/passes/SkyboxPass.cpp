@@ -148,9 +148,9 @@ bool SkyboxPass::createPipelines()
 
 void SkyboxPass::appendShaderPrograms(std::vector<ShaderProgram> &out)
 {
-    out.push_back({ "skybox/skybox.vert", "skybox/skybox.frag",
+    out.push_back(graphicsProgram("skybox/skybox.vert", "skybox/skybox.frag",
                     &m_vertexShader, &m_fragmentShader,
-                    { &m_pipeline }, [this] { return createPipelines(); } });
+                    { &m_pipeline }, [this] { return createPipelines(); }));
 }
 
 void SkyboxPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet,

@@ -135,6 +135,11 @@ private:
     bool createCommandBuffers();
     bool createFrameBuffers(uint32_t maxDrawsPerFrame);
 
+    bool bakeEnvironment(render::EnvironmentMap &out, std::vector<std::string> *shaderDeps,
+                         std::string *shaderError);
+    void bindEnvironment();
+    void reloadEnvironment(const std::vector<std::string> &changedFiles);
+
     // Fills this frame's indirect + render-item buffers from the draw list.
     // Returns the draw count actually written (clamped to m_maxDraws).
     uint32_t writeDrawCommands(FrameResources &res, const glm::mat4 &viewProj);
@@ -179,6 +184,8 @@ private:
     uint32_t m_maxDraws         = 0;
 
     render::EnvironmentMap m_env;
+    uint32_t m_envSourceTextureId = 0;
+    std::vector<std::string> m_envShaderDeps;
     uint32_t m_envIrradianceSlot = 0;   // 1-based cube ID, 0 = none
     uint32_t m_envPrefilterSlot  = 0;
     uint32_t m_envSkyboxSlot     = 0;   // full-res sky; the prefilter cube is too small to look at

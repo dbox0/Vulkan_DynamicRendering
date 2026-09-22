@@ -13,7 +13,9 @@ using namespace render;
 bool EnvironmentMap::load(const BakeContext& ctx,
                           VkImageView equirectView,
                           VkSampler equirectSampler,
-                          const EnvironmentSettings& settings) {
+                          const EnvironmentSettings& settings,
+                          std::vector<std::string>* shaderDeps,
+                          std::string* shaderError) {
     if (!ctx.device || !ctx.allocator || !ctx.uploader) {
         showError("EnvironmentMap::load called with an incomplete BakeContext");
         return false;
@@ -43,7 +45,7 @@ bool EnvironmentMap::load(const BakeContext& ctx,
     if (!createCubemap(m_irradiance, settings.irradianceSize, 1))                return fail();
     if (!createCubemap(m_prefilter, settings.prefilterSize, prefilterMips))      return fail();
     if (!createBrdfLut(settings.brdfLutSize)) return fail();
-    if (!createPipelines())                                       return fail();
+    if (!createPipelines(shaderDeps, shaderError))                return fail();
 
     VkCommandBuffer cmd = m_ctx.uploader->begin();
     if (!cmd) {
@@ -294,7 +296,7 @@ void EnvironmentMap::recordBrdfLut(VkCommandBuffer cmd)
     });
 }
 
-bool EnvironmentMap::createPipelines() {
+bool EnvironmentMap::createPipelines(std::vector<std::string>* shaderDeps, std::string* shaderError) {
 
     // equirect + irradiance + BRDF LUT, plus one set per prefilter level
     // (level 0 included: it is baked too now).
@@ -333,13 +335,13 @@ bool EnvironmentMap::createPipelines() {
     }
 
     if (!createPipeline("ibl/equirect_to_cube.comp", m_equirectSetLayout, 0,
-                        m_equirectPipeLayout, m_equirectPipeline))
+                        m_equirectPipeLayout, m_equirectPipeline, shaderDeps, shaderError))
         return false;
     if (!createPipeline("ibl/irradiance.comp", m_convolveSetLayout, sizeof(IrradiancePush),
-                        m_convolvePipeLayout, m_irradiancePipeline))
+                        m_convolvePipeLayout, m_irradiancePipeline, shaderDeps, shaderError))
         return false;
     if (!createPipeline("ibl/prefilter.comp", m_prefilterSetLayout, sizeof(PrefilterPush),
-                        m_prefilterPipeLayout, m_prefilterPipeline))
+                        m_prefilterPipeLayout, m_prefilterPipeline, shaderDeps, shaderError))
         return false;
 
     const VkDescriptorSetLayoutBinding brdfBinding{
@@ -355,8 +357,10 @@ bool EnvironmentMap::createPipelines() {
         return false;
     }
     if (!createPipeline("ibl/brdf_lut.comp", m_brdfSetLayout, sizeof(BrdfLutPush),
-                        m_brdfPipeLayout, m_brdfPipeline)) {
-        showError("Could not create an BRDF pipeline with brdf_lut.comp shader");
+                        m_brdfPipeLayout, m_brdfPipeline, shaderDeps, shaderError)) {
+        if (!shaderError) {
+            showError("Could not create an BRDF pipeline with brdf_lut.comp shader");
+        }
         return false;
 
     }
@@ -367,7 +371,9 @@ bool EnvironmentMap::createPipeline(const char* file,
                                     VkDescriptorSetLayout setLayout,
                                     uint32_t pushConstantSize,
                                     VkPipelineLayout& outLayout,
-                                    VkPipeline& outPipeline) {
+                                    VkPipeline& outPipeline,
+                                    std::vector<std::string>* shaderDeps,
+                                    std::string* shaderError) {
     const VkPushConstantRange pushRange{
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .offset     = 0,
@@ -385,7 +391,8 @@ bool EnvironmentMap::createPipeline(const char* file,
         return false;
     }
 
-    VkShaderModule module = compileShaderModule(m_ctx.device, file, shaderc_compute_shader);
+    VkShaderModule module = compileShaderModule(m_ctx.device, file, shaderc_compute_shader,
+                                                shaderError, shaderDeps);
     if (!module) return false;
 
     const VkComputePipelineCreateInfo pipeInfo{

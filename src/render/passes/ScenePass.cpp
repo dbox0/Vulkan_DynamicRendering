@@ -9,10 +9,10 @@
 
 void ScenePass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {
-    out.push_back({ "forward/pbr.vert", "forward/pbr.frag", &m_vertexShader, &m_fragmentShader,
+    out.push_back(graphicsProgram("forward/pbr.vert", "forward/pbr.frag", &m_vertexShader, &m_fragmentShader,
                     { &m_pipelineOpaque, &m_pipelineBlend },
                     [this, layout] { return createPipeline(layout, false, m_pipelineOpaque) &&
-                                            createPipeline(layout, true,  m_pipelineBlend); } });
+                                            createPipeline(layout, true,  m_pipelineBlend); }));
 }
 
 bool ScenePass::createPipelines(VkPipelineLayout layout)

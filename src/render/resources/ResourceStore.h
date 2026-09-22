@@ -164,6 +164,7 @@ public:
 
 
     uint32_t addCubeTexture(VkImageView cubeView, VkSampler sampler);
+    bool     setCubeTexture(uint32_t cubeId, VkImageView cubeView, VkSampler sampler);
 
     void setBrdfLut(VkImageView view, VkSampler sampler);
 
