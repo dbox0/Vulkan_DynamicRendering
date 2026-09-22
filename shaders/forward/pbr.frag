@@ -1,64 +1,5 @@
 #version 460
 
-#extension GL_EXT_buffer_reference : require
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-#extension GL_EXT_nonuniform_qualifier : require
-
-// ---- must match render/GpuShared.h
-
-const uint MAT_ALPHA_MASK   = 1u << 0;
-const uint MAT_ALPHA_BLEND  = 1u << 1;
-const uint MAT_DOUBLE_SIDED = 1u << 2;
-const uint MAT_NORMAL_MAP   = 1u << 3;
-
-struct Material
-{
-    vec4  baseColorFactor;
-    vec3  emissiveFactor;
-    float metallicFactor;
-    float roughnessFactor;
-    float normalScale;
-    float occlusionStrength;
-    float alphaCutoff;
-    uint  baseColorTex;
-    uint  metallicRoughnessTex;
-    uint  normalTex;
-    uint  occlusionTex;
-    uint  emissiveTex;
-    uint  flags;
-};
-
-layout(buffer_reference, scalar) readonly buffer MaterialBuffer { Material materials[]; };
-layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
-{
-    mat4  viewProj;
-    mat4  lightViewProj;
-    vec3  cameraPosition;
-    float exposure;
-    vec3  sunDirection;
-    float sunIntensity;
-    vec3  sunColor;
-    float ambientIntensity;
-    vec3  skyColor;      // offset 176
-    vec3  groundColor;   // offset 188
-    uint  envIrradianceTex;  // offset 200. 1-based cube slot, 0 = none
-    uint  envPrefilterTex;   // offset 204. 1-based cube slot, 0 = none
-    float envIntensity;      // offset 208
-    float envMaxLod;         // offset 212. skybox mipLevels - 1
-    float shadowTexelSize;   // offset 216
-    float shadowNormalBias;
-    float shadowDepthBias;
-    uint  shadowEnabled;
-};
-
-layout(push_constant, scalar) uniform FrameConstants
-{
-    uint64_t vertexBufferAddress;
-    uint64_t materialBufferAddress;
-    uint64_t renderItemBufferAddress;
-    uint64_t frameDataAddress;
-} pc;
 
 // ---------------------------------------------------------------------------
 
@@ -202,8 +143,8 @@ float geometricSpecularAA(vec3 N, float alpha)
 
 void main()
 {
-    Material        mat   = MaterialBuffer(pc.materialBufferAddress).materials[inMaterialIndex];
-    FrameDataBuffer frame = FrameDataBuffer(pc.frameDataAddress);
+    Material        mat   = loadMaterial(inM);
+    FrameDataBuffer frame = frameData();
 
     // Derivatives up front, in uniform control flow.
     vec3 dPdx  = dFdx(inWorldPos);
