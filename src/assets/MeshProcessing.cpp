@@ -76,6 +76,22 @@ namespace
         mesh.vertices.resize(used);
     }
 }
+glm::vec3 anyTangent(glm::vec3 n) // Branchless ONB
+{
+    const float s = std::copysign(1.0f, n.z);
+    const float a = -1.0f / (s + n.z);
+    return { 1.0f + s * n.x * n.x * a, s * n.x * n.y * a, -s * n.x };
+}
+void sanitizeFrame(ImportVertex &v)
+{
+    const float nl = glm::length(v.normal);
+    v.normal = (nl > 1e-12f && std::isfinite(nl)) ? v.normal / nl : glm::vec3(0, 1, 0);
+
+    glm::vec3 t = glm::vec3(v.tangent);
+    const float tl = glm::length(t);
+    t = (tl > 1e-12f && std::isfinite(tl)) ? t / tl : anyTangent(v.normal);
+    v.tangent = glm::vec4(t, v.tangent.w < 0.0f ? -1.0f : 1.0f);
+}
 
 MeshProcessStats processMesh(ImportMesh &mesh)
 {
@@ -100,6 +116,10 @@ MeshProcessStats processMesh(ImportMesh &mesh)
             generateTangents(mesh);
             mesh.hasTangents = true;
         }
+    }
+    
+    for (ImportVertex &v : mesh.vertices) {
+        sanitizeFrame(v);
     }
 
     if (!mesh.indices.empty()) {

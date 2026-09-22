@@ -173,6 +173,7 @@ bool GeometryStore::addSubMesh(const ImportMesh &src, SubMesh &out) {
     }
     const size_t indexStart = allocateIndices(src.indices.size());
     if (indexStart == kInvalidOffset) {
+        m_vertexAlloc.release(vertexStart, src.vertices.size());
         return false;
     }
 

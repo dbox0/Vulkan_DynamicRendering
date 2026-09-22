@@ -170,6 +170,7 @@ add_executable(vulkanapp
         src/render/culling/CullSettings.h
         src/assets/ImportMesh.h
         src/assets/MeshProcessing.cpp
+        src/assets/VertexPacking.h
 )
 
 # For MSVC, you often need the 'latest' flag specifically
