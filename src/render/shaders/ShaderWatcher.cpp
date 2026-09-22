@@ -39,18 +39,20 @@ std::vector<std::string> ShaderWatcher::poll()
     m_nextScan = now + m_interval;
 
     for (const auto &[name, stamp] : scan()) {
-        auto [known, inserted] = m_stamps.try_emplace(name, stamp);
-        if (inserted || known->second == stamp) {
-            // New file (nothing references it yet) or untouched.
+        const auto known = m_stamps.find(name);
+        if (known != m_stamps.end() && known->second == stamp) {
             m_pending.erase(name);
             continue;
         }
 
-        // Only report once the new stamp has held for a whole interval, so a
-        // save that lands in more than one write isn't compiled half-done.
+        // Changed or new. New files are reported too:
+        // a missing #include that  just got created is a dependency of whatever
+        // failed to compile.
+        // Only report once the stamp has held for a whole interval
+        // a save that lands in more than one write isn't compiled half-done.
         const auto pending = m_pending.find(name);
         if (pending != m_pending.end() && pending->second == stamp) {
-            known->second = stamp;
+            m_stamps[name] = stamp;
             m_pending.erase(pending);
             changed.push_back(name);
         } else {

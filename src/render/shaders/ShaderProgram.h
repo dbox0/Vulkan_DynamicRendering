@@ -19,13 +19,15 @@ struct ShaderProgram
     VkShaderModule          *fragModule;
     std::vector<VkPipeline*> pipelines;
     std::function<bool()>    build;
+    std::vector<std::string> dependencies;
 };
 
 // Compiles everything instead of stopping at the first failure, so one run
 // reports every broken shader.
 bool compileShaderPrograms(VkDevice device, std::vector<ShaderProgram> &programs);
 
-// Recompiles and rebuilds only the programs that use one of these files.
+// Recompiles and rebuilds only the programs that read one of these files,
+// directly or through an #include.
 // A program that fails to compile keeps running on its old pipeline.
 void reloadShaderPrograms(VkDevice device, std::vector<ShaderProgram> &programs,
                           const std::vector<std::string> &changedFiles);
