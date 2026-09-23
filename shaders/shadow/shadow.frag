@@ -11,11 +11,9 @@ void main()
 {
     Material mat = loadMaterial(inMaterialIndex);
 
-    if ((mat.flags & MAT_ALPHA_MASK) != 0u) {
-        float alpha = mat.baseColorFactor.a
-                    * texture(textures[nonuniformEXT(mat.baseColorTex)], inUV).a;
-        if (alpha < mat.alphaCutoff) {
-            discard;
-        }
+    float alpha = mat.baseColorFactor.a
+                * texture(textures[nonuniformEXT(mat.baseColorTex)], inUV).a;
+    if (alpha < mat.alphaCutoff) {
+        discard;
     }
 }

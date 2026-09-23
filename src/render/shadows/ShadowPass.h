@@ -36,10 +36,16 @@ public:
     const ShadowMap &map() const { return m_map; }
 
 private:
+    // Opaque casters get no frag stage.
+    // Masked casters run the alpha Test
+    bool createPipeline(VkPipelineLayout layout, bool masked, VkPipeline &outPipeline);
+
     VulkanContext &m_ctx;
     ShadowMap      m_map;
 
-    VkPipeline     m_pipeline       = nullptr;
-    VkShaderModule m_vertexShader   = nullptr;
-    VkShaderModule m_fragmentShader = nullptr;
+    VkPipeline     m_pipelineOpaque     = nullptr;
+    VkPipeline     m_pipelineMasked     = nullptr;
+    VkShaderModule m_opaqueVertexShader = nullptr;
+    VkShaderModule m_maskedVertexShader = nullptr;
+    VkShaderModule m_fragmentShader     = nullptr;
 };

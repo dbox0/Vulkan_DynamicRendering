@@ -13,21 +13,35 @@ bool ShadowPass::createTarget(uint32_t resolution)
 
 void ShadowPass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {
-    out.push_back(graphicsProgram("shadow/shadow.vert", "shadow/shadow.frag", &m_vertexShader, &m_fragmentShader,
-                    { &m_pipeline }, [this, layout] { return createPipelines(layout); }));
+    // One program per pipeline: a reload nulls exactly the pipelines listed, so
+    // a build lambda that also rebuilt the other one would leak it.
+    out.push_back(vertexProgram("shadow/shadow_opaque.vert", &m_opaqueVertexShader,
+                    { &m_pipelineOpaque },
+                    [this, layout] { return createPipeline(layout, false, m_pipelineOpaque); }));
+    out.push_back(graphicsProgram("shadow/shadow.vert", "shadow/shadow.frag",
+                    &m_maskedVertexShader, &m_fragmentShader,
+                    { &m_pipelineMasked },
+                    [this, layout] { return createPipeline(layout, true, m_pipelineMasked); }));
 }
 
+bool ShadowPass::createPipelines(VkPipelineLayout layout)
+{
+    return createPipeline(layout, false, m_pipelineOpaque) &&
+           createPipeline(layout, true,  m_pipelineMasked);
+}
 void ShadowPass::destroy()
 {
     const VkDevice device = m_ctx.device();
     if (!device) {
         return;
     }
-    if (m_pipeline) {
-        vkDestroyPipeline(device, m_pipeline, nullptr);
-        m_pipeline = nullptr;
+    for (VkPipeline *p : { &m_pipelineOpaque, &m_pipelineMasked }) {
+        if (*p) {
+            vkDestroyPipeline(device, *p, nullptr);
+            *p = nullptr;
+        }
     }
-    for (VkShaderModule *m : { &m_vertexShader, &m_fragmentShader }) {
+    for (VkShaderModule *m : { &m_opaqueVertexShader, &m_maskedVertexShader, &m_fragmentShader }) {
         if (*m) {
             vkDestroyShaderModule(device, *m, nullptr);
             *m = nullptr;
@@ -36,7 +50,7 @@ void ShadowPass::destroy()
     m_map.destroy();
 }
 
-bool ShadowPass::createPipelines(VkPipelineLayout layout)
+bool ShadowPass::createPipeline(VkPipelineLayout layout, bool masked, VkPipeline &outPipeline)
 {
     const char *entryPoint = "main";
     const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages
@@ -45,7 +59,7 @@ bool ShadowPass::createPipelines(VkPipelineLayout layout)
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = m_vertexShader,
+            .module = masked ? m_maskedVertexShader : m_opaqueVertexShader,
             .pName = entryPoint
         },
         VkPipelineShaderStageCreateInfo
@@ -130,7 +144,7 @@ bool ShadowPass::createPipelines(VkPipelineLayout layout)
     {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderInfo,
-        .stageCount = static_cast<uint32_t>(shaderStages.size()),
+        .stageCount = masked ? 2u : 1u,
         .pStages = shaderStages.data(),
         .pVertexInputState = &vertInputInfo,
         .pInputAssemblyState = &inputAssemblyInfo,
@@ -144,7 +158,7 @@ bool ShadowPass::createPipelines(VkPipelineLayout layout)
         .renderPass = VK_NULL_HANDLE
     };
 
-    if (vkCreateGraphicsPipelines(m_ctx.device(), nullptr, 1, &pipelineInfo, nullptr, &m_pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_ctx.device(), nullptr, 1, &pipelineInfo, nullptr, &outPipeline) != VK_SUCCESS) {
         showError("Failed to create the shadow pipeline");
         return false;
     }
@@ -212,8 +226,6 @@ void ShadowPass::record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const Draw
         VkRect2D scissor{ .offset{ 0, 0 }, .extent = extent };
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-
         // Negated: reverse Z means pushing a caster AWAY from the light is a
         // smaller depth value, so the bias that fixes acne has to go down.
         vkCmdSetDepthBias(cmd, -settings.constantBias, 0.0f, -settings.slopeBias);
@@ -221,12 +233,15 @@ void ShadowPass::record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const Draw
         // Disabled clears and transitions: pbr.frag samples the map
         // A cleared map reads as "lit everywhere".
         //
-        // Buckets 0 and 1 only -- opaque and alpha-masked, single and double
-        // sided. Blended geometry is skipped
-        for (uint32_t bucket = 0; active && bucket < 2; ++bucket) {
-            const DrawBatch &batch = batches[bucket];
-            if (batch.count == 0) {
+        VkPipeline bound = nullptr;
+        for (const DrawBatch &batch : batches) {
+            if (!active || batch.blend || batch.count == 0) {
                 continue;
+            }
+            const VkPipeline wanted = batch.alphaMask ? m_pipelineMasked : m_pipelineOpaque;
+            if (wanted != bound) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted);
+                bound = wanted;
             }
             vkCmdSetCullMode(cmd, batch.cullMode);
             vkCmdDrawIndexedIndirect(
