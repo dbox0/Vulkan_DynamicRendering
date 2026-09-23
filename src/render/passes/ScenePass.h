@@ -9,18 +9,24 @@ class VulkanContext;
 
 struct DrawBatch
 {
-    uint32_t        first    = 0;
-    uint32_t        count    = 0;
-    VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
-    bool            blend    = false;
+    uint32_t        first     = 0;
+    uint32_t        count     = 0;
+    VkCullModeFlags cullMode  = VK_CULL_MODE_BACK_BIT;
+    bool            alphaMask = false;
+    bool            blend     = false;
 };
 
-// Bucket 0/1 = opaque single/double sided, 2/3 = blended single/double.
-// Each bucket is one contiguous run in the frame's indirect buffer.
-using DrawBatches = std::array<DrawBatch, 4>;
+enum class DrawKind : uint32_t { Opaque = 0, Masked = 1, Blended = 2 };
 
-// The lit geometry: opaque and blended PBR pipelines, drawn batch by batch
-// out of the frame's indirect buffer.
+constexpr uint32_t drawBucket(DrawKind kind, bool doubleSided)
+{
+    return static_cast<uint32_t>(kind) * 2u + (doubleSided ? 1u : 0u);
+}
+
+constexpr uint32_t FirstBlendedBucket = drawBucket(DrawKind::Blended, false);
+
+using DrawBatches = std::array<DrawBatch, 6>;
+
 class ScenePass
 {
 public:
@@ -31,9 +37,6 @@ public:
     void appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout);
     bool createPipelines(VkPipelineLayout layout);
     void destroy();
-
-    // Inside the caller's rendering scope. Viewport, scissor, index buffer,
-    // descriptor sets and push constants of the shared layout are already set.
     void record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const DrawBatches &batches) const;
 
 private:
