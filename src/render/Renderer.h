@@ -96,9 +96,7 @@ public:
             uint32_t windowWidth, uint32_t windowHeight,
             const std::function<void(VkCommandBuffer)> &overlay = {});
 
-    // Node ID the editor has selected, 0 for none. The renderer never reaches
-    // into EditorUI for it -- the application pushes it in once per frame, so
-    // rendering stays independent of whether there is an editor at all.
+    // Node ID the editor has selected, 0 for none.
     void setSelection(uint32_t nodeId) { m_selectedNode = nodeId; }
 
     void updateCullView(const glm::mat4 &view, const glm::mat4 &viewProj, float aspect);

@@ -241,5 +241,6 @@ void main()
 
     if (any(isnan(hdr)) || any(isinf(hdr))) hdr = vec3(0.0);
 
+    //vec4(inTangent.w * 0.5 + 0.5,0,0,1);
     fragColor = vec4(hdr, baseColor.a);
 }

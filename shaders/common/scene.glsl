@@ -102,6 +102,16 @@ RenderItem      loadRenderItem(uint i)  { return RenderItemBuffer(pc.frame.table
 Material        loadMaterial(uint i)    { return MaterialBuffer(pc.frame.table.materials).materials[i]; }
 DebugVertex     loadDebugVertex(uint i) { return DebugVertexBuffer(pc.frame.table.debugLines).vertices[i]; }
 
+vec4 clipPosition(RenderItem ri, vec3 localPos)
+{
+    return pc.frame.viewProj * (ri.worldMatrix * vec4(localPos, 1.0));
+}
+
+vec4 shadowClipPosition(RenderItem ri, vec3 localPos)
+{
+    return pc.frame.lightViewProj * (ri.worldMatrix * vec4(localPos, 1.0));
+}
+
 
 
 Vertex loadVertex(uint i)

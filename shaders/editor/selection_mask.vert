@@ -1,9 +1,9 @@
 #version 460
 #include "../common/scene.glsl"
 
+invariant gl_Position;
+
 void main()
 {
-    RenderItem ri = loadRenderItem(gl_InstanceIndex);
-
-    gl_Position = frameData().viewProj * ri.worldMatrix * vec4(loadPosition(gl_VertexIndex), 1.0);
+    gl_Position = clipPosition(loadRenderItem(gl_InstanceIndex), loadPosition(gl_VertexIndex));
 }

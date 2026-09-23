@@ -8,7 +8,7 @@ layout(location = 1) out flat uint outMaterialIndex;
 void main()
 {
     RenderItem ri = loadRenderItem(gl_InstanceIndex);
-    gl_Position = frameData().lightViewProj * ri.worldMatrix * vec4(loadPosition(gl_VertexIndex), 1.0);
+    gl_Position = shadowClipPosition(ri, loadPosition(gl_VertexIndex));
 
     outUV            = loadUV(gl_VertexIndex);
     outMaterialIndex = ri.materialIndex;

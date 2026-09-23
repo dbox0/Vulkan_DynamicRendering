@@ -297,7 +297,8 @@ bool VulkanContext::createDevice()
         !supported12.descriptorBindingSampledImageUpdateAfterBind ||
         !supported.features.multiDrawIndirect ||
         !supported.features.drawIndirectFirstInstance ||
-        !supported.features.depthClamp)
+        !supported.features.depthClamp ||
+        !supported.features.geometryShader)
     {
         showError("Physical device does not meet the feature requirements");
         return false;

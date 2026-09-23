@@ -1,6 +1,8 @@
 #version 460
 #include "../common/scene.glsl"
 
+invariant gl_Position;
+
 layout(location = 0) out vec3 outWorldPos;
 layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec4 outTangent;
@@ -17,12 +19,11 @@ mat3 cofactor(mat3 m)
 
 void main()
 {
-    Vertex          v     = loadVertex(gl_VertexIndex);
-    RenderItem      ri    =  loadRenderItem(gl_InstanceIndex);
-    FrameDataBuffer frame = frameData();
+    Vertex     v  = loadVertex(gl_VertexIndex);
+    RenderItem ri = loadRenderItem(gl_InstanceIndex);
 
+    gl_Position   = clipPosition(ri, v.position);
     vec4 worldPos = ri.worldMatrix * vec4(v.position, 1.0);
-    gl_Position   = frame.viewProj * worldPos;
 
     outWorldPos = worldPos.xyz;
     outNormal = cofactor(mat3(ri.worldMatrix)) * v.normal;
