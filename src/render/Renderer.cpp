@@ -482,8 +482,10 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
                                                      : m_resources.defaultMaterialId();
         const Material &material = m_resources.material(materialId);
 
-        const uint32_t bucket = (material.alphaMode == AlphaMode::Blend ? 2u : 0u)
-                              + (material.doubleSided ? 1u : 0u);
+        const DrawKind kind = material.alphaMode == AlphaMode::Blend ? DrawKind::Blended
+                            : material.alphaMode == AlphaMode::Mask  ? DrawKind::Masked
+                                                                     : DrawKind::Opaque;
+        const uint32_t bucket = drawBucket(kind, material.doubleSided);
 
         const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(item.worldMatrix[3]), 1.0f);
         m_sorted.push_back(SortedDraw{ bucket, clip.w, i });
@@ -500,7 +502,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         [](const SortedDraw &a, const SortedDraw &b)
         {
             if (a.bucket != b.bucket) return a.bucket < b.bucket;
-            if (a.bucket < 2)         return a.depth < b.depth;   // opaque: near to far
+            if (a.bucket < FirstBlendedBucket) return a.depth < b.depth;
             return a.depth > b.depth;                             // blended: far to near
         });
 
@@ -538,8 +540,9 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
         ++batch.count;
     }
     for (uint32_t b = 0; b < m_batches.size(); ++b) {
-        m_batches[b].cullMode = (b & 1u) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-        m_batches[b].blend    = b >= 2;
+        m_batches[b].cullMode  = (b & 1u) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        m_batches[b].alphaMask = b >= drawBucket(DrawKind::Masked, false) && b < FirstBlendedBucket;
+        m_batches[b].blend     = b >= FirstBlendedBucket;
     }
     return drawCount;
 }

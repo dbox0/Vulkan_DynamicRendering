@@ -34,6 +34,10 @@ ShaderProgram graphicsProgram(const char *vertFile, const char *fragFile,
 ShaderProgram computeProgram(const char *file, VkShaderModule *module,
                              std::vector<VkPipeline*> pipelines, std::function<bool()> build);
 
+// Depth-only pipelines: no fragment stage
+ShaderProgram vertexProgram(const char *vertFile, VkShaderModule *vertModule,
+                            std::vector<VkPipeline*> pipelines, std::function<bool()> build);
+
 bool dependsOnAny(const std::vector<std::string> &dependencies,
                   const std::vector<std::string> &changedFiles);
 

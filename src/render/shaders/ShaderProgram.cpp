@@ -40,6 +40,17 @@ ShaderProgram computeProgram(const char *file, VkShaderModule *module,
     };
 }
 
+ShaderProgram vertexProgram(const char *vertFile, VkShaderModule *vertModule,
+                            std::vector<VkPipeline*> pipelines, std::function<bool()> build)
+{
+    return ShaderProgram{
+        .stages    = { { vertFile, shaderc_vertex_shader, vertModule } },
+        .pipelines = std::move(pipelines),
+        .build     = std::move(build),
+    };
+}
+
+
 bool dependsOnAny(const std::vector<std::string> &dependencies,
                   const std::vector<std::string> &changedFiles)
 {
