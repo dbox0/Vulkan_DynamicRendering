@@ -1,12 +1,7 @@
 #version 460
-#extension GL_EXT_nonuniform_qualifier : require
-#include "../common/scene.glsl"
+#include "../common/bindless.glsl"
 
 // ---------------------------------------------------------------------------
-
-layout(set = 0, binding = 0) uniform sampler2D textures[];
-layout(set = 0, binding = 1) uniform samplerCube cubes[];
-layout(set = 0, binding = 2) uniform sampler2D brdfLut;
 
 // Comparison sampler: every tap is a depth test, and LINEAR filters the
 // results, so one lookup is already a 2x2 PCF.
@@ -23,11 +18,6 @@ layout(location = 0) out vec4 fragColor;
 
 const float PI = 3.14159265359;
 
-
-vec4 sampleTex(uint slot, vec2 uv)
-{
-    return texture(textures[nonuniformEXT(slot)], uv);
-}
 
 // Cube slots arrive 1-based from ResourceStore::addCubeTexture
 // 0 "no environment"
@@ -148,7 +138,9 @@ void main()
     FrameDataBuffer frame = frameData();
 
     // ---- base colour / alpha ------------------------------------------------
-    vec4 baseColor = mat.baseColorFactor * inColor * sampleTex(mat.baseColorTex, inUV);
+    vec4 baseTex   = sampleTex(mat.baseColorTex, inUV);
+    vec4 baseColor = vec4(mat.baseColorFactor.rgb * inColor.rgb * baseTex.rgb,
+                          materialAlpha(mat, inColor.a, baseTex.a));
 
     if ((mat.flags & MAT_ALPHA_MASK) != 0u) {
         if (baseColor.a < mat.alphaCutoff) {
@@ -241,6 +233,5 @@ void main()
 
     if (any(isnan(hdr)) || any(isinf(hdr))) hdr = vec3(0.0);
 
-    //vec4(inTangent.w * 0.5 + 0.5,0,0,1);
     fragColor = vec4(hdr, baseColor.a);
 }

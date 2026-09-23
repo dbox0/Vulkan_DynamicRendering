@@ -1,19 +1,16 @@
 #version 460
-#extension GL_EXT_nonuniform_qualifier : require
+#include "../common/bindless.glsl"
 
-#include "../common/scene.glsl"
-
-layout(set = 0, binding = 0) uniform sampler2D textures[];
 layout(location = 0) in vec2 inUV;
-layout(location = 1) in flat uint inMaterialIndex;
+layout(location = 1) in float inAlpha;
+layout(location = 2) in flat uint inMaterialIndex;
 
+// Only masked buckets use this pipeline
+// no flag test.
 void main()
 {
     Material mat = loadMaterial(inMaterialIndex);
-
-    float alpha = mat.baseColorFactor.a
-                * texture(textures[nonuniformEXT(mat.baseColorTex)], inUV).a;
-    if (alpha < mat.alphaCutoff) {
+    if (baseAlpha(mat, inUV, inAlpha) < mat.alphaCutoff) {
         discard;
     }
 }

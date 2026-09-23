@@ -113,6 +113,11 @@ vec4 shadowClipPosition(RenderItem ri, vec3 localPos)
 }
 
 
+vec4 loadColor(uint i)
+{
+    vec4 c = unpackUnorm4x8(ColorBuffer(pc.frame.table.colors).colors[i]);
+    return vec4(srgbToLinear(c.rgb), c.a);
+}
 
 Vertex loadVertex(uint i)
 {
@@ -123,9 +128,7 @@ Vertex loadVertex(uint i)
     v.normal   = octDecode(unpackSnorm2x16(a.normal));
     v.tangent  = vec4(octDecode(unpackSnorm2x16(a.tangent)), (a.tangent & 1u) != 0u ? -1.0 : 1.0);
     v.uv       = a.uv;
-    v.color    = vec4(srgbToLinear(c.rgb), c.a);
+    v.color    = loadColor(i);
     return v;
 }
-
-
 #endif
