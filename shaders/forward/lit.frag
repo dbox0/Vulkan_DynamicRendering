@@ -83,6 +83,6 @@ void main()
         s.occlusion = min(ao, texelFetch(screenAo, ivec2(gl_FragCoord.xy), 0).r);
     }
     s.emissive  = emissive;
-    fragColor = vec4(vec3(s.occlusion), 1.0); return;
+    //fragColor = vec4(vec3(s.occlusion), 1.0); return;
     fragColor = vec4(shadeSurface(s), baseColor.a);
 }

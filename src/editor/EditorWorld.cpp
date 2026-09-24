@@ -91,13 +91,12 @@ bool EditorWorld::applyOther(const EditTarget &target, std::span<const uint8_t> 
         if (!reflect::readBinary(assignment, snapshot)) {
             return false;
         }
-        Mesh &mesh = m_geometry.meshMutable(target.mesh);
+        const Mesh &mesh = m_geometry.mesh(target.mesh);
         if (assignment.materials.size() != mesh.subMeshes.size()) {
             return false;
         }
-        // Read per frame into the RenderItem buffer: no upload needed.
-        for (size_t i = 0; i < mesh.subMeshes.size(); ++i) {
-            mesh.subMeshes[i].materialId = assignment.materials[i];
+        for (uint32_t i = 0; i < assignment.materials.size(); ++i) {
+            m_geometry.setSubMeshMaterial(target.mesh, i, assignment.materials[i]);
         }
         return true;
     }

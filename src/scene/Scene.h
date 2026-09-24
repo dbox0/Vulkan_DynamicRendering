@@ -98,6 +98,9 @@ public:
 
     void collectDrawItems(const GeometryStore &geometry, std::vector<DrawItem> &out);
 
+    // Increments once per rebuild of drawItems().
+    uint64_t drawItemsRevision() const { return m_drawItemsRevision; }
+
     // Rebuilt only when something actually changed. Safe to call twice a frame.
     //
     // DrawItems hold pointers into Mesh::subMeshes, and a mesh that gets
@@ -130,4 +133,5 @@ private:
     std::vector<uint32_t> m_subtree;        // nodes collected by the walk above
     bool     m_drawItemsDirty   = true;
     uint64_t m_geometryRevision = 0;
+    uint64_t m_drawItemsRevision = 0;
 };

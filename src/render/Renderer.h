@@ -49,6 +49,8 @@ struct FrameResources
 
     GPUBuffer    debugLineBuffer;
     DebugVertex *debugLinePtr = nullptr;
+    uint64_t itemsRevision     = UINT64_MAX;   // Scene::drawItemsRevision() last written
+    uint64_t materialsRevision = UINT64_MAX;   // GeometryStore::materialRevision() last written
 };
 
 struct RenderView
@@ -92,7 +94,8 @@ public:
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
-    bool initialize(uint32_t maxDrawsPerFrame);
+    bool initialize(uint32_t maxDrawItems);
+    void syncRenderItems(FrameResources &res, const Scene &scene);
     void shutdown();
 
     void render(Scene &scene, const Camera &camera,
@@ -188,7 +191,6 @@ private:
     std::array<FrameResources, MaxFramesInFlight> m_frameResources;
     uint64_t m_frameIndex       = 0;
     uint64_t m_nextSignalValue  = MaxFramesInFlight + 1;
-    uint32_t m_maxDraws         = 0;
 
     render::EnvironmentMap m_env;
     uint32_t m_envSourceTextureId = 0;
@@ -197,6 +199,10 @@ private:
     uint32_t m_envPrefilterSlot  = 0;
     uint32_t m_envSkyboxSlot     = 0;   // full-res sky; the prefilter cube is too small to look at
     float    m_envMaxLod         = 0.0f;
+
+
+    uint32_t m_itemCapacity = 0;   // was m_maxDraws before
+    uint32_t m_itemCount    = 0;   // min(drawItems.size(), capacity), set per frame
 
     // The skybox needs the inverse of the matrix render() already computed,
     // and recordCommandBuffer() runs too late to derive it from the camera.

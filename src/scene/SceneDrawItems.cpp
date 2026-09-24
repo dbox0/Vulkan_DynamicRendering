@@ -29,6 +29,7 @@ const std::vector<DrawItem> &Scene::drawItems(const GeometryStore &geometry)
         collectDrawItems(geometry, m_drawItems);
         m_drawItemsDirty   = false;
         m_geometryRevision = revision;
+        ++m_drawItemsRevision;
     }
     return m_drawItems;
 }

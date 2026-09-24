@@ -89,7 +89,7 @@ private:
     static constexpr size_t   MaxNodes          = 1024;
     static constexpr size_t VertexBudgetBytes = 128ull * 1024 * 1024;
     static constexpr size_t   IndexBudgetBytes  = 32ull * 1024 * 1024;
-    static constexpr uint32_t MaxDrawsPerFrame  = 8192;
+    static constexpr uint32_t MaxDrawItems = 8192;
 
     SDL_Window *m_window = nullptr;
     uint32_t m_width  = 1280;

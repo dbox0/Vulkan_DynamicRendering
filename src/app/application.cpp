@@ -138,7 +138,7 @@ bool Application::initialize()
         return false;
     }
 
-    if (!m_renderer.initialize(MaxDrawsPerFrame)) {
+    if (!m_renderer.initialize(MaxDrawItems)) {
         showError("Failed to initialize the renderer");
         return false;
     }
@@ -732,16 +732,13 @@ void Application::applyEditorCommands()
                 break;
             }
 
-            // materialId lives on the SubMesh and the renderer reads it fresh
-            // every frame into RenderItem::materialIndex
-
-            Mesh &mesh = m_geometry.meshMutable(meshId);
+            const uint32_t count = static_cast<uint32_t>(m_geometry.mesh(meshId).subMeshes.size());
             if (cmd.subMesh == EditorCommand::kAllSubMeshes) {
-                for (SubMesh &subMesh : mesh.subMeshes) {
-                    subMesh.materialId = cmd.materialId;
+                for (uint32_t i = 0; i < count; ++i) {
+                    m_geometry.setSubMeshMaterial(meshId, i, cmd.materialId);
                 }
-            } else if (cmd.subMesh < mesh.subMeshes.size()) {
-                mesh.subMeshes[cmd.subMesh].materialId = cmd.materialId;
+            } else if (cmd.subMesh < count) {
+                m_geometry.setSubMeshMaterial(meshId, cmd.subMesh, cmd.materialId);
             }
             break;
         }

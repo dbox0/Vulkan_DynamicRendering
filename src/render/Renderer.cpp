@@ -34,7 +34,7 @@ struct GpuScope
 
 bool Renderer::initialize(uint32_t maxDrawsPerFrame)
 {
-    m_maxDraws = maxDrawsPerFrame;
+    m_itemCapacity = maxDrawsPerFrame;
 
     if (!m_targets.create(m_swapchain.width(), m_swapchain.height())) {
         return false;
@@ -469,6 +469,30 @@ bool Renderer::createFrameBuffers(uint32_t maxDrawsPerFrame)
 // draw recording
 // ============================================================================
 
+void Renderer::syncRenderItems(FrameResources &res, const Scene &scene)
+{
+    const uint64_t itemsRev    = scene.drawItemsRevision();
+    const uint64_t materialRev = m_geometry.materialRevision();
+
+    m_cullStats.renderItemBytes = 0;
+    if (res.itemsRevision == itemsRev && res.materialsRevision == materialRev) {
+        return;
+    }
+
+    const std::vector<DrawItem> &items = *m_drawItems;
+    for (uint32_t i = 0; i < m_itemCount; ++i) {
+        const SubMesh &subMesh = *items[i].subMesh;
+        res.renderItemPtr[i] = RenderItem
+        {
+            .worldMatrix   = items[i].worldMatrix,
+            .materialIndex = subMesh.materialId ? subMesh.materialId - 1 : 0,
+        };
+    }
+    res.itemsRevision     = itemsRev;
+    res.materialsRevision = materialRev;
+    m_cullStats.renderItemBytes = m_itemCount * static_cast<uint32_t>(sizeof(RenderItem));
+}
+
 uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewProj)
 {
     for (DrawBatch &batch : m_batches) {
@@ -482,19 +506,16 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
     const size_t itemCount = (*m_drawItems).size();
 
     m_sorted.clear();
-    m_sorted.reserve(std::min<size_t>(itemCount, m_maxDraws));
+    m_sorted.reserve(std::min<size_t>(itemCount, m_itemCapacity));
     bool clamped = false;
 
-    for (uint32_t i = 0; i < itemCount; ++i) {
+    for (uint32_t i = 0; i < m_itemCount; ++i) {
         const DrawItem &item = (*m_drawItems)[i];
 
         if (m_cull.enabled && !cull.intersectsAABB(item.worldBoundsMin, item.worldBoundsMax)) {
             continue;
         }
-        if (m_sorted.size() >= m_maxDraws) {
-           clamped = true;
-           break;
-       }
+
         const SubMesh &subMesh = *item.subMesh;
         const uint32_t materialId = subMesh.materialId ? subMesh.materialId
                                                      : m_resources.defaultMaterialId();
@@ -510,11 +531,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
     }
     const uint32_t drawCount = static_cast<uint32_t>(m_sorted.size());
 
-    if (clamped && !m_wasClamped) {
-        std::cerr << "[warn] Visible draws exceed the per-frame limit of "
-                  << m_maxDraws << "; clamping" << std::endl;
-    }
-    m_wasClamped = clamped;
+
 
     m_cullStats.total     = static_cast<uint32_t>(itemCount);
     m_cullStats.submitted = drawCount;
@@ -1057,6 +1074,18 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
 
     m_drawItems = &scene.drawItems(m_geometry);
+
+    const size_t available = m_drawItems->size();
+    m_itemCount = static_cast<uint32_t>(std::min<size_t>(available, m_itemCapacity));
+    const bool clamped = available > m_itemCapacity;
+    if (clamped && !m_wasClamped) {
+        std::cerr << "[warn] " << available << " draw items exceed capacity "
+                  << m_itemCapacity << "; clamping\n";
+    }
+    m_wasClamped        = clamped;
+    m_cullStats.clamped = clamped;
+
+    syncRenderItems(res, scene);
 
     m_debugLines.beginFrame();
     m_debugLines.collectLightGizmos(scene);

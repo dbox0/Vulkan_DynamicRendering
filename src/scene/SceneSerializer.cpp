@@ -361,14 +361,15 @@ namespace
         std::unordered_map<std::string, uint32_t>              m_materialsByPath;
     };
 
-    void applyMaterials(const Json &mats, Mesh &mesh, AssetResolver &assets)
+    void applyMaterials(const Json &mats, GeometryStore &geometry, uint32_t meshId, AssetResolver &assets)
     {
-        for (size_t i = 0; i < mats.size() && i < mesh.subMeshes.size(); ++i) {
+        const size_t count = geometry.mesh(meshId).subMeshes.size();
+        for (size_t i = 0; i < mats.size() && i < count; ++i) {
             if (!mats[i].is_string()) {
-                continue;   // null: keep what the mesh came with
+                continue;
             }
             if (const uint32_t materialId = assets.material(mats[i].get<std::string>())) {
-                mesh.subMeshes[i].materialId = materialId;
+                geometry.setSubMeshMaterial(meshId, static_cast<uint32_t>(i), materialId);
             }
         }
     }
@@ -533,7 +534,7 @@ SceneLoadResult loadScene(Scene &scene, GeometryStore &geometry, ResourceStore &
             const Json &meshRef = jn["mesh"];
             meshId = assets.mesh(meshRef);
             if (meshId && meshRef.contains("materials") && meshRef["materials"].is_array()) {
-                applyMaterials(meshRef["materials"], geometry.meshMutable(meshId), assets);
+                applyMaterials(meshRef["materials"], geometry, meshId, assets);
             }
         }
 

@@ -64,6 +64,9 @@ public:
     Mesh       &meshMutable(uint32_t meshId);
     size_t      meshCount() const { return m_liveMeshes; }
 
+    void     setSubMeshMaterial(uint32_t meshId, uint32_t subMeshIndex, uint32_t materialId);
+    uint64_t materialRevision() const { return m_materialRevision; }
+
     // Changes whenever a mesh is added or removed. Anything caching submesh
     // pointers compares this
 
@@ -159,6 +162,8 @@ private:
     std::vector<DirtyRange>  m_dirtyVertices;
     std::vector<DirtyRange>  m_dirtyIndices;
     std::vector<PendingFree> m_pendingFrees;
+
+    uint64_t m_materialRevision = 0;
 
     uint64_t m_frameIndex        = 0;
     uint64_t m_lastUploadTicket  = 0;

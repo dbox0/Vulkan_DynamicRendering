@@ -28,4 +28,5 @@ struct CullStats
     uint32_t submitted = 0;
     uint32_t boxesDrawn = 0;
     bool     clamped   = false;   // hit maxDraws
+    uint32_t renderItemBytes = 0;
 };

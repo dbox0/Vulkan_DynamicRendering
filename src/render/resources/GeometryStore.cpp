@@ -66,6 +66,20 @@ bool GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
     return true;
 }
 
+void GeometryStore::setSubMeshMaterial(uint32_t meshId, uint32_t subMeshIndex, uint32_t materialId)
+{
+    Mesh &mesh = meshMutable(meshId);
+    if (subMeshIndex >= mesh.subMeshes.size()) {
+        return;
+    }
+    SubMesh &subMesh = mesh.subMeshes[subMeshIndex];
+    if (subMesh.materialId == materialId) {
+        return;             // undo replaying an unchanged slot costs nothing
+    }
+    subMesh.materialId = materialId;
+    ++m_materialRevision;
+}
+
 void GeometryStore::destroyBuffers()
 {
     m_ctx.destroyBuffer(m_positionBuffer);
