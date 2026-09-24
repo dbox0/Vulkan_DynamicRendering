@@ -102,10 +102,6 @@ glm::mat4 Camera::getRotationMatrix() const
     return glm::toMat4(yawRotation) * glm::toMat4(pitchRotation);
 }
 
-// No Y flip baked in: the renderer flips with a negative-height viewport
-// instead. ImGuizmo relies on that -- see EditorUI::drawGizmo.
-//
-// REVERSE Z: swapping near and far in a ZO projection maps near to depth 1 and  far to depth 0.
 glm::mat4 Camera::projection(float aspectRatio) const
 {
     return glm::perspectiveRH_ZO(

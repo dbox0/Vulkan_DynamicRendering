@@ -766,11 +766,6 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(PushConstants), &push);
 
-    {
-        GpuScope aoScope(m_profiler, res.commandBuffer, "GTAO");
-        m_gtao.record(res.commandBuffer);
-    }
-
     vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(PushConstants), &push);

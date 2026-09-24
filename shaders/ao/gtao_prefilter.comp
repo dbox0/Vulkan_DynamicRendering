@@ -55,7 +55,8 @@ void main(){
     if ((lid.x & 1) == 0 && (lid.y & 1) == 0) {
         float m2 = mipFilter(s_depth[lid.x][lid.y],     s_depth[lid.x + 1][lid.y],
                 s_depth[lid.x][lid.y + 1], s_depth[lid.x + 1][lid.y + 1]);
-        if (insideMip(2, base/2)) imageStore(outDepth[2], base, vec4(m2));
+        if (insideMip(2, base / 2)) imageStore(outDepth[2], base / 2, vec4(m2));
+        s_depth[lid.x][lid.y] = m2;
     }
     barrier();
 
