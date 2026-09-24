@@ -497,8 +497,6 @@ uint32_t Renderer::lightMask(const glm::vec3 &lo, const glm::vec3 &hi) const
         const ShadowMap::ShadowCascade &cs = m_cascades[k];
         const bool overlapsXY = c.x + e.x >= cs.lo.x && c.x - e.x <= cs.hi.x &&
                                 c.y + e.y >= cs.lo.y && c.y - e.y <= cs.hi.y;
-        // Deliberately no test toward the sun: depthClampEnable pancakes those
-        // casters onto the near plane and they still cast correctly.
         if (overlapsXY && nearestDist <= cs.backDist) {
             mask |= 1u << k;
         }
