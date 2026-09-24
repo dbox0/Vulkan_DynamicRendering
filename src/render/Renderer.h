@@ -106,6 +106,7 @@ public:
     void collectCullDebugLines();
     CullSettings &cullSettings()      { return m_cull; }
     const CullStats &cullStats() const { return m_cullStats; }
+    float drawListMs() const { return m_drawListMs; }
 
 
 
@@ -209,11 +210,13 @@ private:
     Frustum m_cullFrustum{};
     glm::mat4 m_frozenViewProj{ 1.0f };
     glm::mat4    m_cullViewProj{ 1.0f };
-    bool m_cullEnabled = true;
     float m_frozenAspect = 1.0f;
 
     CullSettings m_cull{};
     CullStats m_cullStats{};
+    bool m_wasClamped = false;
+
+    float m_drawListMs = 0.0f;
 
     // Reused across frames so traversal doesn't allocate per frame.
     const std::vector<DrawItem> *m_drawItems = nullptr;

@@ -98,10 +98,11 @@ public:
     void selectMaterial(uint32_t materialId);
     void clearSelection();
 
-    void bindCullSettings(CullSettings &settings, const CullStats &stats)
+    void bindCullSettings(CullSettings &settings, const CullStats &stats, const float &drawListMs)
     {
         m_cullSettings = &settings;
         m_cullStats    = &stats;
+        m_drawListMs = &drawListMs;
     }
 
 
@@ -275,6 +276,8 @@ private:
 
     CullSettings    *m_cullSettings = nullptr;
     const CullStats *m_cullStats    = nullptr;
+    const float *m_drawListMs = nullptr;;
+
     bool m_showCullWindow = false;
     bool m_cullWasFrozen  = false;
 

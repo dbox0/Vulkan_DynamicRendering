@@ -225,7 +225,7 @@ void EditorUI::drawCullWindow()
             ImGui::Text("Submitted %u / %u", stats.submitted, stats.total);
             ImGui::ProgressBar(ratio, ImVec2(-FLT_MIN, 0.0f));
             ImGui::TextDisabled("%u culled (%.0f%%)", culled, ratio * 100.0f);
-
+           // ImGui::Text("draw lists ms: %.2f",m_drawListMs);
             if (stats.clamped) {
                 ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f),
                                    "Draw limit reached -- list truncated");

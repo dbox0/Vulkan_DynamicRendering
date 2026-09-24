@@ -159,7 +159,7 @@ bool Application::initialize()
 
     m_editor.bindGtaoSettings(m_renderer.gtaoSettings());
     m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
-    m_editor.bindCullSettings(m_renderer.cullSettings(),m_renderer.cullStats());
+    m_editor.bindCullSettings(m_renderer.cullSettings(),m_renderer.cullStats(),m_renderer.drawListMs());
     m_editor.bindTonemapSettings(m_renderer.tonemapSettings());
     m_editor.bindEnvironmentSettings(m_renderer.environmentSettings());
     m_editor.bindSkyboxSettings(m_renderer.skyboxSettings());

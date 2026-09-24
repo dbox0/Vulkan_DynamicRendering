@@ -488,7 +488,7 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
     for (uint32_t i = 0; i < itemCount; ++i) {
         const DrawItem &item = (*m_drawItems)[i];
 
-        if (m_cullEnabled && !cull.intersectsAABB(item.worldBoundsMin, item.worldBoundsMax)){
+        if (m_cull.enabled && !cull.intersectsAABB(item.worldBoundsMin, item.worldBoundsMax)) {
             continue;
         }
         if (m_sorted.size() >= m_maxDraws) {
@@ -510,11 +510,15 @@ uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewP
     }
     const uint32_t drawCount = static_cast<uint32_t>(m_sorted.size());
 
-    if (clamped) {
+    if (clamped && !m_wasClamped) {
         std::cerr << "[warn] Visible draws exceed the per-frame limit of "
                   << m_maxDraws << "; clamping" << std::endl;
     }
-    m_cullStats = { static_cast<uint32_t>(itemCount), drawCount };
+    m_wasClamped = clamped;
+
+    m_cullStats.total     = static_cast<uint32_t>(itemCount);
+    m_cullStats.submitted = drawCount;
+    m_cullStats.clamped   = clamped;
 
     std::stable_sort(m_sorted.begin(), m_sorted.end(),
         [](const SortedDraw &a, const SortedDraw &b)
@@ -760,11 +764,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     {
         GpuScope aoScope(m_profiler, res.commandBuffer, "GTAO");
         m_gtao.record(res.commandBuffer);
-    }
 
-    vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
-                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                       0, sizeof(PushConstants), &push);
 
     vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -772,7 +772,7 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
 
         m_gtao.makeResultReadable(res.commandBuffer);
-
+    }
         GpuScope sceneScope(m_profiler,res.commandBuffer,"Scene");
         vkCmdBeginRendering(res.commandBuffer, &renderingInfo); // hdr color clear/store, depth clear/store
         {
@@ -1063,7 +1063,10 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     collectCullDebugLines();
     m_debugLines.upload(res.debugLinePtr);
 
+    const auto t0 = std::chrono::steady_clock::now();
     const uint32_t drawCount = writeDrawCommands(res, viewProj);
+    m_drawListMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
 
     recordCommandBuffer(res, imageIndex, drawCount,overlay);
 
