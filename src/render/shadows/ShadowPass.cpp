@@ -5,6 +5,7 @@
 
 #include "../core/VulkanContext.h"
 #include "../../common/errors.h"
+#include "../core/vkbarrier.h"
 
 bool ShadowPass::createTarget(uint32_t resolution)
 {
@@ -165,34 +166,14 @@ bool ShadowPass::createPipeline(VkPipelineLayout layout, bool masked, VkPipeline
     return true;
 }
 
-void ShadowPass::record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const DrawBatches &batches,
-                        const ShadowSettings &settings, bool active) const
+void ShadowPass::recordCascade(VkCommandBuffer cmd, VkPipelineLayout layout, VkBuffer indirectBuffer,
+                               uint32_t cascade, const DrawBatches &batches,
+                               const ShadowSettings &settings) const
 {
-    VkImageMemoryBarrier2 toAttachment
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .srcAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                        VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .image = m_map.image(),
-        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
-    };
-    VkDependencyInfo toAttachmentDep
-    {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &toAttachment
-    };
-    vkCmdPipelineBarrier2(cmd, &toAttachmentDep);
-
     VkRenderingAttachmentInfo depthAttachInfo
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_map.imageView(),
+        .imageView = m_map.layerView(cascade),
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -210,8 +191,6 @@ void ShadowPass::record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const Draw
 
     vkCmdBeginRendering(cmd, &renderingInfo);
     {
-        // Positive height, unlike the scene pass: nothing here is displayed,
-        // so the plain mapping is what pbr.frag's uv = ndc * 0.5 + 0.5 expects.
         VkViewport viewport
         {
             .x = 0.0f,
@@ -226,16 +205,20 @@ void ShadowPass::record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const Draw
         VkRect2D scissor{ .offset{ 0, 0 }, .extent = extent };
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        // Negated: reverse Z means pushing a caster AWAY from the light is a
-        // smaller depth value, so the bias that fixes acne has to go down.
+        // Negated: reverse Z means pushing a caster AWAY from the light
+        // bias that fixes acne has to go down.
         vkCmdSetDepthBias(cmd, -settings.constantBias, 0.0f, -settings.slopeBias);
 
         // Disabled clears and transitions: pbr.frag samples the map
         // A cleared map reads as "lit everywhere".
-        //
+
+        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           offsetof(PushConstants, viewIndex), sizeof(uint32_t), &cascade);
+
+
         VkPipeline bound = nullptr;
         for (const DrawBatch &batch : batches) {
-            if (!active || batch.blend || batch.count == 0) {
+            if (!settings.enabled || batch.blend || batch.count == 0) {
                 continue;
             }
             const VkPipeline wanted = batch.alphaMask ? m_pipelineMasked : m_pipelineOpaque;
@@ -251,24 +234,33 @@ void ShadowPass::record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const Draw
         }
     }
     vkCmdEndRendering(cmd);
+}
 
-    VkImageMemoryBarrier2 toSampled
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        .srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+void ShadowPass::beginCascades(VkCommandBuffer cmd) const
+{
+    vkutil::imageBarrier(cmd, {
+        .image     = m_map.image(),
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .srcStage  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .srcAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+        .dstStage  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                     VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .range     = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, VK_REMAINING_ARRAY_LAYERS },
+    });
+}
+
+void ShadowPass::endCascades(VkCommandBuffer cmd) const
+{
+    vkutil::imageBarrier(cmd, {
+        .image     = m_map.image(),
         .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        .image = m_map.image(),
-        .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1 }
-    };
-    VkDependencyInfo toSampledDep
-    {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &toSampled
-    };
-    vkCmdPipelineBarrier2(cmd, &toSampledDep);
+        .srcStage  = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        .srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstStage  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+        .range     = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, VK_REMAINING_ARRAY_LAYERS },
+    });
 }

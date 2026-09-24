@@ -73,7 +73,9 @@ public:
     // derived from the format, so colour and depth targets use the same call.
     // Released with destroyImage().
     bool createRenderTarget(uint32_t width, uint32_t height, VkFormat format,
-                            VkImageUsageFlags usage, GPUImage &outImage) const;
+                        VkImageUsageFlags usage, GPUImage &outImage,
+                        uint32_t layers = 1,
+                        VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D) const;
 
     static bool isDepthFormat(VkFormat format);
 

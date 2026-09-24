@@ -3,7 +3,7 @@
 
 #include "bindless.glsl"
 
-layout(set = 1, binding = 0) uniform sampler2DShadow shadowMap;
+layout(set = 1, binding = 0) uniform sampler2DArrayShadow shadowMap;
 
 const float PI = 3.14159265359;
 
@@ -87,7 +87,7 @@ float sunShadow(FrameDataBuffer frame, vec3 worldPos, vec3 N, float NdotL)
     float sum = 0.0;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
-            sum += texture(shadowMap, vec3(uv + vec2(x, y) * frame.shadowTexelSize * 0.5, ref));
+            sum += texture(shadowMap, vec4(uv + vec2(x, y) * frame.shadowTexelSize * 0.5, 0.0, ref));
         }
     }
     return sum * (1.0 / 9.0);

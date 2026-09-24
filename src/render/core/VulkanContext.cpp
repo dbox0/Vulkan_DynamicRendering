@@ -676,9 +676,8 @@ bool VulkanContext::isDepthFormat(VkFormat format)
     }
 }
 
-bool VulkanContext::createRenderTarget(uint32_t width, uint32_t height, VkFormat format,
-                                       VkImageUsageFlags usage, GPUImage &outImage) const
-{
+bool VulkanContext::createRenderTarget(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage, GPUImage &outImage,
+    uint32_t layers, VkImageViewType viewType) const {
     outImage = GPUImage{};
 
     VkImageCreateInfo imageInfo
@@ -688,7 +687,7 @@ bool VulkanContext::createRenderTarget(uint32_t width, uint32_t height, VkFormat
         .format = format,
         .extent{ .width = width, .height = height, .depth = 1 },
         .mipLevels = 1,
-        .arrayLayers = 1,
+        .arrayLayers = layers,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = usage,
@@ -710,15 +709,13 @@ bool VulkanContext::createRenderTarget(uint32_t width, uint32_t height, VkFormat
         return false;
     }
 
-    // Stencil formats would need their own view for sampling; nothing here
-    // uses one, so depth-only is enough.
     const VkImageAspectFlags aspect = isDepthFormat(format) ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                             : VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageViewCreateInfo viewInfo
     {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = outImage.image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = viewType,
         .format = format,
         .subresourceRange{ .aspectMask = aspect, .levelCount = 1, .layerCount = 1 }
     };

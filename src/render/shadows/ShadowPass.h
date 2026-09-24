@@ -27,11 +27,12 @@ public:
     bool createPipelines(VkPipelineLayout layout);
     void destroy();
 
-    // Depth-only pass from the sun's point of view, into the shadow map.
-    // Opaque and alpha-masked buckets only. Runs even when inactive, so the
-    // map is cleared ("lit everywhere") and ends up SHADER_READ_ONLY_OPTIMAL.
-    void record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const DrawBatches &batches,
-                const ShadowSettings &settings, bool active) const;
+
+    void beginCascades(VkCommandBuffer cmd) const;   // every layer -> DEPTH_ATTACHMENT_OPTIMAL
+    void recordCascade(VkCommandBuffer cmd, VkPipelineLayout layout, VkBuffer indirectBuffer,
+                       uint32_t cascade, const DrawBatches &batches,
+                       const ShadowSettings &settings) const;
+    void endCascades(VkCommandBuffer cmd) const;     // every layer -> SHADER_READ_ONLY_OPTIMAL
 
     const ShadowMap &map() const { return m_map; }
 

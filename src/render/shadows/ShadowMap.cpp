@@ -14,18 +14,29 @@ bool ShadowMap::create(uint32_t resolution)
     m_resolution = resolution;
 
     if (!m_ctx.createRenderTarget(resolution, resolution, Format,
-                                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                  m_target)) {
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        m_target, MaxShadowCascades, VK_IMAGE_VIEW_TYPE_2D_ARRAY))
+    {
         showError("Error creating the shadow map image");
         return false;
     }
 
-    // A comparison sampler: each tap is a depth test, and LINEAR filters the
-    // 0/1 results rather than the depths, so one lookup is already a 2x2 PCF.
-    //
-    // Reverse Z makes GREATER_OR_EQUAL the "lit" test, and an opaque black
-    // border the "outside the map is lit" answer -- with the compare flipped,
-    // a white border would shadow everything past the shadow distance.
+    for (uint32_t layer = 0; layer < MaxShadowCascades; ++layer) {
+        VkImageViewCreateInfo viewInfo
+        {
+            .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image    = m_target.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format   = Format,
+            .subresourceRange{ .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1,
+                               .baseArrayLayer = layer, .layerCount = 1 }
+        };
+        if (vkCreateImageView(m_ctx.device(), &viewInfo, nullptr, &m_layerViews[layer]) != VK_SUCCESS) {
+            showError("Error creating a shadow cascade view");
+            return false;
+        }
+    }
+
     VkSamplerCreateInfo samplerInfo
     {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -126,6 +137,12 @@ void ShadowMap::destroy()
     if (m_sampler) {
         vkDestroySampler(m_ctx.device(), m_sampler, nullptr);
         m_sampler = nullptr;
+    }
+    for (VkImageView &view : m_layerViews) {
+        if (view) {
+            vkDestroyImageView(m_ctx.device(), view, nullptr);
+            view = nullptr;
+        }
     }
     m_ctx.destroyImage(m_target);
 }

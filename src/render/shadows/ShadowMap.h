@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include "../core/gpu_types.h"
 #include <cstdint>
+#include "../GpuShared.h"
+#include <array>
 
 class VulkanContext;
 class Camera;
@@ -19,6 +21,7 @@ struct ShadowSettings
     float slopeBias    = 0.0f;     // rasteriser slope-scaled bias, likewise
     bool  enabled      = true;
 };
+
 
 class ShadowMap
 {
@@ -50,6 +53,7 @@ public:
 
     VkImage               image()           const { return m_target.image; }
     VkImageView           imageView()       const { return m_target.imageView; }
+    VkImageView layerView(uint32_t layer) const   { return m_layerViews[layer]; }
     VkDescriptorSet       descriptorSet()   const { return m_set; }
     VkDescriptorSetLayout descriptorLayout()const { return m_setLayout; }
     uint32_t              resolution()      const { return m_resolution; }
@@ -64,4 +68,6 @@ private:
     VkDescriptorSetLayout m_setLayout = nullptr;
     VkDescriptorPool      m_pool      = nullptr;
     VkDescriptorSet       m_set       = nullptr;
+
+    std::array<VkImageView, MaxShadowCascades> m_layerViews{};
 };

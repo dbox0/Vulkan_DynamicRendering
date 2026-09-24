@@ -83,7 +83,7 @@ class Renderer
 {
 public:
     static constexpr uint32_t MaxFramesInFlight = 2;
-    static constexpr uint32_t ShadowResolution   = 4096;
+    static constexpr uint32_t ShadowResolution = 2048; // per Cascade
     static constexpr uint32_t CameraView = 0;
     static constexpr uint32_t ViewCount  = 1 + MaxShadowCascades;
     static constexpr uint32_t shadowView(uint32_t cascade) { return 1 + cascade; }

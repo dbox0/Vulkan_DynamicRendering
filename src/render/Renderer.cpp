@@ -792,10 +792,21 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     m_profiler.beginScope(res.commandBuffer,"Shadow");
 
-    m_shadowPass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
-                    m_shadowBatches[0], m_shadow, m_shadowActive);
+    static constexpr const char *CascadeScopes[MaxShadowCascades] =
+    { "Shadow C0", "Shadow C1", "Shadow C2", "Shadow C3" };
 
-    // Bound after the shadow pass, not before
+    m_shadowPass.beginCascades(res.commandBuffer);
+    if (m_shadowActive) {
+        for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+            GpuScope scope(m_profiler, res.commandBuffer, CascadeScopes[k]);
+            m_shadowPass.recordCascade(res.commandBuffer, m_sceneLayout,
+                                       res.indirectDrawBuffer.vkBuffer, k,
+                                       m_shadowBatches[k], m_shadow);
+        }
+    }
+    m_shadowPass.endCascades(res.commandBuffer);
+
+    // Bound after the shadow pass to 1
     VkDescriptorSet shadowSet = m_shadowPass.map().descriptorSet();
     vkCmdBindDescriptorSets(res.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
     m_sceneLayout, 1, 1, &shadowSet, 0, nullptr);
