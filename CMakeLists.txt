@@ -115,8 +115,8 @@ add_executable(vulkanapp
         src/render/shadows/ShadowPass.h
         src/render/passes/SelectionOutlinePass.cpp
         src/render/passes/SelectionOutlinePass.h
-        src/render/passes/DebugLinePass.cpp
-        src/render/passes/DebugLinePass.h
+        src/render/passes/debug/DebugLinePass.cpp
+        src/render/passes/debug/DebugLinePass.h
         src/assets/Material.h
         src/assets/Mesh.h
         src/assets/TextureCache.h
@@ -175,6 +175,8 @@ add_executable(vulkanapp
         src/assets/VertexPacking.h
         src/render/core/RenderTargets.cpp
         src/render/core/RenderTargets.h
+        src/render/passes/ao/GtaoPass.cpp
+        src/render/passes/ao/GtaoPass.h
 
 )
 

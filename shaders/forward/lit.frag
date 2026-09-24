@@ -78,6 +78,10 @@ void main()
     s.roughness = roughness;
     s.alpha     = geometricSpecularAA(N, max(roughness * roughness, 0.008));
     s.occlusion = ao;
+
+    if ((mat.flags & MAT_ALPHA_BLEND) == 0u) {
+        s.occlusion = min(ao, texelFetch(screenAo, ivec2(gl_FragCoord.xy), 0).r);
+    }
     s.emissive  = emissive;
 
     fragColor = vec4(shadeSurface(s), baseColor.a);

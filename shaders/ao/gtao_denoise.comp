@@ -1,0 +1,72 @@
+#version 460
+#include "gtao_common.glsl"
+
+// Edge-aware 3x3 blur. The edges from the main pass stop it bleeding AO
+// across depth discontinuities. The last pass undoes the UNORM headroom scale.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D srcAO;
+layout(set = 0, binding = 1) uniform sampler2D edgesTex;
+layout(set = 0, binding = 2, r8) uniform writeonly image2D outAO;
+
+ivec2 clampPix(ivec2 p) { return clamp(p, ivec2(0), gtao.viewportSize - 1); }
+
+float aoAt(ivec2 p) { return texelFetch(srcAO, clampPix(p), 0).r; }
+
+vec4 edgesAt(ivec2 p)
+{
+    uint packed = uint(texelFetch(edgesTex, clampPix(p), 0).r * 255.5);
+    return vec4(uvec4(packed >> 6u, packed >> 4u, packed >> 2u, packed) & 3u) / 3.0;
+}
+
+void main()
+{
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pix, gtao.viewportSize))) {
+        return;
+    }
+
+    vec4 eC = edgesAt(pix);
+    vec4 eL = edgesAt(pix + ivec2(-1,  0));
+    vec4 eR = edgesAt(pix + ivec2( 1,  0));
+    vec4 eT = edgesAt(pix + ivec2( 0, -1));
+    vec4 eB = edgesAt(pix + ivec2( 0,  1));
+
+    // An edge only counts if the neighbour agrees it's there.
+    eC *= vec4(eL.y, eR.x, eT.w, eB.z);
+
+    const float leakThreshold = 2.5;
+    const float leakStrength  = 0.5;
+    float edginess = clamp(4.0 - leakThreshold - dot(eC, vec4(1.0)), 0.0, 1.0)
+    / (4.0 - leakThreshold) * leakStrength;
+    eC = clamp(eC + edginess, 0.0, 1.0);
+
+    const float diag = 0.85 * 0.5;
+    float wTL = diag * (eC.x * eL.z + eC.z * eT.x);
+    float wTR = diag * (eC.z * eT.y + eC.y * eR.z);
+    float wBL = diag * (eC.w * eB.x + eC.x * eL.w);
+    float wBR = diag * (eC.y * eR.w + eC.w * eB.y);
+
+    // Earlier passes weight the centre less, so they blur harder.
+    float centerWeight = gtao.finalPass != 0u ? gtao.denoiseBeta : gtao.denoiseBeta / 5.0;
+
+    float sum    = aoAt(pix) * centerWeight;
+    float weight = centerWeight;
+
+    sum += aoAt(pix + ivec2(-1,  0)) * eC.x;
+    sum += aoAt(pix + ivec2( 1,  0)) * eC.y;
+    sum += aoAt(pix + ivec2( 0, -1)) * eC.z;
+    sum += aoAt(pix + ivec2( 0,  1)) * eC.w;
+    sum += aoAt(pix + ivec2(-1, -1)) * wTL;
+    sum += aoAt(pix + ivec2( 1, -1)) * wTR;
+    sum += aoAt(pix + ivec2(-1,  1)) * wBL;
+    sum += aoAt(pix + ivec2( 1,  1)) * wBR;
+    weight += eC.x + eC.y + eC.z + eC.w + wTL + wTR + wBL + wBR;
+
+    float ao = sum / weight;
+    if (gtao.finalPass != 0u) {
+        ao *= GTAO_TERM_SCALE;
+    }
+    imageStore(outAO, pix, vec4(ao));
+}

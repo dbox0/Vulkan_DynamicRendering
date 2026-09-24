@@ -298,7 +298,7 @@ bool VulkanContext::createDevice()
         !supported.features.multiDrawIndirect ||
         !supported.features.drawIndirectFirstInstance ||
         !supported.features.depthClamp ||
-        !supported.features.geometryShader)
+        !supported.features.shaderStorageImageExtendedFormats)
     {
         showError("Physical device does not meet the feature requirements");
         return false;
@@ -344,6 +344,7 @@ bool VulkanContext::createDevice()
             // onto it instead of clipped away. Without this they punch holes
             // in their own shadows.
             .depthClamp = VK_TRUE,
+            .shaderStorageImageExtendedFormats = VK_TRUE,
             .shaderInt64 = VK_TRUE,
         }
     };

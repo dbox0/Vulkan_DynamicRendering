@@ -1,0 +1,75 @@
+#version 460
+#include "gtao_common.glsl"
+
+// Scene depth : 5-level view-space depth chain
+// 16x16 pixel tile covered per 8x8 group
+// 2x2 texels fetched per thread, then groupshared memory reduces mips 2 to 4
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sceneDepth;
+layout(set = 0, binding = 1, r32f) uniform writeonly image2D outDepth[5];
+
+shared float s_depth[8][8];
+
+float mipFilter(float d0, float d1, float d2, float d3)
+{
+    float maxDepth = max(max(d0, d1), max(d2, d3));
+
+    float radius       = 0.75 * gtao.effectRadius;
+    float falloffRange = gtao.falloffRange * radius;
+    float falloffFrom  = radius * (1.0 - gtao.falloffRange);
+    float falloffMul   = -1.0 / falloffRange;
+    float falloffAdd   = falloffFrom / falloffRange + 1.0;
+
+    vec4 d = vec4(d0, d1, d2, d3);
+    vec4 w = clamp((maxDepth - d) * falloffMul + falloffAdd, 0.0, 1.0);
+    return dot(w, d) / (w.x + w.y + w.z + w.w);
+}
+bool insideMip(int mip, ivec2 p)
+{
+    return all(lessThan(p, max(gtao.viewportSize >> mip, ivec2(1))));
+}
+void main(){
+    ivec2 base   = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 lid    = ivec2(gl_LocalInvocationID.xy);
+    ivec2 pix    = base * 2;
+    ivec2 maxPix = gtao.viewportSize - 1;
+
+    float d0 = linearViewDepth(texelFetch(sceneDepth, min(pix + ivec2(0, 0), maxPix), 0).r);
+    float d1 = linearViewDepth(texelFetch(sceneDepth, min(pix + ivec2(1, 0), maxPix), 0).r);
+    float d2 = linearViewDepth(texelFetch(sceneDepth, min(pix + ivec2(0, 1), maxPix), 0).r);
+    float d3 = linearViewDepth(texelFetch(sceneDepth, min(pix + ivec2(1, 1), maxPix), 0).r);
+
+
+    if (insideMip(0, pix + ivec2(0, 0))) imageStore(outDepth[0], pix + ivec2(0, 0), vec4(d0));
+    if (insideMip(0, pix + ivec2(1, 0))) imageStore(outDepth[0], pix + ivec2(1, 0), vec4(d1));
+    if (insideMip(0, pix + ivec2(0, 1))) imageStore(outDepth[0], pix + ivec2(0, 1), vec4(d2));
+    if (insideMip(0, pix + ivec2(1, 1))) imageStore(outDepth[0], pix + ivec2(1, 1), vec4(d3));
+
+    float m1 = mipFilter(d0,d1,d2,d3);
+    if (insideMip(1, base)) imageStore(outDepth[1], base, vec4(m1));
+    s_depth[lid.x][lid.y] = m1;
+    barrier();
+
+    if ((lid.x & 1) == 0 && (lid.y & 1) == 0) {
+        float m2 = mipFilter(s_depth[lid.x][lid.y],     s_depth[lid.x + 1][lid.y],
+                s_depth[lid.x][lid.y + 1], s_depth[lid.x + 1][lid.y + 1]);
+        if (insideMip(2, base/2)) imageStore(outDepth[2], base, vec4(m2));
+    }
+    barrier();
+
+    if ((lid.x & 3) == 0 && (lid.y & 3) == 0) {
+        float m3 = mipFilter(s_depth[lid.x][lid.y],     s_depth[lid.x + 2][lid.y],
+                s_depth[lid.x][lid.y + 2], s_depth[lid.x + 2][lid.y + 2]);
+        if (insideMip(3, base / 4)) imageStore(outDepth[3], base / 4, vec4(m3));
+        s_depth[lid.x][lid.y] = m3;
+    }
+    barrier();
+
+    if ((lid.x & 7) == 0 && (lid.y & 7) == 0) {
+        float m4 = mipFilter(s_depth[lid.x][lid.y],     s_depth[lid.x + 4][lid.y],
+                s_depth[lid.x][lid.y + 4], s_depth[lid.x + 4][lid.y + 4]);
+        if (insideMip(4, base / 8)) imageStore(outDepth[4], base / 8, vec4(m4));
+    }
+}

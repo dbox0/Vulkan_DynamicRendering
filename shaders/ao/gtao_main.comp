@@ -1,0 +1,212 @@
+#version 460
+#include "gtao_common.glsl"
+
+// Ground Truth AO (Jimenez et al. 2016)
+// https://www.activision.com/cdn/research/Practical_Real_Time_Strategies_for_Accurate_Indirect_Occlusion_NEW%20VERSION_COLOR.pdf
+
+// structured after Intel's XeGTAO
+// https://github.com/GameTechDev/XeGTAO
+
+// Per pixel: reconstruct position and normal from depth, then for each slice
+// direction march both ways to find the two horizons and integrate the
+// visible arc against the cosine lobe.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D workingDepth;   // all 5 mips, point sampler
+layout(set = 0, binding = 1, r8) uniform writeonly image2D outAO;
+layout(set = 0, binding = 2, r8) uniform writeonly image2D outEdges;
+
+float fastAcos(float x)
+{
+    float ax  = abs(x);
+    float res = (-0.156583 * ax + GTAO_HALF_PI) * sqrt(1.0 - ax);
+    return x >= 0.0 ? res : GTAO_PI - res;
+}
+
+
+// 1 = same surface
+// 0 = depth discontinuity.
+// Slope-corrected so a plane seen at a grazing angle isn't mistaken for an edge.
+
+vec4 calculateEdges(float c, float l, float r, float t, float b)
+{
+    vec4  e       = vec4(l, r, t, b) - c;
+    float slopeLR = (e.y - e.x) * 0.5;
+    float slopeTB = (e.w - e.z) * 0.5;
+    vec4  eAdj    = e + vec4(slopeLR, -slopeLR, slopeTB, -slopeTB);
+    e = min(abs(e), abs(eAdj));
+    return clamp(1.25 - e / (c * 0.011), 0.0, 1.0);
+}
+
+float packEdges(vec4 e)
+{
+    e = round(clamp(e, 0.0, 1.0) * 2.9);
+    return dot(e, vec4(64.0, 16.0, 4.0, 1.0) / 255.0);
+}
+
+vec3 calculateNormal(vec4 e, vec3 c, vec3 l, vec3 r, vec3 t, vec3 b)
+{
+    vec4 accepted = clamp(vec4(e.x * e.z, e.z * e.y, e.y * e.w, e.w * e.x) + 0.01, 0.0, 1.0);
+
+    l = normalize(l - c);
+    r = normalize(r - c);
+    t = normalize(t - c);
+    b = normalize(b - c);
+
+    return normalize(accepted.x * cross(l, t) + accepted.y * cross(t, r) +
+    accepted.z * cross(r, b) + accepted.w * cross(b, l));
+}
+
+uint hilbertIndex(uint x, uint y)
+{
+    uint index = 0u;
+    for (uint level = 32u; level > 0u; level >>= 1u) {
+        uint rx = (x & level) > 0u ? 1u : 0u;
+        uint ry = (y & level) > 0u ? 1u : 0u;
+        index += level * level * ((3u * rx) ^ ry);
+        if (ry == 0u) {
+            if (rx == 1u) {
+                x = 63u - x;
+                y = 63u - y;
+            }
+            uint tmp = x; x = y; y = tmp;
+        }
+    }
+    return index;
+}
+
+vec2 spatioTemporalNoise(uvec2 p, uint temporalIndex)
+{
+    uint index = hilbertIndex(p.x & 63u, p.y & 63u) + 288u * (temporalIndex % 64u);
+    return fract(0.5 + float(index) * vec2(0.75487766624669276, 0.56984029099805327));
+}
+
+float depthAt(ivec2 p)
+{
+    return texelFetch(workingDepth, clamp(p, ivec2(0), gtao.viewportSize - 1), 0).r;
+}
+
+void main()
+{
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pix, gtao.viewportSize))) {
+        return;
+    }
+
+    float z  = depthAt(pix);
+    float zl = depthAt(pix + ivec2(-1,  0));
+    float zr = depthAt(pix + ivec2( 1,  0));
+    float zt = depthAt(pix + ivec2( 0, -1));   // row above = +y
+    float zb = depthAt(pix + ivec2( 0,  1));
+
+    vec4 edges = calculateEdges(z, zl, zr, zt, zb);
+    imageStore(outEdges, pix, vec4(packEdges(edges)));
+
+    // Nothing is lit here, and the far-away numbers only cost ALU.
+    if (z >= GTAO_MAX_DEPTH) {
+        imageStore(outAO, pix, vec4(1.0 / GTAO_TERM_SCALE));
+        return;
+    }
+
+    vec2 px = gtao.viewportPixelSize;
+    vec2 uv = (vec2(pix) + 0.5) * px;
+
+    vec3 N = calculateNormal(edges,
+            viewPosition(uv, z),
+            viewPosition(uv + vec2(-px.x, 0.0), zl),
+            viewPosition(uv + vec2( px.x, 0.0), zr),
+            viewPosition(uv + vec2(0.0, -px.y), zt),
+            viewPosition(uv + vec2(0.0,  px.y), zb));
+
+    // Pull the centre towards camera to prevent surface occluding itself through depth quantisation.
+    z *= 0.99999;
+    vec3 center = viewPosition(uv, z);
+    vec3 V      = normalize(-center);
+
+    float falloffRange = gtao.falloffRange * gtao.effectRadius;
+    float falloffFrom  = gtao.effectRadius * (1.0 - gtao.falloffRange);
+    float falloffMul   = -1.0 / falloffRange;
+    float falloffAdd   = falloffFrom / falloffRange + 1.0;
+
+    // Radius in pixels at this depth.
+    float screenRadius = gtao.effectRadius / (z * gtao.uvToViewMulPixel.x);
+
+    // Fades AO out where the radius covers only a few pixels.
+    float visibility = clamp((10.0 - screenRadius) / 100.0, 0.0, 1.0) * 0.5;
+
+    const float pixelTooClose = 1.3;
+    float minS = pixelTooClose / screenRadius;
+
+    vec2  noise      = spatioTemporalNoise(uvec2(pix), gtao.noiseIndex);
+    float sliceCount = float(gtao.sliceCount);
+    float stepCount  = float(gtao.stepsPerSlice);
+
+    for (uint slice = 0u; slice < gtao.sliceCount; ++slice) {
+        float phi    = (float(slice) + noise.x) / sliceCount * GTAO_PI;
+        float cosPhi = cos(phi);
+        float sinPhi = sin(phi);
+
+        // Screen y points down, view y up.
+        vec2 omega = vec2(cosPhi, -sinPhi) * screenRadius;
+
+        vec3  dir      = vec3(cosPhi, sinPhi, 0.0);
+        vec3  orthoDir = dir - dot(dir, V) * V;
+        vec3  axis     = normalize(cross(orthoDir, V));
+        vec3  projN    = N - axis * dot(N, axis);
+        float projNLen = length(projN);
+        float signN    = sign(dot(orthoDir, projN));
+        float cosN     = clamp(dot(projN, V) / projNLen, 0.0, 1.0);
+        float n        = signN * fastAcos(cosN);
+
+        // Horizons start at the tangent plane, not at -1: below it : nothing to be occluded.
+        float lowCos0 = cos(n + GTAO_HALF_PI);
+        float lowCos1 = cos(n - GTAO_HALF_PI);
+        float horizonCos0 = lowCos0;
+        float horizonCos1 = lowCos1;
+
+        for (uint stepIdx = 0u; stepIdx < gtao.stepsPerSlice; ++stepIdx) {
+            float stepNoise = fract(noise.y + float(slice + stepIdx * gtao.stepsPerSlice) * 0.6180339887498948);
+            float s = (float(stepIdx) + stepNoise) / stepCount;
+            s = s * s + minS;   // denser near the centre: small crevices matter most
+
+            vec2  offset = s * omega;
+            float mip    = clamp(log2(length(offset)) - gtao.mipSamplingOffset, 0.0, 4.0);
+
+            // Snap to texel centres so the direction math matches the texels read.
+            offset = round(offset) * px;
+
+            vec2 uv0 = uv + offset;
+            vec2 uv1 = uv - offset;
+            vec3 delta0 = viewPosition(uv0, textureLod(workingDepth, uv0, mip).r) - center;
+            vec3 delta1 = viewPosition(uv1, textureLod(workingDepth, uv1, mip).r) - center;
+            float dist0 = length(delta0);
+            float dist1 = length(delta1);
+
+            // Samples beyond the radius fade back to the tangent-plane horizon.
+            float weight0 = clamp(dist0 * falloffMul + falloffAdd, 0.0, 1.0);
+            float weight1 = clamp(dist1 * falloffMul + falloffAdd, 0.0, 1.0);
+
+            float shc0 = mix(lowCos0, dot(delta0 / dist0, V), weight0);
+            float shc1 = mix(lowCos1, dot(delta1 / dist1, V), weight1);
+
+            horizonCos0 = max(horizonCos0, shc0);
+            horizonCos1 = max(horizonCos1, shc1);
+        }
+
+        // XeGTAO's fudge against overdarkening on steep slopes.
+        projNLen = mix(projNLen, 1.0, 0.05);
+
+        float h0 = -fastAcos(horizonCos1);
+        float h1 =  fastAcos(horizonCos0);
+        float iarc0 = (cosN + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) / 4.0;
+        float iarc1 = (cosN + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) / 4.0;
+        visibility += projNLen * (iarc0 + iarc1);
+    }
+
+    visibility /= sliceCount;
+    visibility  = pow(visibility, gtao.finalPower);
+    visibility  = max(0.03, visibility);
+
+    imageStore(outAO, pix, vec4(clamp(visibility / GTAO_TERM_SCALE, 0.0, 1.0)));
+}

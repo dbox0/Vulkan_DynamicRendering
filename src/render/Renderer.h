@@ -11,7 +11,7 @@
 #include "../scene/Scene.h"
 #include "GpuShared.h"
 #include "core/GPUProfiler.h"
-#include "passes/DebugLinePass.h"
+#include "passes/debug/DebugLinePass.h"
 #include "passes/ScenePass.h"
 #include "passes/SelectionOutlinePass.h"
 #include "shadows/ShadowPass.h"
@@ -21,6 +21,7 @@
 #include "ibl/EnvironmentMap.h"
 #include "passes/SkyboxPass.h"
 #include "post/BloomPass.h"
+#include "passes/ao/GtaoPass.h"
 #include "../math/Frustum.h"
 #include "culling/CullSettings.h"
 #include "core/RenderTargets.h"
@@ -86,7 +87,7 @@ public:
              ResourceStore &resources, GeometryStore &geometry):
           m_ctx(ctx), m_swapchain(swapchain), m_targets(ctx) ,m_resources(resources), m_geometry(geometry),
           m_depthPrepass(ctx), m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx),
-          m_debugLines(ctx), m_skyboxPass(ctx), m_bloomPass(ctx) {}
+          m_debugLines(ctx), m_skyboxPass(ctx), m_bloomPass(ctx), m_gtao(ctx) {}
 
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
@@ -121,6 +122,7 @@ public:
     SkyboxSettings      &skyboxSettings()      { return m_skyboxPass.settings(); }
 
     BloomSettings &bloomSettings() { return m_bloomPass.settings(); }
+    GtaoSettings  &gtaoSettings()  { return m_gtao.settings(); }
     uint32_t bloomMipCount() const { return m_bloomPass.mipCount(); }
 
 
@@ -199,6 +201,7 @@ private:
     // and recordCommandBuffer() runs too late to derive it from the camera.
     SkyboxPass m_skyboxPass;
     BloomPass m_bloomPass;
+    GtaoPass  m_gtao;
 
     glm::mat4  m_invViewProj{ 1.0f };
     glm::vec3  m_cameraPosition{ 0.0f };

@@ -168,6 +168,8 @@ public:
 
     void setBrdfLut(VkImageView view, VkSampler sampler);
 
+    void setScreenAo(VkImageView view, VkSampler sampler);
+
     int32_t irradianceTextureId() const { return m_irradianceCubeId; }
     uint32_t prefilterTextureId()  const { return m_prefilterCubeId;  }
 
@@ -264,6 +266,7 @@ private:
     uint32_t m_irradianceCubeId = 0;
     uint32_t m_prefilterCubeId  = 0;
     VkDescriptorImageInfo m_brdfLut{};
+    VkDescriptorImageInfo m_screenAo{};
 
     // How many descriptor slots have actually been written. Everything below
     // this index is potentially in use by an in-flight frame!

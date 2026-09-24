@@ -1,4 +1,4 @@
-#include "DebugLinePass.h"
+#include "../debug/DebugLinePass.h"
 
 #include <volk.h>
 #include <algorithm>
@@ -6,11 +6,11 @@
 #include <cmath>
 #include <cstring>
 
-#include "../core/Swapchain.h"
-#include "../core/RenderTargets.h"
-#include "../core/VulkanContext.h"
-#include "../../common/errors.h"
-#include "../../scene/Scene.h"
+#include "../../core/Swapchain.h"
+#include "../../core/RenderTargets.h"
+#include "../../core/VulkanContext.h"
+#include "../../../common/errors.h"
+#include "../../../scene/Scene.h"
 
 void DebugLinePass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {

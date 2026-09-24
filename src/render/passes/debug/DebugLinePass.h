@@ -4,8 +4,8 @@
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <vector>
-#include "../GpuShared.h"
-#include "../shaders/ShaderProgram.h"
+#include "../../GpuShared.h"
+#include "../../shaders/ShaderProgram.h"
 
 class VulkanContext;
 class Scene;

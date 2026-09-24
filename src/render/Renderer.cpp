@@ -67,6 +67,12 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     m_bloomPass.setSourceView(m_targets.hdrImageView());
     m_tonemapPass.setBloomView(m_bloomPass.resultView());
 
+    if (!m_gtao.createResources() ||
+        !m_gtao.createTargets(m_swapchain.width(), m_swapchain.height())) {
+        return false;
+    }
+    m_gtao.setDepthView(m_targets.depthImageView());
+    m_resources.setScreenAo(m_gtao.resultView(), m_gtao.sampler());
 
     m_depthPrepass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_scenePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
@@ -76,6 +82,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     m_debugLines.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_skyboxPass.appendShaderPrograms(m_shaderPrograms);
     m_bloomPass.appendShaderPrograms(m_shaderPrograms);
+    m_gtao.appendShaderPrograms(m_shaderPrograms);
 
     if (!compileShaderPrograms(m_ctx.device(), m_shaderPrograms)) {
         showError("Error creating shader modules");
@@ -114,6 +121,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     }
     if (!m_bloomPass.createPipelines()) {
         showError("Unable to initialize the bloom pipelines");
+        return false;
+    }
+    if (!m_gtao.createPipelines()) {
+        showError("Unable to initialize the GTAO pipelines");
         return false;
     }
     if (!createSyncResources()) {
@@ -282,6 +293,7 @@ void Renderer::shutdown()
     m_debugLines.destroy();
     m_shadowPass.destroy();
     m_bloomPass.destroy();
+    m_gtao.destroy();
     m_shaderPrograms.clear();
 
 
@@ -586,7 +598,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         VkImageMemoryBarrier2
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            .srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
+                          | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             .srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
@@ -660,9 +673,9 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = m_targets.depthImageView(),
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE
+        .storeOp = VK_ATTACHMENT_STORE_OP_NONE
     };
     VkRenderingInfo renderingInfo
     {
@@ -701,13 +714,15 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     vkutil::imageBarrier(res.commandBuffer, {
         .image     = m_targets.depthImage(),
         .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
         .srcStage  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                      VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
         .srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
         .dstStage  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                     VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+                     VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT |
+                     VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
         .range     = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 },
     });
 
@@ -742,6 +757,26 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         // \__/\___\___|_| |_|\___|
         //
 
+    {
+        GpuScope aoScope(m_profiler, res.commandBuffer, "GTAO");
+        m_gtao.record(res.commandBuffer);
+    }
+
+    vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(PushConstants), &push);
+
+    {
+        GpuScope aoScope(m_profiler, res.commandBuffer, "GTAO");
+        m_gtao.record(res.commandBuffer);
+    }
+
+    vkCmdPushConstants(res.commandBuffer, m_sceneLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(PushConstants), &push);
+
+
+        m_gtao.makeResultReadable(res.commandBuffer);
 
         GpuScope sceneScope(m_profiler,res.commandBuffer,"Scene");
         vkCmdBeginRendering(res.commandBuffer, &renderingInfo); // hdr color clear/store, depth clear/store
@@ -785,9 +820,9 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
     {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = m_targets.depthImageView(),
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE
+        .storeOp = VK_ATTACHMENT_STORE_OP_NONE
     };
     VkRenderingInfo swapRenderingInfo
     {
@@ -799,21 +834,6 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .pDepthAttachment = &swapDepthAttachInfo
     };
 
-    // Test using our vkutil Image Barrier
-    vkutil::imageBarrier(res.commandBuffer,
-        {
-            .image = m_targets.depthImage(),
-            .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-                        | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            .srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            .dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                        | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            .range = {VK_IMAGE_ASPECT_DEPTH_BIT , 0, 1 , 0 ,1}
-        });
 
 
     vkCmdBeginRendering(res.commandBuffer, &swapRenderingInfo);
@@ -927,6 +947,13 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         }
         m_bloomPass.setSourceView(m_targets.hdrImageView());
         m_tonemapPass.setBloomView(m_bloomPass.resultView());
+
+        m_gtao.destroyTargets();
+        if (!m_gtao.createTargets(m_swapchain.width(), m_swapchain.height())) {
+            return;
+        }
+        m_gtao.setDepthView(m_targets.depthImageView());
+        m_resources.setScreenAo(m_gtao.resultView(), m_gtao.sampler());
     }
 
     // Between frames and before anything is recorded, so a rebuilt pipeline
@@ -976,6 +1003,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
     // recordCommandBuffer() reconstructs view rays from these.
     m_invViewProj    = glm::inverse(viewProj);
+    m_gtao.update(camera.projection(aspectRatio));
     m_cameraPosition = camera.position;
     updateCullView(camera.getViewMatrix(), viewProj, aspectRatio);
 
