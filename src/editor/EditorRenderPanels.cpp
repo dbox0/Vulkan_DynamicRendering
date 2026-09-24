@@ -139,6 +139,7 @@ void EditorUI::drawPostProcessWindow()
             ImGui::Checkbox("Enable GTAO", &g.enabled);
 
             ImGui::BeginDisabled(!g.enabled);
+            ImGui::Checkbox("Temporal accumulation", &g.temporal);
             beginProperties("gtao_settings");
             static const char *QualityNames[] = { "Low", "Medium", "High", "Ultra" };
             comboRow("Quality", g.quality, QualityNames, IM_ARRAYSIZE(QualityNames));

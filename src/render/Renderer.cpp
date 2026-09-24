@@ -998,7 +998,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
     // recordCommandBuffer() reconstructs view rays from these.
     m_invViewProj    = glm::inverse(viewProj);
-    m_gtao.update(camera.projection(aspectRatio));
+    m_gtao.update(camera.projection(aspectRatio), camera.getViewMatrix(), viewProj);
     m_cameraPosition = camera.position;
     updateCullView(camera.getViewMatrix(), viewProj, aspectRatio);
 

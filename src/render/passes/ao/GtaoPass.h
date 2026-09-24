@@ -13,12 +13,15 @@ class VulkanContext;
 
 struct GtaoSettings {
     bool enabled        = true;
+    bool temporal       = true;
     int  quality        = 1;
     int  denoisePasses  = 1;
     float radius        = 0.5f;
     float falloffRange      = 0.615f;
     float finalPower        = 2.2f;
     float mipSamplingOffset = 3.3f;
+
+    bool operator==(const GtaoSettings &) const = default;
 };
 
 // Push Block. Shared by  gtao_*.comp
@@ -42,6 +45,19 @@ struct GtaoConstants
 };
 
 static_assert(sizeof(GtaoConstants) == 84);
+
+struct GtaoTemporalConstants
+{
+    glm::mat4  reproject{ 1.0f };
+    glm::ivec2 viewportSize{ 0 };
+    glm::vec2  uvToViewMul{ 0.0f };
+    glm::vec2  uvToViewAdd{ 0.0f };
+    float      maxHistory     = 0.0f;
+    float      depthTolerance = 0.0f;
+    uint32_t   historyValid   = 0;
+};
+
+static_assert(sizeof(GtaoTemporalConstants) == 100);
 static_assert(offsetof(GtaoConstants, effectRadius) == 48);
 static_assert(offsetof(GtaoConstants, sliceCount)   == 68);
 
@@ -51,6 +67,8 @@ public:
     static constexpr uint32_t DepthMips          = 5;
     static constexpr VkFormat WorkingDepthFormat = VK_FORMAT_R32_SFLOAT;
     static constexpr VkFormat AoFormat           = VK_FORMAT_R8_UNORM;
+    static constexpr VkFormat HistoryFormat      = VK_FORMAT_R16G16B16A16_SFLOAT;
+    static constexpr uint32_t HistoryCount       = 2;
 
     explicit GtaoPass(VulkanContext &ctx) : m_ctx(ctx) {}
     GtaoPass(const GtaoPass &) = delete;
@@ -66,7 +84,7 @@ public:
     void destroy();
 
     // one per frame before record
-    void update(const glm::mat4 &projection);
+    void update(const glm::mat4 &projection, const glm::mat4 &view, const glm::mat4 &viewProj);
 
     void makeResultReadable(VkCommandBuffer cmd) const;
 
@@ -76,10 +94,11 @@ public:
     GtaoSettings &settings()         { return m_settings; }
 
 private:
-    enum Stage : uint32_t { Prefilter, Main, Denoise, StageCount };
+    enum Stage : uint32_t { Prefilter, Main, Denoise, Temporal, StageCount };
 
     // Denoise ping-pong. Src alternates working/temp
-    enum DenoiseSet : uint32_t { WorkingToTemp, TempToWorking, WorkingToFinal, TempToFinal, DenoiseSetCount };
+    enum DenoiseSet : uint32_t { WorkingToTemp, TempToWorking, WorkingToFinal, TempToFinal,
+                                 History0ToFinal, History1ToFinal, DenoiseSetCount };
 
     bool createWorkingDepth();
     bool allocateSets();
@@ -101,6 +120,7 @@ private:
     GPUImage m_aoTemp;
     GPUImage m_final;
     GPUImage m_edges;
+    std::array<GPUImage, HistoryCount> m_history{};
 
     VkSampler m_pointSampler = nullptr;
 
@@ -113,7 +133,15 @@ private:
     VkDescriptorSet m_prefilterSet = nullptr;
     VkDescriptorSet m_mainSet      = nullptr;
     std::array<VkDescriptorSet, DenoiseSetCount> m_denoiseSets{};
+    std::array<VkDescriptorSet, HistoryCount>    m_temporalSets{};
 
-    GtaoConstants m_constants{};
+    uint32_t     m_historyIndex = 0;
+    bool         m_historyReady = false;
+    glm::mat4    m_prevViewProj{ 0.0f };
+    GtaoSettings m_prevSettings{};
+    uint32_t     m_temporalFrame = 0;
+
+    GtaoConstants         m_constants{};
+    GtaoTemporalConstants m_temporal{};
     GtaoSettings  m_settings{};
 };

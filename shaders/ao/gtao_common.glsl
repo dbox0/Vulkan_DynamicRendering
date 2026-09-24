@@ -10,6 +10,8 @@ const float GTAO_TERM_SCALE = 1.5;
 const float GTAO_MAX_DEPTH  = 1.0e6;   // sky
 
 
+#ifndef GTAO_OWN_PUSH_CONSTANTS
+
 // Match GtaoConstants in render/passes/ao/GtaoPass.h.
 // View space inside these shaders is XeGTAO's: +x right, +y up, +z forward (depth positive)
 layout(push_constant, scalar) uniform GtaoConstants
@@ -40,6 +42,8 @@ vec3 viewPosition(vec2 uv, float viewDepth)
 {
     return vec3((gtao.uvToViewMul * uv + gtao.uvToViewAdd) * viewDepth, viewDepth);
 }
+
+#endif
 
 
 #endif

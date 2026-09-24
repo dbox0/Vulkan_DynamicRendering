@@ -2,6 +2,8 @@
 
 #include <volk.h>
 #include <algorithm>
+#include <span>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "../../core/VulkanContext.h"
 #include "../../core/vkbarrier.h"
@@ -48,7 +50,7 @@ void GtaoPass::appendShaderPrograms(std::vector<ShaderProgram> &out)
 {
     static constexpr const char *Files[StageCount]
     {
-        "ao/gtao_prefilter.comp", "ao/gtao_main.comp", "ao/gtao_denoise.comp"
+        "ao/gtao_prefilter.comp", "ao/gtao_main.comp", "ao/gtao_denoise.comp", "ao/gtao_temporal.comp"
     };
     for (uint32_t i = 0; i < StageCount; ++i) {
         const Stage stage = static_cast<Stage>(i);
@@ -85,11 +87,13 @@ bool GtaoPass::createResources() {
         { { 0, Sampled, 1, Cs, nullptr }, { 1, Storage, DepthMips, Cs, nullptr } },                         // prefilter
         { { 0, Sampled, 1, Cs, nullptr }, { 1, Storage, 1, Cs, nullptr }, { 2, Storage, 1, Cs, nullptr } }, // main
         { { 0, Sampled, 1, Cs, nullptr }, { 1, Sampled, 1, Cs, nullptr }, { 2, Storage, 1, Cs, nullptr } }, // denoise
+        { { 0, Sampled, 1, Cs, nullptr }, { 1, Sampled, 1, Cs, nullptr }, { 2, Storage, 1, Cs, nullptr },
+          { 3, Sampled, 1, Cs, nullptr } },
     }};
 
-    const VkPushConstantRange pushRange{ Cs, 0, sizeof(GtaoConstants) };
-
     for (uint32_t stage = 0; stage < StageCount; ++stage) {
+        const uint32_t pushSize = stage == Temporal ? sizeof(GtaoTemporalConstants) : sizeof(GtaoConstants);
+        const VkPushConstantRange pushRange{ Cs, 0, pushSize };
         const VkDescriptorSetLayoutCreateInfo layoutInfo
         {
             .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -100,14 +104,6 @@ bool GtaoPass::createResources() {
             showError("Failed to create the descriptor set layout");
             return false;
         }
-        const VkPipelineLayoutCreateInfo pipelineLayoutInfo
-        {
-            .sType        = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount = 1,
-            .pSetLayouts    = &m_setLayouts[stage],
-            .pushConstantRangeCount = 1,
-            .pPushConstantRanges = &pushRange
-        };
         const VkPipelineLayoutCreateInfo pipeLayoutInfo
         {
             .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -122,16 +118,15 @@ bool GtaoPass::createResources() {
         }
     }
 
-    // prefilter + main + 4 denoise sets
     const VkDescriptorPoolSize poolSizes[]
     {
-        { Sampled, 1 + 1 + DenoiseSetCount * 2 },
-        { Storage, DepthMips + 2 + DenoiseSetCount }
+        { Sampled, 1 + 1 + DenoiseSetCount * 2 + HistoryCount * 3 },
+        { Storage, DepthMips + 2 + DenoiseSetCount + HistoryCount }
     };
     const VkDescriptorPoolCreateInfo poolInfo
     {
         .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets       = 2 + DenoiseSetCount,
+        .maxSets       = 2 + DenoiseSetCount + HistoryCount,
         .poolSizeCount = 2,
         .pPoolSizes    = poolSizes
     };
@@ -188,12 +183,14 @@ bool GtaoPass::createWorkingDepth()
 
 bool GtaoPass::allocateSets()
 {
-    std::array<VkDescriptorSetLayout, 2 + DenoiseSetCount> layouts{};
+    constexpr uint32_t SetCount = 2 + DenoiseSetCount + HistoryCount;
+    std::array<VkDescriptorSetLayout, SetCount> layouts{};
     layouts[0] = m_setLayouts[Prefilter];
     layouts[1] = m_setLayouts[Main];
-    std::fill(layouts.begin() + 2, layouts.end(), m_setLayouts[Denoise]);
+    std::fill(layouts.begin() + 2, layouts.begin() + 2 + DenoiseSetCount, m_setLayouts[Denoise]);
+    std::fill(layouts.begin() + 2 + DenoiseSetCount, layouts.end(), m_setLayouts[Temporal]);
 
-    std::array<VkDescriptorSet, 2 + DenoiseSetCount> sets{};
+    std::array<VkDescriptorSet, SetCount> sets{};
     const VkDescriptorSetAllocateInfo allocInfo
     {
         .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -207,7 +204,8 @@ bool GtaoPass::allocateSets()
     }
     m_prefilterSet = sets[0];
     m_mainSet      = sets[1];
-    std::copy(sets.begin() + 2, sets.end(), m_denoiseSets.begin());
+    std::copy(sets.begin() + 2, sets.begin() + 2 + DenoiseSetCount, m_denoiseSets.begin());
+    std::copy(sets.begin() + 2 + DenoiseSetCount, sets.end(), m_temporalSets.begin());
     return true;
 }
 
@@ -246,6 +244,8 @@ bool GtaoPass::createTargets(uint32_t width, uint32_t height)
         !m_ctx.createRenderTarget(width, height, AoFormat, usage, m_edges) ||
         // TRANSFER_DST only for disabled path's clear to white.
         !m_ctx.createRenderTarget(width, height, AoFormat, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT, m_final) ||
+        !m_ctx.createRenderTarget(width, height, HistoryFormat, usage, m_history[0]) ||
+        !m_ctx.createRenderTarget(width, height, HistoryFormat, usage, m_history[1]) ||
         !allocateSets()) {
         showError("Failed to create the GTAO targets");
         return false;
@@ -269,12 +269,24 @@ bool GtaoPass::createTargets(uint32_t width, uint32_t height)
         { TempToWorking,  m_aoTemp,    m_aoWorking },
         { WorkingToFinal, m_aoWorking, m_final     },
         { TempToFinal,    m_aoTemp,    m_final     },
+        { History0ToFinal, m_history[0], m_final   },
+        { History1ToFinal, m_history[1], m_final   },
     };
     for (const auto &d : denoise) {
         writeImage(m_denoiseSets[d.set], 0, 0, Sampled, d.src.imageView, General);
         writeImage(m_denoiseSets[d.set], 1, 0, Sampled, m_edges.imageView, General);
         writeImage(m_denoiseSets[d.set], 2, 0, Storage, d.dst.imageView, General);
     }
+
+    for (uint32_t i = 0; i < HistoryCount; ++i) {
+        writeImage(m_temporalSets[i], 0, 0, Sampled, m_aoWorking.imageView,      General);
+        writeImage(m_temporalSets[i], 1, 0, Sampled, m_history[i].imageView,      General);
+        writeImage(m_temporalSets[i], 2, 0, Storage, m_history[i ^ 1u].imageView, General);
+        writeImage(m_temporalSets[i], 3, 0, Sampled, m_workingDepth.imageView,   General);
+    }
+
+    m_historyIndex = 0;
+    m_historyReady = false;
     return true;
 }
 
@@ -294,7 +306,8 @@ void GtaoPass::destroyTargets()
         vkDestroyImageView(device, view, nullptr);
         view = nullptr;
     }
-    for (GPUImage *image : { &m_workingDepth, &m_aoWorking, &m_aoTemp, &m_edges, &m_final }) {
+    for (GPUImage *image : { &m_workingDepth, &m_aoWorking, &m_aoTemp, &m_edges, &m_final,
+                             &m_history[0], &m_history[1] }) {
         m_ctx.destroyImage(*image);
     }
     if (m_pool) {
@@ -303,13 +316,16 @@ void GtaoPass::destroyTargets()
     m_prefilterSet = nullptr;
     m_mainSet      = nullptr;
     m_denoiseSets.fill(nullptr);
+    m_temporalSets.fill(nullptr);
+    m_historyReady = false;
 }
 
 bool GtaoPass::createPipelines()
 {
     return createPipeline(Prefilter, m_pipelines[Prefilter]) &&
            createPipeline(Main,      m_pipelines[Main]) &&
-           createPipeline(Denoise,   m_pipelines[Denoise]);
+           createPipeline(Denoise,   m_pipelines[Denoise]) &&
+           createPipeline(Temporal,  m_pipelines[Temporal]);
 }
 
 bool GtaoPass::createPipeline(Stage stage, VkPipeline &outPipeline)
@@ -359,7 +375,7 @@ void GtaoPass::destroy()
 //                    Per Frame                        //
 // =================================================== //
 
-void GtaoPass::update(const glm::mat4 &projection) {
+void GtaoPass::update(const glm::mat4 &projection, const glm::mat4 &view, const glm::mat4 &viewProj) {
     // XeGTAO presets: slices x steps per side.
     static constexpr uint32_t Slices[] = { 1, 2, 3, 9 };
     static constexpr uint32_t Steps[]  = { 2, 2, 3, 3 };
@@ -381,7 +397,24 @@ void GtaoPass::update(const glm::mat4 &projection) {
     c.mipSamplingOffset = m_settings.mipSamplingOffset;
     c.sliceCount        = Slices[quality];
     c.stepsPerSlice     = Steps[quality];
-    c.noiseIndex        = 0;     // no TAA yet: fixed pattern, the denoiser cleans it
+
+    const bool temporal    = m_settings.enabled && m_settings.temporal;
+    const bool cameraMoved = viewProj != m_prevViewProj;
+
+    GtaoTemporalConstants &t = m_temporal;
+    t.viewportSize   = c.viewportSize;
+    t.uvToViewMul    = c.uvToViewMul;
+    t.uvToViewAdd    = c.uvToViewAdd;
+    t.reproject      = m_prevViewProj * glm::inverse(view) * glm::scale(glm::mat4(1.0f), { 1.0f, 1.0f, -1.0f });
+    t.maxHistory     = cameraMoved ? 10.0f : 32.0f;
+    t.depthTolerance = 0.03f;
+    t.historyValid   = temporal && m_historyReady && m_settings == m_prevSettings ? 1u : 0u;
+
+    m_temporalFrame = temporal ? m_temporalFrame + 1 : 0;
+    c.noiseIndex    = m_temporalFrame % 64u;
+
+    m_prevViewProj = viewProj;
+    m_prevSettings = m_settings;
 }
 
 void GtaoPass::dispatch(VkCommandBuffer cmd, Stage stage, VkDescriptorSet set,
@@ -389,18 +422,27 @@ void GtaoPass::dispatch(VkCommandBuffer cmd, Stage stage, VkDescriptorSet set,
 {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelines[stage]);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_layouts[stage], 0, 1, &set, 0, nullptr);
-    vkCmdPushConstants(cmd, m_layouts[stage], VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    if (stage == Temporal) {
+        vkCmdPushConstants(cmd, m_layouts[stage], VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_temporal), &m_temporal);
+    } else {
+        vkCmdPushConstants(cmd, m_layouts[stage], VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(m_constants), &m_constants);
+    }
     vkCmdDispatch(cmd, groupsX, groupsY, 1);
 }
 
 void GtaoPass::record(VkCommandBuffer cmd)
 {
     if (!m_settings.enabled) {
+        m_historyReady = false;
         recordDisabled(cmd);
         return;
     }
 
-    const std::array<vkutil::ImageBarrier, 5> begin
+    const bool     temporal   = m_settings.temporal;
+    const uint32_t readIndex  = m_historyIndex;
+    const uint32_t writeIndex = readIndex ^ 1u;
+
+    std::array<vkutil::ImageBarrier, 7> begin
     {
         discardToGeneral(m_workingDepth.image, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, DepthMips),
         discardToGeneral(m_aoWorking.image,    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT),
@@ -408,7 +450,14 @@ void GtaoPass::record(VkCommandBuffer cmd)
         discardToGeneral(m_edges.image,        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT),
         discardToGeneral(m_final.image,        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT),
     };
-    vkutil::imageBarriers(cmd, begin);
+    size_t beginCount = 5;
+    if (temporal) {
+        begin[beginCount++] = discardToGeneral(m_history[writeIndex].image, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+        if (m_temporal.historyValid == 0) {
+            begin[beginCount++] = discardToGeneral(m_history[readIndex].image, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+        }
+    }
+    vkutil::imageBarriers(cmd, std::span(begin.data(), beginCount));
 
     const uint32_t gx = groupsFor(m_width, GroupSize);
     const uint32_t gy = groupsFor(m_height, GroupSize);
@@ -424,6 +473,20 @@ void GtaoPass::record(VkCommandBuffer cmd)
         writeToRead(m_aoWorking.image), writeToRead(m_edges.image)
     };
     vkutil::imageBarriers(cmd, afterMain);
+
+    if (temporal) {
+        m_constants.finalPass = 0;
+        dispatch(cmd, Temporal, m_temporalSets[readIndex], gx, gy);
+        vkutil::imageBarrier(cmd, writeToRead(m_history[writeIndex].image));
+
+        m_constants.finalPass = 1;
+        dispatch(cmd, Denoise, m_denoiseSets[writeIndex == 0 ? History0ToFinal : History1ToFinal], gx, gy);
+
+        m_historyIndex = writeIndex;
+        m_historyReady = true;
+        return;
+    }
+    m_historyReady = false;
 
     const uint32_t passes = static_cast<uint32_t>(std::clamp(m_settings.denoisePasses, 1, 3));
     for (uint32_t pass = 0; pass < passes; ++pass) {
