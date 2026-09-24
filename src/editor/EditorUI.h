@@ -33,6 +33,7 @@ struct SkyboxSettings;
 struct BloomSettings;
 struct CullSettings;
 struct CullStats;
+struct GtaoSettings;
 
 class Node;
 class UndoHistory;
@@ -78,6 +79,8 @@ public:
     void bindEnvironmentSettings(EnvironmentSettings &settings) { m_environmentSettings = &settings; }
     void bindSkyboxSettings(SkyboxSettings &settings) { m_skyboxSettings = &settings; }
     void bindBloomSettings(BloomSettings &settings) { m_bloomSettings = &settings; }
+    void bindGtaoSettings(GtaoSettings &s) {m_gtaoSettings = &s; }
+
     void setBloomMipCount(uint32_t count) { m_bloomMipCount = count; }
     // By Guid: the selection outlives frames, so it must not be a slot. A
     // selected node that dies simply stops resolving and the selection clears
@@ -286,6 +289,8 @@ private:
     SkyboxSettings      *m_skyboxSettings      = nullptr;
     BloomSettings       *m_bloomSettings       = nullptr;
     uint32_t             m_bloomMipCount       = 0;
+
+    GtaoSettings *m_gtaoSettings = nullptr;
 
     bool m_showShadowWindow      = false;
     bool m_showPostProcessWindow = false;

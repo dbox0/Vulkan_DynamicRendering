@@ -11,6 +11,7 @@
 #include "../render/passes/SkyboxPass.h"
 #include "../render/Renderer.h"
 #include "../render/post/BloomPass.h"
+#include "../render/passes/ao/GtaoPass.h"
 
 using namespace editor::ui;
 
@@ -130,6 +131,25 @@ void EditorUI::drawPostProcessWindow()
             }
             ImGui::Spacing();
         }
+
+        if (m_gtaoSettings) {
+            ImGui::SeparatorText("Ambient occlusion");
+            GtaoSettings &g = *m_gtaoSettings;
+
+            ImGui::Checkbox("Enable GTAO", &g.enabled);
+
+            ImGui::BeginDisabled(!g.enabled);
+            beginProperties("gtao_settings");
+            static const char *QualityNames[] = { "Low", "Medium", "High", "Ultra" };
+            comboRow("Quality", g.quality, QualityNames, IM_ARRAYSIZE(QualityNames));
+            sliderIntRow("Denoise passes", g.denoisePasses, 0, 3);
+            dragRow("Radius", g.radius, 0.01f, 0.01f, 10.0f, "%.2f");
+            sliderRow("Falloff", g.falloffRange, 0.05f, 1.0f, "%.2f");
+            sliderRow("Power", g.finalPower, 0.5f, 4.0f, "%.2f");
+            endProperties();
+            ImGui::EndDisabled();
+        }
+
     }
     ImGui::End();
 }

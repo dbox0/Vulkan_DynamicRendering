@@ -156,8 +156,8 @@ bool Application::initialize()
         return false;
                              }
 
-    // The editor edits the renderer's shadow state in place; nothing is copied
-    // back, so there is no lag on a slider drag.
+
+    m_editor.bindGtaoSettings(m_renderer.gtaoSettings());
     m_editor.bindShadowSettings(m_renderer.shadowSettings(), m_renderer.sunDirection());
     m_editor.bindCullSettings(m_renderer.cullSettings(),m_renderer.cullStats());
     m_editor.bindTonemapSettings(m_renderer.tonemapSettings());
