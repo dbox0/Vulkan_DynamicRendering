@@ -107,6 +107,8 @@ add_executable(vulkanapp
         src/render/shaders/ShaderWatcher.h
         src/render/passes/ScenePass.cpp
         src/render/passes/ScenePass.h
+        src/render/passes/DepthPrepass.cpp
+        src/render/passes/DepthPrepass.h
         src/render/shadows/ShadowMap.cpp
         src/render/shadows/ShadowMap.h
         src/render/shadows/ShadowPass.cpp
@@ -173,6 +175,7 @@ add_executable(vulkanapp
         src/assets/VertexPacking.h
         src/render/core/RenderTargets.cpp
         src/render/core/RenderTargets.h
+
 )
 
 # For MSVC, you often need the 'latest' flag specifically

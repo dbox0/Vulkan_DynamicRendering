@@ -97,14 +97,12 @@ bool ScenePass::createPipeline(VkPipelineLayout layout, bool blendEnabled, VkPip
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
     };
 
-    // Blended geometry still tests against the opaque depth, but must not
-    // write, or the draw order within the transparent bucket stops mattering.
     VkPipelineDepthStencilStateCreateInfo depthStencilInfo
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = blendEnabled ? VK_FALSE : VK_TRUE,
-        .depthCompareOp = VK_COMPARE_OP_GREATER,   // reverse Z
+        .depthWriteEnable = VK_FALSE,
+        .depthCompareOp = blendEnabled ? VK_COMPARE_OP_GREATER : VK_COMPARE_OP_EQUAL,
         .stencilTestEnable = VK_FALSE
     };
 

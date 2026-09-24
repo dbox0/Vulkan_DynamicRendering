@@ -24,6 +24,7 @@
 #include "../math/Frustum.h"
 #include "culling/CullSettings.h"
 #include "core/RenderTargets.h"
+#include "passes/DepthPrepass.h"
 
 class VulkanContext;
 class Swapchain;
@@ -82,10 +83,11 @@ public:
     static constexpr uint32_t ShadowResolution   = 4096;
 
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
-             ResourceStore &resources, GeometryStore &geometry)
-        : m_ctx(ctx), m_swapchain(swapchain), m_targets(ctx) ,m_resources(resources), m_geometry(geometry),
-          m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx), m_debugLines(ctx),
-          m_skyboxPass(ctx), m_bloomPass(ctx) {}
+             ResourceStore &resources, GeometryStore &geometry):
+          m_ctx(ctx), m_swapchain(swapchain), m_targets(ctx) ,m_resources(resources), m_geometry(geometry),
+          m_depthPrepass(ctx), m_scenePass(ctx), m_tonemapPass(ctx), m_shadowPass(ctx), m_outlinePass(ctx),
+          m_debugLines(ctx), m_skyboxPass(ctx), m_bloomPass(ctx) {}
+
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -155,6 +157,7 @@ private:
     // --- passes -----------------------------------------------------------
     RenderTargets m_targets;
 
+    DepthPrepass         m_depthPrepass;
     ScenePass            m_scenePass;
     ShadowPass           m_shadowPass;
     TonemapPass          m_tonemapPass;

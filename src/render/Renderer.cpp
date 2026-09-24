@@ -68,6 +68,7 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
     m_tonemapPass.setBloomView(m_bloomPass.resultView());
 
 
+    m_depthPrepass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_scenePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
     m_tonemapPass.appendShaderPrograms(m_shaderPrograms);
     m_outlinePass.appendShaderPrograms(m_shaderPrograms, m_sceneLayout);
@@ -81,6 +82,10 @@ bool Renderer::initialize(uint32_t maxDrawsPerFrame)
         return false;
     }
 
+    if (!m_depthPrepass.createPipelines(m_sceneLayout)) {
+        showError("Unable to initialize the depth prepass pipelines");
+        return false;
+    }
     if (!m_scenePass.createPipelines(m_sceneLayout)) {
         showError("Unable to initialize the graphics pipeline");
         return false;
@@ -270,6 +275,7 @@ void Renderer::shutdown()
 
     m_env.destroy();
     m_skyboxPass.destroy();
+    m_depthPrepass.destroy();
     m_scenePass.destroy();
     m_tonemapPass.destroy();
     m_outlinePass.destroy();
@@ -655,9 +661,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = m_targets.depthImageView(),
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue{ .depthStencil{ 0.0f, 0 } }     // reverse Z: 0 is the far plane
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE
     };
     VkRenderingInfo renderingInfo
     {
@@ -686,7 +691,25 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     // ======================== PASSES ============================ ///
 
-    // Before everything else: the scene pass samples what it writes.
+    {
+        GpuScope prepassScope(m_profiler, res.commandBuffer, "Depth Prepass");
+        m_depthPrepass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches,
+                              m_targets.depthImageView(), extent, viewport);
+    }
+
+    // Prepass writes forward depth tests
+    vkutil::imageBarrier(res.commandBuffer, {
+        .image     = m_targets.depthImage(),
+        .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .srcStage  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                     VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        .srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstStage  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                     VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+        .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+        .range     = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 },
+    });
 
     m_profiler.beginScope(res.commandBuffer,"Shadow");
 
