@@ -65,29 +65,47 @@ vec3 EnvBRDFApprox(vec3 f0, float roughness, float NdotV)
     return f0 * AB.x + AB.y;
 }
 
+const vec3 CASCADE_TINT[4] = vec3[](vec3(1.0, 0.4, 0.4), vec3(0.4, 1.0, 0.4),
+                                    vec3(0.4, 0.6, 1.0), vec3(1.0, 1.0, 0.4));
+
+int pickCascade(FrameDataBuffer frame, vec3 p)
+{
+    float margin = 4.0 * frame.shadowTexelSize;
+
+    for (uint k = 0u; k < frame.cascadeCount; ++k) {
+        vec3 c = (frame.cascades[k].viewProj * vec4(p, 1.0)).xyz;
+        if (all(lessThan(abs(c.xy), vec2(1.0 - margin))) && c.z > 0.0 && c.z < 1.0) {
+            return int(k);
+        }
+    }
+    return -1;
+}
+
 float sunShadow(FrameDataBuffer frame, vec3 worldPos, vec3 N, float NdotL)
 {
     if (frame.shadowEnabled == 0u) {
         return 1.0;
     }
 
-    float slope  = clamp(1.0 - NdotL, 0.0, 1.0);
-    vec3  origin = worldPos + N * frame.cascades[0].normalBias * (1.0 + slope * 2.0);
-
-    vec4 lightPos = frame.cascades[0].viewProj * vec4(origin, 1.0);
-    vec3 proj     = lightPos.xyz / lightPos.w;
-
-    vec2  uv  = proj.xy * 0.5 + 0.5;
-    float ref = proj.z + frame.cascades[0].depthBias;
-
-    if (ref <= 0.0) {
+    int k = pickCascade(frame, worldPos);
+    if (k < 0) {
         return 1.0;
     }
+    GpuCascade cs = frame.cascades[k];
+
+    float slope  = clamp(1.0 - NdotL, 0.0, 1.0);
+    vec3  origin = worldPos + N * cs.normalBias * (1.0 + slope * 2.0);
+
+    vec3  proj  = (cs.viewProj * vec4(origin, 1.0)).xyz;
+    vec2  uv    = proj.xy * 0.5 + 0.5;
+    float ref   = proj.z + cs.depthBias;
+    float layer = float(k);
 
     float sum = 0.0;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
-            sum += texture(shadowMap, vec4(uv + vec2(x, y) * frame.shadowTexelSize * 0.5, 0.0, ref));
+            vec2 offset = vec2(x, y) * frame.shadowTexelSize * 0.5;
+            sum += texture(shadowMap, vec4(uv + offset, layer, ref));
         }
     }
     return sum * (1.0 / 9.0);
@@ -152,6 +170,12 @@ vec3 shadeSurface(Surface s)
     vec3 ambient    = (ambientDif + ambientSpc) * frame.ambientIntensity;
 
     vec3 hdr = direct + ambient + s.emissive;
+    if (frame.shadowDebug != 0u) {
+        int k = pickCascade(frame, s.position);
+        if (k >= 0) {
+            hdr *= CASCADE_TINT[k];
+        }
+    }
     if (any(isnan(hdr)) || any(isinf(hdr))) hdr = vec3(0.0);
     return hdr;
 }

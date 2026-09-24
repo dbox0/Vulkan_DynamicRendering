@@ -11,6 +11,7 @@
 #include "../../core/VulkanContext.h"
 #include "../../../common/errors.h"
 #include "../../../scene/Scene.h"
+#include "../../../math/Frustum.h"
 
 void DebugLinePass::appendShaderPrograms(std::vector<ShaderProgram> &out, VkPipelineLayout layout)
 {
@@ -263,4 +264,19 @@ bool DebugLinePass::createPipelines(VkPipelineLayout layout)
         return false;
     }
     return true;
+}
+
+void DebugLinePass::addFrustum(const glm::mat4 &viewProj, const glm::vec3 &color)
+{
+    glm::vec3 c[8];
+    Frustum::cornersWorld(viewProj, c);
+
+    static constexpr int edges[12][2] = {
+        {0,1},{1,3},{3,2},{2,0},
+        {4,5},{5,7},{7,6},{6,4},
+        {0,4},{1,5},{2,6},{3,7}
+    };
+    for (const auto &e : edges) {
+        addLine(c[e[0]], c[e[1]], color);
+    }
 }

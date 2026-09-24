@@ -717,7 +717,7 @@ bool VulkanContext::createRenderTarget(uint32_t width, uint32_t height, VkFormat
         .image = outImage.image,
         .viewType = viewType,
         .format = format,
-        .subresourceRange{ .aspectMask = aspect, .levelCount = 1, .layerCount = 1 }
+        .subresourceRange{ .aspectMask = aspect, .levelCount = 1, .layerCount = layers }
     };
 
     if (vkCreateImageView(m_device, &viewInfo, nullptr, &outImage.imageView) != VK_SUCCESS) {

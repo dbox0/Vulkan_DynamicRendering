@@ -14,7 +14,7 @@ class Camera;
 //Not GpuShared
 struct ShadowSettings
 {
-    float distance     = 15.0;
+    float distance     = 50.0;
     float normalBias   = .80f;
     float depthBias    = .0f;
     float constantBias = .0f;

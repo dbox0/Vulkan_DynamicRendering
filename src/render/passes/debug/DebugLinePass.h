@@ -33,6 +33,7 @@ public:
     void beginFrame();
     void addLine(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &color);
     void addBox(const glm::vec3 &lo, const glm::vec3 &hi, const glm::vec3 &color);
+    void addFrustum(const glm::mat4 &viewProj, const glm::vec3 &color);
     uint32_t lineCount() const { return static_cast<uint32_t>(m_vertices.size() / 2); }
     
     // Line gizmo for every directional light in the scene: a handle at the

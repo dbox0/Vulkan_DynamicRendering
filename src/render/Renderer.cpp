@@ -961,18 +961,7 @@ void Renderer::collectCullDebugLines()
     m_cullStats.boxesDrawn = 0;
 
     if (m_cull.drawFrustum && m_cull.freeze) {
-        glm::vec3 c[8];
-        Frustum::cornersWorld(m_cullViewProj, c);
-
-        static constexpr int edges[12][2] = {
-            {0,1},{1,3},{3,2},{2,0},
-            {4,5},{5,7},{7,6},{6,4},
-            {0,4},{1,5},{2,6},{3,7}
-        };
-        const glm::vec3 color{ 1.0f, 0.85f, 0.2f };
-        for (const auto &e : edges) {
-            m_debugLines.addLine(c[e[0]], c[e[1]], color);
-        }
+        m_debugLines.addFrustum(m_cullViewProj, glm::vec3(1.0f, 0.85f, 0.2f));
     }
 
     if (!m_cull.drawVisible && !m_cull.drawCulled) {
@@ -1141,7 +1130,8 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .envMaxLod        = m_envMaxLod,
         .shadowTexelSize  = 1.0f / static_cast<float>(m_shadowPass.map().resolution()),
         .shadowEnabled    = m_shadowActive ? 1u : 0u,
-        .cascadeCount    = m_cascadeCount
+        .cascadeCount    = m_cascadeCount,
+        .shadowDebug     = m_shadow.debugCascades ? 1u : 0u
     };
     for (uint32_t k = 0; k < m_cascadeCount; ++k) {
         frame.cascades[k] = GpuCascade
@@ -1172,6 +1162,14 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     m_debugLines.beginFrame();
     m_debugLines.collectLightGizmos(scene);
     collectCullDebugLines();
+    if (m_shadow.debugCascades && m_shadowActive) {
+        static constexpr glm::vec3 Tint[MaxShadowCascades] = {
+            { 1.0f, 0.4f, 0.4f }, { 0.4f, 1.0f, 0.4f },
+            { 0.4f, 0.6f, 1.0f }, { 1.0f, 1.0f, 0.4f } };
+        for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+            m_debugLines.addFrustum(m_cascades[k].viewProj, Tint[k]);
+        }
+    }
     m_debugLines.upload(res.debugLinePtr);
 
     const auto t0 = std::chrono::steady_clock::now();
