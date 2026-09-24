@@ -24,8 +24,20 @@ constexpr uint32_t drawBucket(DrawKind kind, bool doubleSided)
 }
 
 constexpr uint32_t FirstBlendedBucket = drawBucket(DrawKind::Blended, false);
+constexpr uint32_t ShadowBucketCount = FirstBlendedBucket;
 
 using DrawBatches = std::array<DrawBatch, 6>;
+inline void resetBatches(DrawBatches &batches)
+{
+    for (uint32_t b = 0; b < batches.size(); ++b) {
+        batches[b] = DrawBatch
+        {
+            .cullMode  = (b & 1u) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT,
+            .alphaMask = b >= drawBucket(DrawKind::Masked, false) && b < FirstBlendedBucket,
+            .blend     = b >= FirstBlendedBucket,
+        };
+    }
+}
 
 class ScenePass
 {
@@ -38,6 +50,7 @@ public:
     bool createPipelines(VkPipelineLayout layout);
     void destroy();
     void record(VkCommandBuffer cmd, VkBuffer indirectBuffer, const DrawBatches &batches) const;
+
 
 private:
     bool createPipeline(VkPipelineLayout layout, bool blendEnabled, VkPipeline &outPipeline);

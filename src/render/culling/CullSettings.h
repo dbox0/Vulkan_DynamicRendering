@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "../GpuShared.h"
 
 // Renderer state, not scene data: not undoable, not serialized.
 // Same status as ShadowSettings.
@@ -29,4 +30,5 @@ struct CullStats
     uint32_t boxesDrawn = 0;
     bool     clamped   = false;   // hit maxDraws
     uint32_t renderItemBytes = 0;
+    uint32_t shadowCasters[MaxShadowCascades] = {};
 };

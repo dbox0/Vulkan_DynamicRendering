@@ -9,6 +9,7 @@ const uint MAT_ALPHA_MASK   = 1u << 0;
 const uint MAT_ALPHA_BLEND  = 1u << 1;
 const uint MAT_DOUBLE_SIDED = 1u << 2;
 const uint MAT_NORMAL_MAP   = 1u << 3;
+const uint MAX_SHADOW_CASCADES = 4;
 
 struct Vertex           { vec3 position; vec3 normal; vec4 tangent; vec2 uv; vec4 color; };
 struct PackedAttributes { uint normal; uint tangent; vec2 uv; };

@@ -130,48 +130,49 @@ void ShadowMap::destroy()
     m_ctx.destroyImage(m_target);
 }
 
-ShadowMap::Fit ShadowMap::fit(const Camera &camera, float aspect,
-                              const glm::vec3 &sunDirection, float distance) const
+glm::mat4 ShadowMap::lightBasis(const glm::vec3 &sunDirection)
 {
-    // Clamped so a silly shadow distance cannot invert the slice and produce a
-    // zero-radius sphere to divide by.
-    const float far = std::clamp(distance, camera.nearClip() * 2.0f, camera.farClip());
-
-    glm::vec3 corners[8];
-    camera.frustumCornersWorld(aspect, camera.nearClip(), far, corners);
-
-    glm::vec3 center{ 0.0f };
-    for (const glm::vec3 &c : corners) {
-        center += c;
-    }
-    center /= 8.0f;
-
-    // A bounding sphere
-    // rotating the camera cannot change how much world one texel
-    // covers. A fitted box would resize every frame and shimmer.
-    float radius = 0.0f;
-    for (const glm::vec3 &c : corners) {
-        radius = std::max(radius, glm::length(c - center));
-    }
-    radius = std::ceil(radius * 16.0f) / 16.0f;
-
     const glm::vec3 L  = glm::normalize(sunDirection);
     const glm::vec3 up = std::abs(L.y) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f)
                                                : glm::vec3(0.0f, 1.0f, 0.0f);
+    return glm::lookAtRH(glm::vec3(0.0f), L, up);
+}
 
-    // The eye sits 2r back so casters between the light and the sphere still
-    // fall inside the depth range
-    const glm::mat4 lightView = glm::lookAtRH(center - L * (radius * 2.0f), center, up);
+ShadowMap::ShadowCascade ShadowMap::fitCascade(const Camera &camera, float aspect,
+                                               const glm::mat4 &basis,
+                                               float sliceNear, float sliceFar) const
+{
+    const float n = std::max(sliceNear, camera.nearClip());
+    const float f = std::max(std::min(sliceFar, camera.farClip()), n * 1.01f);
 
-    const float worldTexel = (2.0f * radius) / static_cast<float>(m_resolution);
-    const glm::vec3 centerLS = glm::vec3(lightView * glm::vec4(center, 1.0f));
-    const float snapX = std::floor(centerLS.x / worldTexel) * worldTexel;
-    const float snapY = std::floor(centerLS.y / worldTexel) * worldTexel;
+    glm::vec3 corners[8];
+    camera.frustumCornersWorld(aspect, n, f, corners);
 
-    // Near and far swapped == reverse Z, same trick the camera uses.
-    const glm::mat4 lightProj = glm::orthoRH_ZO(
-        snapX - radius, snapX + radius,
-        snapY - radius, snapY + radius,
-        radius * 4.0f, 0.0f);
-    return Fit{ lightProj * lightView, worldTexel };
+    glm::vec3 center{ 0.0f };
+    for (const glm::vec3 &c : corners) center += c;
+    center /= 8.0f;
+
+    float r = 0.0f;
+    for (const glm::vec3 &c : corners) r = std::max(r, glm::length(c - center));
+    r = std::ceil(r * 16.0f) / 16.0f;
+
+    const float texel = (2.0f * r) / static_cast<float>(m_resolution);
+
+
+    const glm::vec3 c  = glm::vec3(basis * glm::vec4(center, 1.0f));
+    const float     sx = std::floor(c.x / texel) * texel;
+    const float     sy = std::floor(c.y / texel) * texel;
+    const float     d  = -c.z;                          // distance along L
+
+    const glm::mat4 proj = glm::orthoRH_ZO(sx - r, sx + r, sy - r, sy + r,
+                                           d + 2.0f * r, d - 2.0f * r);
+    return ShadowCascade
+    {
+        .viewProj   = proj * basis,
+        .lo         = { sx - r, sy - r },
+        .hi         = { sx + r, sy + r },
+        .backDist   = d + r,
+        .radius     = r,
+        .worldTexel = texel,
+    };
 }

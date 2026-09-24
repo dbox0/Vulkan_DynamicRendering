@@ -20,9 +20,20 @@
 #include "core/vkbarrier.h"
 #include "../scene/Camera.h"
 
-// ============================================================================
-// lifetime
-// ============================================================================
+namespace {
+    VkDrawIndexedIndirectCommand makeCommand(const SubMesh &subMesh, uint32_t drawItemIndex)
+    {
+        return VkDrawIndexedIndirectCommand
+        {
+            .indexCount    = static_cast<uint32_t>(subMesh.indexCount),
+            .instanceCount = 1,
+            .firstIndex    = static_cast<uint32_t>(subMesh.indexStart),
+            .vertexOffset  = static_cast<int32_t>(subMesh.vertexStart),
+            .firstInstance = drawItemIndex,
+        };
+    }
+}
+
 struct GpuScope
 {
     GpuScope(GpuProfiler &p, VkCommandBuffer c, const char *n) : profiler(p), cmd(c)
@@ -402,10 +413,10 @@ bool Renderer::createCommandBuffers()
 
 bool Renderer::createFrameBuffers(uint32_t maxDrawsPerFrame)
 {
-    // Sized by DRAW count, not node count. A node with N primitives emits N
-    // draws, so sizing these by maxNodes() overflows on any multi-primitive
-    // mesh -- which the Mario Kart scene is full of.
-    const size_t indirectBytes   = static_cast<size_t>(maxDrawsPerFrame) * sizeof(VkDrawIndexedIndirectCommand);
+
+    const size_t indirectBytes = static_cast<size_t>(m_itemCapacity) * ViewCount
+                           * sizeof(VkDrawIndexedIndirectCommand);
+
     const size_t renderItemBytes = static_cast<size_t>(maxDrawsPerFrame) * sizeof(RenderItem);
 
     // Every per-frame buffer here is host-visible and persistently mapped:
@@ -464,6 +475,39 @@ bool Renderer::createFrameBuffers(uint32_t maxDrawsPerFrame)
     }
     return true;
 }
+//==================== LightMask ======================================
+
+uint32_t Renderer::lightMask(const glm::vec3 &lo, const glm::vec3 &hi) const
+{
+    const uint32_t all = (1u << m_cascadeCount) - 1u;
+    if (!m_cull.enabled) {
+        return all;         // "cull off" stays a true reference mode
+    }
+
+    const glm::vec3 c = glm::vec3(m_lightBasis * glm::vec4((lo + hi) * 0.5f, 1.0f));
+    glm::mat3 A(m_lightBasis);
+    for (int i = 0; i < 3; ++i) {
+        A[i] = glm::abs(A[i]);
+    }
+    const glm::vec3 e = A * ((hi - lo) * 0.5f);
+    const float nearestDist = -c.z - e.z;               // closest point along L
+
+    uint32_t mask = 0;
+    for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+        const ShadowMap::ShadowCascade &cs = m_cascades[k];
+        const bool overlapsXY = c.x + e.x >= cs.lo.x && c.x - e.x <= cs.hi.x &&
+                                c.y + e.y >= cs.lo.y && c.y - e.y <= cs.hi.y;
+        // Deliberately no test toward the sun: depthClampEnable pancakes those
+        // casters onto the near plane and they still cast correctly.
+        if (overlapsXY && nearestDist <= cs.backDist) {
+            mask |= 1u << k;
+        }
+    }
+    return mask;
+}
+
+
+
 
 // ============================================================================
 // draw recording
@@ -495,94 +539,95 @@ void Renderer::syncRenderItems(FrameResources &res, const Scene &scene)
 
 uint32_t Renderer::writeDrawCommands(FrameResources &res, const glm::mat4 &viewProj)
 {
-    for (DrawBatch &batch : m_batches) {
-        batch = DrawBatch{};
+    resetBatches(m_batches);
+    m_outlinePass.beginFrame();
+    m_sorted.clear();
+    for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+        for (std::vector<uint32_t> &list : m_shadowLists[k]) {
+            list.clear();
+        }
     }
 
-    m_outlinePass.beginFrame();
+    const std::vector<DrawItem> &items = *m_drawItems;
 
-    const Frustum &cull = m_cullFrustum;
-
-    const size_t itemCount = (*m_drawItems).size();
-
-    m_sorted.clear();
-    m_sorted.reserve(std::min<size_t>(itemCount, m_itemCapacity));
-    bool clamped = false;
-
+    // --- classify: one visit per item -------------------------------------
     for (uint32_t i = 0; i < m_itemCount; ++i) {
-        const DrawItem &item = (*m_drawItems)[i];
+        const DrawItem  &item = items[i];
+        const glm::vec3 &lo   = item.worldBoundsMin;
+        const glm::vec3 &hi   = item.worldBoundsMax;
 
-        if (m_cull.enabled && !cull.intersectsAABB(item.worldBoundsMin, item.worldBoundsMax)) {
+        const bool inCamera = !m_cull.enabled || m_cullFrustum.intersectsAABB(lo, hi);
+        uint32_t   cascades = m_shadowActive ? lightMask(lo, hi) : 0u;
+        if (!inCamera && cascades == 0) {
             continue;
         }
 
-        const SubMesh &subMesh = *item.subMesh;
-        const uint32_t materialId = subMesh.materialId ? subMesh.materialId
-                                                     : m_resources.defaultMaterialId();
-        const Material &material = m_resources.material(materialId);
-
-        const DrawKind kind = material.alphaMode == AlphaMode::Blend ? DrawKind::Blended
-                            : material.alphaMode == AlphaMode::Mask  ? DrawKind::Masked
-                                                                     : DrawKind::Opaque;
+        const SubMesh  &subMesh    = *item.subMesh;
+        const uint32_t  materialId = subMesh.materialId ? subMesh.materialId
+                                                        : m_resources.defaultMaterialId();
+        const Material &material   = m_resources.material(materialId);
+        const DrawKind  kind = material.alphaMode == AlphaMode::Blend ? DrawKind::Blended
+                             : material.alphaMode == AlphaMode::Mask  ? DrawKind::Masked
+                                                                      : DrawKind::Opaque;
         const uint32_t bucket = drawBucket(kind, material.doubleSided);
+        if (kind == DrawKind::Blended) {
+            cascades = 0;
+        }
 
-        const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(item.worldMatrix[3]), 1.0f);
-        m_sorted.push_back(SortedDraw{ bucket, clip.w, i });
+        if (inCamera) {
+            const glm::vec4 clip = viewProj * glm::vec4(glm::vec3(item.worldMatrix[3]), 1.0f);
+            m_sorted.push_back(SortedDraw{ bucket, clip.w, i });
+        }
+        for (uint32_t bits = cascades; bits != 0; bits &= bits - 1) {
+            m_shadowLists[std::countr_zero(bits)][bucket].push_back(i);   // <bit>
+        }
     }
-    const uint32_t drawCount = static_cast<uint32_t>(m_sorted.size());
 
-
-
-    m_cullStats.total     = static_cast<uint32_t>(itemCount);
-    m_cullStats.submitted = drawCount;
-    m_cullStats.clamped   = clamped;
-
+    // --- camera: sorted, region 0 ------------------------------------------
     std::stable_sort(m_sorted.begin(), m_sorted.end(),
-        [](const SortedDraw &a, const SortedDraw &b)
+    [](const SortedDraw &a, const SortedDraw &b)
         {
             if (a.bucket != b.bucket) return a.bucket < b.bucket;
             if (a.bucket < FirstBlendedBucket) return a.depth < b.depth;
             return a.depth > b.depth;                             // blended: far to near
         });
 
-    // Write slots
+    const uint32_t drawCount = static_cast<uint32_t>(m_sorted.size());
     for (uint32_t slot = 0; slot < drawCount; ++slot) {
         const SortedDraw &sorted = m_sorted[slot];
-        const DrawItem &item = (*m_drawItems)[sorted.index];
-        const SubMesh &subMesh = *item.subMesh;
+        const DrawItem   &item   = items[sorted.index];
 
-        res.indirectDrawPtr[slot] = VkDrawIndexedIndirectCommand
-        {
-            .indexCount    = static_cast<uint32_t>(subMesh.indexCount),
-            .instanceCount = 1,
-            .firstIndex    = static_cast<uint32_t>(subMesh.indexStart),
-            .vertexOffset  = static_cast<int32_t>(subMesh.vertexStart),
-            .firstInstance = slot
-        };
-
-        const uint32_t materialIndex = subMesh.materialId ? subMesh.materialId - 1 : 0;
-
-        res.renderItemPtr[slot] = RenderItem
-        {
-            .worldMatrix   = item.worldMatrix,
-            .materialIndex = materialIndex
-        };
+        res.indirectDrawPtr[slot] = makeCommand(*item.subMesh, sorted.index);
 
         if (m_selectedNode != 0 && item.nodeId == m_selectedNode) {
-            m_outlinePass.addSelectedDraw(slot, viewProj, item.worldMatrix, subMesh);
+            m_outlinePass.addSelectedDraw(slot, viewProj, item.worldMatrix, *item.subMesh);
         }
-
         DrawBatch &batch = m_batches[sorted.bucket];
         if (batch.count == 0) {
             batch.first = slot;
         }
         ++batch.count;
     }
-    for (uint32_t b = 0; b < m_batches.size(); ++b) {
-        m_batches[b].cullMode  = (b & 1u) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-        m_batches[b].alphaMask = b >= drawBucket(DrawKind::Masked, false) && b < FirstBlendedBucket;
-        m_batches[b].blend     = b >= FirstBlendedBucket;
+
+    // --- shadows: grouped by bucket, no sort, one region per cascade --------
+    for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+        DrawBatches &batches = m_shadowBatches[k];
+        resetBatches(batches);
+
+        uint32_t slot = regionBase(shadowView(k));
+        for (uint32_t b = 0; b < ShadowBucketCount; ++b) {
+            const std::vector<uint32_t> &list = m_shadowLists[k][b];
+            batches[b].first = slot;
+            batches[b].count = static_cast<uint32_t>(list.size());
+            for (const uint32_t index : list) {
+                res.indirectDrawPtr[slot++] = makeCommand(*items[index].subMesh, index);
+            }
+        }
+        m_cullStats.shadowCasters[k] = slot - regionBase(shadowView(k));
     }
+
+    m_cullStats.total     = m_itemCount;
+    m_cullStats.submitted = drawCount;
     return drawCount;
 }
 
@@ -749,8 +794,8 @@ void Renderer::recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uin
 
     m_profiler.beginScope(res.commandBuffer,"Shadow");
 
-    m_shadowPass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer, m_batches,
-    m_shadow, m_shadowActive);
+    m_shadowPass.record(res.commandBuffer, res.indirectDrawBuffer.vkBuffer,
+                    m_shadowBatches[0], m_shadow, m_shadowActive);
 
     // Bound after the shadow pass, not before
     VkDescriptorSet shadowSet = m_shadowPass.map().descriptorSet();
@@ -1041,8 +1086,10 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
 
     // Refitted every frame: the box follows the camera, so what it covers is
     // the near slice of the view rather than the whole world.
-    const ShadowMap::Fit shadow =
-        m_shadowPass.map().fit(camera, aspectRatio, sunDirection, m_shadow.distance);
+
+    m_lightBasis  = ShadowMap::lightBasis(sunDirection);
+    m_cascades[0] = m_shadowPass.map().fitCascade(camera, aspectRatio, m_lightBasis,
+                                                  camera.nearClip(), m_shadow.distance);
 
     *res.frameDataPtr = FrameData
     {
@@ -1055,7 +1102,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
             .debugLines  = res.debugLineBuffer.deviceAddress,
         },
         .viewProj       = viewProj,
-        .lightViewProj  = shadow.lightViewProj,
+        .lightViewProj    = m_cascades[0].viewProj,
         .cameraPosition = camera.position,
         .exposure       = 1.0f,
         .sunDirection   = sunDirection,
@@ -1067,7 +1114,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .envIntensity     = m_environment.envIntensity,
         .envMaxLod        = m_envMaxLod,
         .shadowTexelSize  = 1.0f / static_cast<float>(m_shadowPass.map().resolution()),
-        .shadowNormalBias = shadow.worldTexelSize * m_shadow.normalBias,
+        .shadowNormalBias = m_cascades[0].worldTexel * m_shadow.normalBias,
         .shadowDepthBias  = m_shadow.depthBias,
         .shadowEnabled    = m_shadowActive ? 1u : 0u,
     };

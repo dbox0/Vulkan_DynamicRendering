@@ -84,6 +84,10 @@ class Renderer
 public:
     static constexpr uint32_t MaxFramesInFlight = 2;
     static constexpr uint32_t ShadowResolution   = 4096;
+    static constexpr uint32_t CameraView = 0;
+    static constexpr uint32_t ViewCount  = 1 + MaxShadowCascades;
+    static constexpr uint32_t shadowView(uint32_t cascade) { return 1 + cascade; }
+
 
     Renderer(VulkanContext &ctx, Swapchain &swapchain,
              ResourceStore &resources, GeometryStore &geometry):
@@ -152,6 +156,8 @@ private:
     uint32_t writeDrawCommands(FrameResources &res, const glm::mat4 &viewProj);
     void recordCommandBuffer(FrameResources &res, uint32_t imageIndex, uint32_t drawCount,
                          const std::function<void(VkCommandBuffer)> &overlay = {});
+
+    uint32_t lightMask(const glm::vec3 &lo, const glm::vec3 &hi) const;
     VulkanContext &m_ctx;
     Swapchain     &m_swapchain;
     ResourceStore &m_resources;
@@ -159,6 +165,8 @@ private:
 
     VkPipelineLayout m_sceneLayout = nullptr;
     DrawBatches      m_batches{};
+    std::array<DrawBatches, MaxShadowCascades> m_shadowBatches{};
+    std::array<std::array<std::vector<uint32_t>, ShadowBucketCount>, MaxShadowCascades> m_shadowLists;
 
     // --- passes -----------------------------------------------------------
     RenderTargets m_targets;
@@ -179,6 +187,11 @@ private:
     // m_shadow.enabled AND the active light's castsShadows, resolved per frame.
     bool           m_shadowActive = true;
     glm::vec3      m_sunDirection{ glm::normalize(glm::vec3(0.3f, -1.0f, -0.5f)) };
+
+    glm::mat4 m_lightBasis{ 1.0f };
+    std::array<ShadowMap::ShadowCascade, MaxShadowCascades> m_cascades{};
+    uint32_t  m_cascadeCount = 1;      // stays 1 until step 10
+    uint32_t regionBase(uint32_t view) const { return view * m_itemCapacity; }
 
     EnvironmentSettings m_environment{};
 

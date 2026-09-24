@@ -20,20 +20,18 @@ struct ShadowSettings
     bool  enabled      = true;
 };
 
-// directional shadow map: a depth image, a comparison sampler, and the
-// descriptor set the scene pass binds at set 1.
-//
-// Fixed resolution
-
 class ShadowMap
 {
 public:
     static constexpr VkFormat Format = VK_FORMAT_D32_SFLOAT;
 
-    struct Fit
+    struct ShadowCascade
     {
-        glm::mat4 lightViewProj{ 1.0f };
-        float     worldTexelSize = 0.0f;   // world units one texel covers
+        glm::mat4 viewProj{ 1.0f };
+        glm::vec2 lo{ 0.0f }, hi{ 0.0f };
+        float     backDist   = 0.0f;       // sphere's far side along L
+        float     radius     = 0.0f;
+        float     worldTexel = 0.0f;       // world units per shadow texel
     };
 
     explicit ShadowMap(VulkanContext &ctx) : m_ctx(ctx) {}
@@ -43,12 +41,12 @@ public:
     bool create(uint32_t resolution);
     void destroy();
 
-    // An ortho box around the camera frustum clipped at `distance`, snapped to
-    // whole texels.
-    // Without the snap:  projection shifts by a fraction of a
-    // texel every time the camera moves and the shadow edges crawl.
-    Fit fit(const Camera &camera, float aspect,
-            const glm::vec3 &sunDirection, float distance) const;
+
+    static glm::mat4 lightBasis(const glm::vec3 &sunDirection);
+
+    ShadowCascade fitCascade(const Camera &camera, float aspect, const glm::mat4 &basis,
+                         float sliceNear, float sliceFar) const;
+
 
     VkImage               image()           const { return m_target.image; }
     VkImageView           imageView()       const { return m_target.imageView; }

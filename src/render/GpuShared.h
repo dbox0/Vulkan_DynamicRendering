@@ -138,3 +138,4 @@ static_assert(sizeof(RenderItem) == 68);
 static_assert(offsetof(RenderItem, materialIndex) == 64);
 
 
+constexpr uint32_t MaxShadowCascades = 4;
