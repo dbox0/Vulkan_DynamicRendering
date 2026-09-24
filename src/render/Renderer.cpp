@@ -1100,7 +1100,8 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     m_cascades[0] = m_shadowPass.map().fitCascade(camera, aspectRatio, m_lightBasis,
                                                   camera.nearClip(), m_shadow.distance);
 
-    *res.frameDataPtr = FrameData
+
+    FrameData frame
     {
         .table = {
             .positions   = m_geometry.positionBufferAddress(),
@@ -1111,7 +1112,6 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
             .debugLines  = res.debugLineBuffer.deviceAddress,
         },
         .viewProj       = viewProj,
-        .lightViewProj    = m_cascades[0].viewProj,
         .cameraPosition = camera.position,
         .exposure       = 1.0f,
         .sunDirection   = sunDirection,
@@ -1123,10 +1123,19 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         .envIntensity     = m_environment.envIntensity,
         .envMaxLod        = m_envMaxLod,
         .shadowTexelSize  = 1.0f / static_cast<float>(m_shadowPass.map().resolution()),
-        .shadowNormalBias = m_cascades[0].worldTexel * m_shadow.normalBias,
-        .shadowDepthBias  = m_shadow.depthBias,
         .shadowEnabled    = m_shadowActive ? 1u : 0u,
+        .cascadeCount    = m_cascadeCount
     };
+    for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+        frame.cascades[k] = GpuCascade
+        {
+            .viewProj   = m_cascades[k].viewProj,
+            .normalBias = m_cascades[k].worldTexel * m_shadow.normalBias,
+            .depthBias  = m_shadow.depthBias,        // becomes per-cascade later
+        };
+    }
+
+    *res.frameDataPtr = frame;
 
 
     m_drawItems = &scene.drawItems(m_geometry);

@@ -72,13 +72,13 @@ float sunShadow(FrameDataBuffer frame, vec3 worldPos, vec3 N, float NdotL)
     }
 
     float slope  = clamp(1.0 - NdotL, 0.0, 1.0);
-    vec3  origin = worldPos + N * frame.shadowNormalBias * (1.0 + slope * 2.0);
+    vec3  origin = worldPos + N * frame.cascades[0].normalBias * (1.0 + slope * 2.0);
 
-    vec4 lightPos = frame.lightViewProj * vec4(origin, 1.0);
+    vec4 lightPos = frame.cascades[0].viewProj * vec4(origin, 1.0);
     vec3 proj     = lightPos.xyz / lightPos.w;
 
     vec2  uv  = proj.xy * 0.5 + 0.5;
-    float ref = proj.z + frame.shadowDepthBias;
+    float ref = proj.z + frame.cascades[0].depthBias;
 
     if (ref <= 0.0) {
         return 1.0;

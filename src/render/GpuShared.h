@@ -21,42 +21,50 @@ static_assert(offsetof(GpuTable, renderItems) == 32);
 static_assert(offsetof(GpuTable, debugLines)  == 40);
 
 
+
+
+constexpr uint32_t MaxShadowCascades = 4;
+struct GpuCascade {
+    glm::mat4 viewProj{ 1.0f };
+    float     normalBias = 0.0f;
+    float     depthBias  = 0.0f;
+    float     pad[2]{};
+};
+static_assert(sizeof(GpuCascade) == 80);
+
 // FrameData -> per frame-in-flight, host-visible, read through BDA.
-// This is where lights will go later (a light list address, counts, etc).
 struct FrameData
 {
-    GpuTable table;
-    glm::mat4 viewProj{ 1.0f };
-
-    // World -> shadow map clip. Reverse Z like the camera, ortho, so w is 1.
-    glm::mat4 lightViewProj{ 1.0f };
+    GpuTable   table;
+    glm::mat4  viewProj{ 1.0f };
+    GpuCascade cascades[MaxShadowCascades]{};
 
     glm::vec3 cameraPosition{ 0.0f };
     float     exposure = 1.0f;
-    glm::vec3 sunDirection{ 0.0f, -1.0f, -1.0f }; // direction light TRAVELS, normalised on the CPU
+    glm::vec3 sunDirection{ 0.0f, -1.0f, -1.0f };
     float     sunIntensity = 3.0f;
     glm::vec3 sunColor{ 1.0f };
     float     ambientIntensity = 1.0f;
     glm::vec3 skyColor{ 0.15f, 0.18f, 0.25f };
     glm::vec3 groundColor{ 0.05f, 0.03f, 0.02f };
 
-    uint  envIrradianceTex;  // 0 = none, fall back to hemisphere
+    uint  envIrradianceTex;
     uint  envPrefilterTex;
     float envIntensity;
     float envMaxLod;
 
-    float shadowTexelSize  = 0.0f;   // 1 / resolution, for PCF tap offsets
-    float shadowNormalBias = 0.0f;   // world units, already scaled by texel size
-    float shadowDepthBias  = 0.0f;   // light-space depth, added to the compare
-    uint  shadowEnabled    = 0;
+    float shadowTexelSize = 0.0f;   // 1 / per-cascade resolution
+    uint  shadowEnabled   = 0;
+    uint  cascadeCount    = 0;
+    uint  shadowDebug     = 0;      // 1 = tint by cascade (step 11)
 };
 static_assert(offsetof(FrameData, viewProj)        == 64);
-static_assert(offsetof(FrameData, lightViewProj)   == 128);
-static_assert(offsetof(FrameData, cameraPosition)  == 192);
-static_assert(offsetof(FrameData, sunDirection)    == 208);
-static_assert(offsetof(FrameData, skyColor)        == 240);
-static_assert(offsetof(FrameData, shadowTexelSize) == 280);
-static_assert(sizeof(FrameData) == 296);
+static_assert(offsetof(FrameData, cascades)        == 128);
+static_assert(offsetof(FrameData, cameraPosition)  == 448);
+static_assert(offsetof(FrameData, sunDirection)    == 464);
+static_assert(offsetof(FrameData, skyColor)        == 496);
+static_assert(offsetof(FrameData, shadowTexelSize) == 536);
+static_assert(sizeof(FrameData) == 552);
 
 
 struct PushConstants {
@@ -127,6 +135,8 @@ static_assert(offsetof(GpuMaterial, baseColorTex)   == 48);
 static_assert(offsetof(GpuMaterial, flags)          == 68);
 
 
+
+
 // RenderItem -- one per indirect draw, indexed by gl_InstanceIndex.
 // ----------------------------------------------------------------------------
 struct RenderItem
@@ -138,4 +148,3 @@ static_assert(sizeof(RenderItem) == 68);
 static_assert(offsetof(RenderItem, materialIndex) == 64);
 
 
-constexpr uint32_t MaxShadowCascades = 4;

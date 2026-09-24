@@ -9,7 +9,6 @@ const uint MAT_ALPHA_MASK   = 1u << 0;
 const uint MAT_ALPHA_BLEND  = 1u << 1;
 const uint MAT_DOUBLE_SIDED = 1u << 2;
 const uint MAT_NORMAL_MAP   = 1u << 3;
-const uint MAX_SHADOW_CASCADES = 4;
 
 struct Vertex           { vec3 position; vec3 normal; vec4 tangent; vec2 uv; vec4 color; };
 struct PackedAttributes { uint normal; uint tangent; vec2 uv; };
@@ -50,11 +49,15 @@ struct GpuTable
     uint64_t reserved[2];
 };
 
+//Chadows CSM
+struct GpuCascade { mat4 viewProj; float normalBias; float depthBias; float pad0; float pad1; };
+const uint MAX_SHADOW_CASCADES = 4u;
+
 layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
 {
-    GpuTable table;
-    mat4  viewProj;
-    mat4  lightViewProj;
+    GpuTable   table;
+    mat4       viewProj;
+    GpuCascade cascades[MAX_SHADOW_CASCADES];
     vec3  cameraPosition;
     float exposure;
     vec3  sunDirection;
@@ -68,9 +71,9 @@ layout(buffer_reference, scalar) readonly buffer FrameDataBuffer
     float envIntensity;
     float envMaxLod;
     float shadowTexelSize;
-    float shadowNormalBias;
-    float shadowDepthBias;
     uint  shadowEnabled;
+    uint  cascadeCount;
+    uint  shadowDebug;
 };
 
 layout(push_constant, scalar) uniform PushConstants
@@ -110,9 +113,9 @@ vec4 clipPosition(RenderItem ri, vec3 localPos)
 
 vec4 shadowClipPosition(RenderItem ri, vec3 localPos)
 {
-    return pc.frame.lightViewProj * (ri.worldMatrix * vec4(localPos, 1.0));
+    // viewIndex pushed per cascade by ShadowPass::recordCascade
+    return pc.frame.cascades[pc.viewIndex].viewProj * (ri.worldMatrix * vec4(localPos, 1.0));
 }
-
 
 vec4 loadColor(uint i)
 {
