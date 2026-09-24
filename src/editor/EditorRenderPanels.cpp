@@ -49,10 +49,18 @@ void EditorUI::drawShadowWindow()
             }
             endProperties();
 
+            ImGui::SeparatorText("Cascades");
+            beginProperties("shadow_cascades");
+            sliderIntRow("Count",    s.cascadeCount, 1, static_cast<int>(MaxShadowCascades));
+            sliderRow("Lambda",      s.splitLambda,  0.0f, 1.0f, "%.2f");
+            sliderRow("Log base",    s.splitBase,    0.1f, 5.0f, "%.2f m");
+            endProperties();
+            ImGui::Checkbox("Debug cascades", &s.debugCascades);
+
             ImGui::SeparatorText("Bias");
             beginProperties("shadow_bias");
             sliderRow("Normal",   s.normalBias,   0.0f, 4.0f, "%.2f texels");
-            sliderRow("Depth",    s.depthBias,    0.0f, 0.01f, "%.5f");
+            sliderRow("Depth",    s.depthBias,    0.0f, 0.2f, "%.3f m");
             sliderRow("Constant", s.constantBias, 0.0f, 8.0f, "%.2f");
             sliderRow("Slope",    s.slopeBias,    0.0f, 8.0f, "%.2f");
             endProperties();

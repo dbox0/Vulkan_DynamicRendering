@@ -1096,9 +1096,26 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
     // Refitted every frame: the box follows the camera, so what it covers is
     // the near slice of the view rather than the whole world.
 
-    m_lightBasis  = ShadowMap::lightBasis(sunDirection);
-    m_cascades[0] = m_shadowPass.map().fitCascade(camera, aspectRatio, m_lightBasis,
-                                                  camera.nearClip(), m_shadow.distance);
+    m_cascadeCount = static_cast<uint32_t>(
+        std::clamp(m_shadow.cascadeCount, 1, static_cast<int>(MaxShadowCascades)));
+
+    const float nearClip = camera.nearClip();
+    const float farDist  = std::clamp(m_shadow.distance, nearClip * 2.0f, camera.farClip());
+    const float base     = std::clamp(m_shadow.splitBase, nearClip, farDist * 0.5f);
+
+    m_lightBasis = ShadowMap::lightBasis(sunDirection);
+
+    float sliceNear = nearClip;
+    for (uint32_t k = 0; k < m_cascadeCount; ++k) {
+        const float t        = static_cast<float>(k + 1) / static_cast<float>(m_cascadeCount);
+        const float uniform  = base + (farDist - base) * t;
+        const float logSplit = base * std::pow(farDist / base, t);
+        const float sliceFar = glm::mix(uniform, logSplit, m_shadow.splitLambda);
+
+        m_cascades[k] = m_shadowPass.map().fitCascade(camera, aspectRatio, m_lightBasis,
+                                                      sliceNear, sliceFar);
+        sliceNear = sliceFar;
+    }
 
 
     FrameData frame
@@ -1131,7 +1148,7 @@ void Renderer::render(Scene &scene, const Camera &camera, uint32_t windowWidth, 
         {
             .viewProj   = m_cascades[k].viewProj,
             .normalBias = m_cascades[k].worldTexel * m_shadow.normalBias,
-            .depthBias  = m_shadow.depthBias,        // becomes per-cascade later
+            .depthBias  = m_shadow.depthBias / (4.0f * m_cascades[k].radius),
         };
     }
 

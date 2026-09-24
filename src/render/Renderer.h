@@ -190,7 +190,7 @@ private:
 
     glm::mat4 m_lightBasis{ 1.0f };
     std::array<ShadowMap::ShadowCascade, MaxShadowCascades> m_cascades{};
-    uint32_t  m_cascadeCount = 1;      // stays 1 until step 10
+    uint32_t  m_cascadeCount = 1;
     uint32_t regionBase(uint32_t view) const { return view * m_itemCapacity; }
 
     EnvironmentSettings m_environment{};
